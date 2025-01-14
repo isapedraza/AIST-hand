@@ -1,5 +1,4 @@
-# AIST-hand
- A GCN model can identify the type of grasp a human uses to grab some common objects from a picture and translate them into joint coordinates to control a robot hand.
+# env-AIST
 
 ## Introduction
 The goal is to have a GCN model that is able to identify the type of grasp the human uses to grab some common objects and to transfer this information to a shadow hand based on joint coordinates and their corresponding graphs. 
