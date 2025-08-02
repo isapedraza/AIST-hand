@@ -1,0 +1,17 @@
+<launch>
+    <!-- Distance between Wrist and Index Finger MCP Parameter (for hand scale) -->
+    <arg name="wrist_if_mcp_topic" default="0.10" />
+    <!-- ROS Topic Parameters -->
+    <arg name="image_topic" default="/zed/left_image" />
+    <arg name="human_keypoints_topic" default="/human_hand_keypoints" />
+    <arg name="shadow_keypoints_topic" default="/shadow_hand_keypoints" />
+
+    <!-- Node -->
+    <node name="mediapipe_2d" pkg="mediapipe" type="mediapipe_2d.py" output="screen">
+        <!-- Set Parameters -->
+        <param name="wrist_if_mcp_topic" value="$(arg wrist_if_mcp_topic)" />
+        <param name="image_topic" value="$(arg image_topic)" />
+        <param name="human_keypoints_topic" value="$(arg human_keypoints_topic)" />
+        <param name="shadow_keypoints_topic" value="$(arg shadow_keypoints_topic)" />
+    </node>
+</launch>
