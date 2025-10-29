@@ -15,6 +15,7 @@ class ToGraph:
       - y: grasp_type (LongTensor [1])
       - mask: [21, 1] -> 1.0 si el joint es válido, 0.0 si faltante
       - joint_id: [21] = 0..20
+      - handedness (opcional): 0=Right, 1=Left, -1=Unknown
 
     Params:
       features: 'xy' o 'xyz'
@@ -56,6 +57,30 @@ class ToGraph:
         # Campos de confianza opcionales
         self.joint_conf_name = {j: f"{j}_conf" for j in self.joints}
 
+    # -------------------- NUEVO: parser robusto de handedness --------------------
+    def _to_int_handedness(self, value) -> int:
+        """Mapea 'Right'/'Left'/'Unknown' (o variantes) a 0/1/-1. Tolera enteros/strings."""
+        if value is None:
+            return -1
+        if isinstance(value, (int, np.integer)):
+            v = int(value)
+            if v in (0, 1, -1):
+                return v
+        s = str(value).strip().lower()
+        if s in ("right", "r", "0"):
+            return 0
+        if s in ("left", "l", "1"):
+            return 1
+        if s in ("unknown", "u", "-1"):
+            return -1
+        # Intento de conversión numérica genérica
+        try:
+            v = int(s)
+            return v if v in (0, 1, -1) else -1
+        except Exception:
+            return -1
+    # -----------------------------------------------------------------------------
+
     def __call__(self, sample: dict) -> Data:
         rows = []
         mask_vals = []
@@ -63,7 +88,6 @@ class ToGraph:
         for j in self.joints:
             raw = sample.get(j, None)
             if raw is None:
-                # faltante → ceros + mask=0
                 v = np.zeros(self.F, dtype=float)
                 valid = False
             else:
@@ -106,9 +130,12 @@ class ToGraph:
             joint_id=torch.arange(x.size(0), dtype=torch.long)
         )
 
-        # (Opcional) handedness como atributo de grafo si viene (0=right,1=left)
+        # (Opcional) handedness como atributo de grafo (0=Right, 1=Left, -1=Unknown)
         if 'handedness' in sample:
-            data.handedness = torch.tensor([int(sample['handedness'])], dtype=torch.long)
+            data.handedness = torch.tensor(
+                [self._to_int_handedness(sample.get('handedness'))],
+                dtype=torch.long
+            )
 
         return data
 
