@@ -8,7 +8,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import mediapipe as mp
 
-from transforms.tograph import ToGraph  # tu clase corregida
+from grasp_gcn.transforms.tograph import ToGraph  # tu clase corregida
 
 # --- MediaPipe Hands (una sola mano, imagen estática) ---
 mp_hands = mp.solutions.hands

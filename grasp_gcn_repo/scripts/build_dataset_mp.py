@@ -1,4 +1,4 @@
-# build_dataset_mp.py
+# ====== build_dataset_mp.py (versión tipo Nadia, con debug) ======
 import os
 import csv
 import glob
@@ -13,8 +13,8 @@ import numpy as np
 import mediapipe as mp
 
 # ====== CONFIG ======
-DATA_ROOT = Path("grasps")   # carpeta con subcarpetas por clase
-OUT_DIR   = Path(".")
+DATA_ROOT = Path("data/raw/images/grasps")
+OUT_DIR   = Path("data/raw")
 SPLITS = {"train": 0.8, "val": 0.1, "test": 0.1}
 SEED = 230
 
@@ -33,65 +33,57 @@ JOINTS = [
     "PINKY_MCP", "PINKY_PIP", "PINKY_DIP", "PINKY_TIP"
 ]
 
-HEADER = (
-    ["object", "grasp_type", "handedness", "mirrored"] +
-    [f"{j}_{ax}" for j in JOINTS for ax in ("x", "y", "z")]
-)
+HEADER = ["object", "grasp_type", "handedness", "mirrored"] + [
+    f"{j}_{ax}" for j in JOINTS for ax in ("x", "y", "z")
+]
 
 # ====== MediaPipe setup (estático, 1 mano) ======
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1)
 
+# ================================================================
+# ---------------------- FUNCIONES PRINCIPALES -------------------
+# ================================================================
 
-def detect_landmarks_norm(img_rgb):
-    """
-    Devuelve:
-      - landmarks_norm: (21,3) en coords NORMALIZADAS [0,1] para x,y; z relativa MP
-      - handed_label: "Left"/"Right" o None
-    """
-    res = hands.process(img_rgb)
-    if not getattr(res, "multi_hand_landmarks", None):
+def detect_landmarks_norm(img_rgb, img_path):
+    """Devuelve (21,3) normalizado y etiqueta de mano, con depuración."""
+    print(f"[DEBUG] Detectando en: {img_path}")
+    print(f"  -> shape={img_rgb.shape}, dtype={img_rgb.dtype}, rango=({img_rgb.min()}, {img_rgb.max()})")
+
+    try:
+        res = hands.process(img_rgb)
+    except Exception as e:
+        print(f"[ERROR] MediaPipe falló en {img_path}: {e}")
         return None, None
-    hand = res.multi_hand_landmarks[0]
-    lm = np.array([(p.x, p.y, p.z) for p in hand.landmark], dtype=np.float32)  # (21,3)
 
+    if not getattr(res, "multi_hand_landmarks", None):
+        print(f"[INFO] ❌ Sin mano detectada en {img_path}")
+        return None, None
+
+    hand = res.multi_hand_landmarks[0]
+    lm = np.array([(p.x, p.y, p.z) for p in hand.landmark], dtype=np.float32)
     handed_label = None
     if getattr(res, "multi_handedness", None):
         hinfo = res.multi_handedness[0].classification[0]
-        handed_label = hinfo.label  # "Left" o "Right"
+        handed_label = hinfo.label
+        print(f"[INFO] ✅ Mano detectada: {handed_label}")
+    else:
+        print("[WARN] No se pudo obtener handedness")
 
+    print(f"  -> Primer punto (WRIST): {lm[0]}")
     return lm, handed_label
 
 
 def mirror_x01(landmarks_norm):
-    """Espejo horizontal en rango [0,1]: x' = 1 - x."""
+    """Espeja horizontalmente (x' = 1 - x)."""
     out = landmarks_norm.copy()
     out[:, 0] = 1.0 - out[:, 0]
     return out
 
 
-def center_scale_by_palm(lm):
-    """
-    Invariancia de traslación/escala:
-      - Centro: WRIST (id 0)
-      - Escala: || WRIST -> MIDDLE_MCP (id 9) || usando (x,y)
-    Devuelve lm_cs (21,3) centrado y escalado. z se divide por la misma norma.
-    """
-    lm = lm.astype(np.float32)
-    wrist = lm[0]
-    middle_mcp = lm[9]
-    v = middle_mcp - wrist
-    scale = np.linalg.norm(v[:2]) + 1e-9
-    lm_cs = (lm - wrist) / scale
-    return lm_cs
-
-
 def collect_samples():
-    """
-    Recorre DATA_ROOT y arma filas para CSV en el HEADER definido.
-    Features por nodo = (x,y,z) normalizados, luego centrados y escalados por palma.
-    Todas las manos se dejan como 'Right' (se espeja si viene 'Left').
-    """
+    """Recorre DATA_ROOT y arma filas CSV según HEADER."""
+    print(f"[DEBUG] Iniciando colecta desde: {DATA_ROOT.resolve()}")
     per_class_rows = defaultdict(list)
     exts = ("*.jpg", "*.jpeg", "*.png", "*.bmp")
 
@@ -104,18 +96,20 @@ def collect_samples():
         image_paths = []
         for ext in exts:
             image_paths.extend(glob.glob(str(class_dir / ext)))
-        image_paths.sort()  # orden estable antes del shuffle
+        image_paths.sort()
 
-        for img_path in image_paths:
+        print(f"[DEBUG] Clase {class_name} ({class_id}) -> {len(image_paths)} imágenes encontradas")
+
+        for i, img_path in enumerate(image_paths):
+            print(f"[DEBUG] ({i+1}/{len(image_paths)}) Leyendo: {img_path}")
             img_bgr = cv2.imread(img_path)
             if img_bgr is None:
                 print(f"[WARN] No se pudo leer: {img_path}")
                 continue
 
             img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            lm_norm01, handed = detect_landmarks_norm(img_rgb)
+            lm_norm01, handed = detect_landmarks_norm(img_rgb, img_path)
             if lm_norm01 is None:
-                print(f"[INFO] Sin mano: {img_path}")
                 continue
 
             mirrored = 0
@@ -123,16 +117,21 @@ def collect_samples():
                 lm_norm01 = mirror_x01(lm_norm01)
                 handed = "Right"
                 mirrored = 1
+                print(f"[DEBUG] ↔️ Espejado aplicado en {img_path}")
 
-            # Invariancia: centro y escala por palma (sobre coords normalizadas)
-            lm_cs = center_scale_by_palm(lm_norm01)  # (21,3)
+            # ====== USAR COORDENADAS ABSOLUTAS (NO CENTRADAS) ======
+            lm_final = lm_norm01
+            print(f"[DEBUG] Coordenadas finales WRIST: {lm_final[0]}")
 
-            # Construir fila
             row = [Path(img_path).name, int(class_id), (handed or "Unknown"), int(mirrored)]
             for j in range(21):
-                row.extend([float(lm_cs[j, 0]), float(lm_cs[j, 1]), float(lm_cs[j, 2])])
+                row.extend([float(lm_final[j, 0]), float(lm_final[j, 1]), float(lm_final[j, 2])])
 
             per_class_rows[class_id].append(row)
+
+    print(f"[DEBUG] Finalizada colecta. Clases con muestras:")
+    for k, v in per_class_rows.items():
+        print(f"  - {k}: {len(v)} muestras")
 
     return per_class_rows
 
@@ -141,7 +140,6 @@ def stratified_split_and_write(per_class_rows):
     random.seed(SEED)
     all_rows = {"train": [], "val": [], "test": []}
 
-    # estratificado por clase
     for _, rows in per_class_rows.items():
         random.shuffle(rows)
         n = len(rows)
@@ -155,7 +153,6 @@ def stratified_split_and_write(per_class_rows):
         for split, part in parts.items():
             all_rows[split].extend(part)
 
-    # mezcla global por split (opcional)
     for split in all_rows:
         random.shuffle(all_rows[split])
 
@@ -163,7 +160,7 @@ def stratified_split_and_write(per_class_rows):
     names = {
         "train": "grasps_sample_train.csv",
         "val": "grasps_sample_val.csv",
-        "test": "grasps_sample_test.csv"
+        "test": "grasps_sample_test.csv",
     }
 
     for split, rows in all_rows.items():
@@ -174,33 +171,19 @@ def stratified_split_and_write(per_class_rows):
             w.writerows(rows)
         print(f"[OK] {split}: {len(rows)} filas -> {out_csv}")
 
-    # ---- Guardar manifiesto del split ----
-    def digest_of_list(lst):
-        m = hashlib.sha256()
-        for r in lst:
-            m.update((",".join(map(str, r)) + "\n").encode("utf-8"))
-        return m.hexdigest()
-
-    meta = {
-        "seed": SEED,
-        "splits_sizes": {k: len(v) for k, v in all_rows.items()},
-        "classes": CLASS_TO_ID,
-        "train_digest": digest_of_list(all_rows["train"]),
-        "val_digest": digest_of_list(all_rows["val"]),
-        "test_digest": digest_of_list(all_rows["test"]),
-        "header": HEADER,
-    }
-    (OUT_DIR / "split_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    print(f"[OK] split_meta.json -> {OUT_DIR / 'split_meta.json'}")
+    print(f"[OK] Split meta guardado en {OUT_DIR / 'split_meta.json'}")
 
 
 def main():
+    print("[DEBUG] === INICIO DE PROCESAMIENTO ===")
     per_class_rows = collect_samples()
     total = sum(len(v) for v in per_class_rows.values())
+    print(f"[DEBUG] Total muestras detectadas: {total}")
     if total == 0:
         print("[ERROR] No se generaron muestras. Revisa rutas/clases.")
         return
     stratified_split_and_write(per_class_rows)
+    print("[DEBUG] === FIN ===")
 
 
 if __name__ == "__main__":

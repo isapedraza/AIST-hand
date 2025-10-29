@@ -2,7 +2,7 @@
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
-from network.gcn_network import GCN_8_8_16_16_32
+from grasp_gcn.network.gcn_network import GCN_8_8_16_16_32
 
 # Reproducibilidad básica
 torch.manual_seed(0)

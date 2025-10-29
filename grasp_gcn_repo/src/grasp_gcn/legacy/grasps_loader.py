@@ -13,7 +13,7 @@ import numpy as np
 
 #import sys
 #sys.path.append('/home/nadia/env-AIST/GIT/AIST/env/transforms')  # Adjust the path as necessary
-from transforms.tograph import ToGraph
+from grasp_gcn.transforms.tograph import ToGraph
 
 
 class GraspsDataset(Dataset):

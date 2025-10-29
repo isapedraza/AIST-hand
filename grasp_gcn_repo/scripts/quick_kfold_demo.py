@@ -22,7 +22,7 @@ device_ = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f"[INFO] Device: {device_}")
 
 # ---------- Dataset ----------
-from dataset.grasps import GraspsClass
+from grasp_gcn.dataset.grasps import GraspsClass
 from torch_geometric.loader import DataLoader
 
 # ⚠️ Ruta al CSV de test (lo leerá desde root/raw si es relativo)
@@ -46,7 +46,7 @@ classes, counts_all = np.unique(y_all, return_counts=True)
 print(f"[INFO] Distribución total de clases: {dict(zip(classes, counts_all))}")
 
 # ---------- Modelo ----------
-from network.utils import get_network
+from grasp_gcn.network.utils import get_network
 
 def build_model(num_features, num_classes):
     model_ = get_network("GCN_8_8_16_16_32", num_features, num_classes).to(device_)

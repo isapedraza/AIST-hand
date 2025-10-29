@@ -1,10 +1,15 @@
 # test_tograph_from_csv.py
 import pandas as pd
 import numpy as np
-from transforms.tograph import ToGraph
+from grasp_gcn.transforms.tograph import ToGraph
+from pathlib import Path
 
-CSV = "data/grasps_sample_test.csv"   # usa el test como pediste
-FEATURES = "xyz"                      # pon "xy" si sólo quieres 2D
+# calcula la raíz del proyecto (2 niveles arriba del archivo actual)
+ROOT = Path(__file__).resolve().parents[1]
+CSV = ROOT / "examples" / "data" / "grasps_sample_test.csv"
+
+FEATURES = "xyz"
+
 
 JOINTS = [
     'WRIST',
@@ -15,7 +20,7 @@ JOINTS = [
     'PINKY_MCP','PINKY_PIP','PINKY_DIP','PINKY_TIP'
 ]
 
-AXES = ["X", "Y"] if FEATURES == "xy" else ["X", "Y", "Z"]
+AXES = ["X", "Y"] if FEATURES == "xy" else ["X", "", "Z"]
 
 def main():
     df = pd.read_csv(CSV)

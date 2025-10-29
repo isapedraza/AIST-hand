@@ -20,8 +20,8 @@ device_ = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 print(f"[INFO] Device: {device_}")
 
 # ---------- Dataset & Transform ----------
-from transforms.tograph import ToGraph
-from dataset.grasps import GraspsClass
+from grasp_gcn.transforms.tograph import ToGraph
+from grasp_gcn.dataset.grasps import GraspsClass
 from torch_geometric.loader import DataLoader
 
 CSV_PATH = "data/grasps_sample_train.csv"  # ajusta a tu ruta real
@@ -57,7 +57,7 @@ val_loader   = DataLoader(val_set,   batch_size=BATCH_SIZE, shuffle=False,
 print(f"[INFO] Train batches: {len(train_loader)} | Val batches: {len(val_loader)}")
 
 # ---------- Modelo ----------
-from network.utils import get_network
+from grasp_gcn.network.utils import get_network
 
 model_ = get_network(
     "GCN_8_8_16_16_32",

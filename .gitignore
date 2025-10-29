@@ -1,2 +1,11 @@
-# Ignorar entorno de simulación Shadow Robot
-sr-build-tools-master/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+data/
+experiments/
+*.pt
+*.pth
+events.out.tfevents.*
+!examples/**
