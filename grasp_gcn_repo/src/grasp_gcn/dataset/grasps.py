@@ -20,10 +20,6 @@ class GraspsClass(InMemoryDataset):
 
     Convenciones de rutas:
     - PyG asume: raw_dir = <root>/raw   y   processed_dir = <root>/processed
-    - Para split=None con csvs: cada CSV puede ser
-        * nombre dentro de <root>/raw  (p.ej. "mini.csv"), o
-        * ruta absoluta (p.ej. "/home/.../data/raw/mini.csv").
-      Las rutas dentro de <root>/raw se convierten a relativas para evitar duplicar prefijos.
     """
 
     def __init__(self, root, split="train", normalize=True, csvs=None,
@@ -36,16 +32,20 @@ class GraspsClass(InMemoryDataset):
 
         super(GraspsClass, self).__init__(root, transform, pre_transform)
 
-        # Compatibilidad PyTorch >= 2.6 (weights_only=True por defecto)
+        # Carga el almacenamiento procesado
         try:
             self.data, self.slices = torch.load(self.processed_paths[0], weights_only=False)
         except TypeError:
             self.data, self.slices = torch.load(self.processed_paths[0])
 
-        # Class weights sin warning (no tocar InMemoryDataset.data directamente)
-        y = self._data.y.view(-1).cpu().numpy()
-        n_classes = int(y.max()) + 1 if y.size > 0 else 0
-        counts = np.bincount(y, minlength=n_classes).astype(np.float32) if n_classes > 0 else np.array([])
+        # ----- Metadatos internos (no sobrescribir propiedades de PyG) -----
+        self._num_features = self._data.num_features
+        self._num_classes = int(self._data.y.max().item() + 1) if self._data.y.numel() > 0 else 0
+
+        # Class weights
+        y_np = self._data.y.view(-1).cpu().numpy()
+        n_classes = int(y_np.max()) + 1 if y_np.size > 0 else 0
+        counts = np.bincount(y_np, minlength=n_classes).astype(np.float32) if n_classes > 0 else np.array([])
         self.class_weights = counts / counts.sum() if counts.size > 0 else counts
 
     # -------------------------------------------------------------
@@ -58,10 +58,9 @@ class GraspsClass(InMemoryDataset):
         elif self.split == "test":
             return ['grasps_sample_test.csv']
         elif self.split is None and self.csvs is not None:
-            # Evitar "data/raw/data/raw/..." si ya viene prefijado
             out = []
-            raw_dir_abs = os.path.abspath(self.raw_dir)  # típico: <root>/raw
-            for c in self.csvs:
+            raw_dir_abs = os.path.abspath(self.raw_dir)
+            for c in (self.csvs if isinstance(self.csvs, (list, tuple)) else [self.csvs]):
                 p = os.path.abspath(c)
                 try:
                     if os.path.commonpath([p, raw_dir_abs]) == raw_dir_abs:
@@ -84,19 +83,24 @@ class GraspsClass(InMemoryDataset):
         elif self.split == "test":
             return [f"grasps_test_{self.k}.pt"]
         elif self.split is None and self.csvs is not None:
-            joined = "_".join([os.path.splitext(os.path.basename(c))[0] for c in self.csvs])
+            names = (self.csvs if isinstance(self.csvs, (list, tuple)) else [self.csvs])
+            joined = "_".join([os.path.splitext(os.path.basename(c))[0] for c in names])
             return [f"grasps_{joined}.pt"]
         else:
             raise ValueError(f"Unknown split: {self.split}")
 
     # -------------------------------------------------------------
     def process(self):
-        transform_tograph_ = ToGraph()
+        transform_tograph_ = ToGraph(features='xyz', make_undirected=True)
         data_list_ = []
 
         for csv_path in self.raw_paths:
             log.info(f"Reading CSV file {csv_path}")
             grasps_ = pd.read_csv(csv_path)
+            grasps_.columns = grasps_.columns.str.strip()
+            if 'grasp' in grasps_.columns and 'grasp_type' not in grasps_.columns:
+                grasps_.rename(columns={'grasp': 'grasp_type'}, inplace=True)
+
             print(f"Data from {csv_path} loaded successfully. First few rows:")
             print(grasps_.head())
 
@@ -151,15 +155,15 @@ class GraspsClass(InMemoryDataset):
     def _sample_from_csv(self, grasps, idx):
         """Extrae una muestra del CSV, ignorando columnas extra (handedness/mirrored)."""
         row = grasps.iloc[idx]
-        object_ = row.iloc[0]
-        grasp_type_ = row.iloc[1]
+        object_ = row["object"]
+        grasp_type_ = int(row["grasp_type"])
 
         # Detecta columnas adicionales
-        has_handed = ("handedness" in grasps.columns)
-        has_mirror = ("mirrored" in grasps.columns)
-        base = 2 + int(has_handed) + int(has_mirror)  # offset dinámico
+        has_handed = "handedness" in grasps.columns
+        has_mirror = "mirrored" in grasps.columns
+        base = 2 + int(has_handed) + int(has_mirror)
 
-        # Extrae 21x3 valores y los reordena
+        # Extrae 21x3 valores (MediaPipe joints)
         vals = np.copy(row.iloc[base:base + 63]).astype(np.float32, copy=False).reshape(21, 3)
         (WRIST_,
          THUMB_CMC_, THUMB_MCP_, THUMB_IP_, THUMB_TIP_,
@@ -191,7 +195,7 @@ class GraspsClass(InMemoryDataset):
             'PINKY_MCP': PINKY_MCP_,
             'PINKY_PIP': PINKY_PIP_,
             'PINKY_DIP': PINKY_DIP_,
-            'PINKY_TIP': PINKY_TIP_
+            'PINKY_TIP': PINKY_TIP_,
         }
 
         if has_handed:
@@ -200,3 +204,19 @@ class GraspsClass(InMemoryDataset):
             sample_dict['mirrored'] = int(row['mirrored'])
 
         return sample_dict
+
+    # -------------------------------------------------------------
+    # === Propiedades para compatibilidad moderna ===
+    @property
+    def num_features(self):
+        return getattr(self, "_num_features", self._data.num_features)
+
+    @property
+    def num_classes(self):
+        if hasattr(self, "_num_classes"):
+            return self._num_classes
+        return int(self._data.y.max().item() + 1) if self._data.y.numel() > 0 else 0
+
+    @property
+    def num_node_features(self):
+        return self._data.num_features
