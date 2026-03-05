@@ -31,7 +31,8 @@ weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256
 NUM_WORKERS = 0
-num_epochs = 30
+num_epochs = 20
+EARLY_STOPPING_PATIENCE = 5
 
 # Reproducibility
 torch.manual_seed(seed)
@@ -41,7 +42,7 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls_run002')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
@@ -53,6 +54,13 @@ datasetTest  = GraspsClass(root='data/', split='test',  normalize=normalize)
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")
 print(f"✅ Num classes: {datasetTrain.num_classes}")
+
+# ==================== Class Weights ==============================
+all_labels = torch.cat([data.y.view(-1) for data in datasetTrain])
+counts = torch.bincount(all_labels, minlength=datasetTrain.num_classes).float()
+class_weights = (1.0 / counts)
+class_weights = class_weights / class_weights.sum() * datasetTrain.num_classes
+print(f"✅ Class weights computed (min={class_weights.min():.3f}, max={class_weights.max():.3f})")
 
 # DataLoaders
 train_loader = DataLoader(datasetTrain, batch_size=BATCH_SIZE, shuffle=True,  num_workers=NUM_WORKERS)
@@ -66,6 +74,7 @@ print('--------------------------------')
 
 # ==================== Model ======================================
 model_ = get_network(network_type, datasetTrain.num_features, datasetTrain.num_classes).to(device_)
+class_weights = class_weights.to(device_)
 
 def reset_weights(m):
     """Reset model weights to avoid leakage between runs."""
@@ -99,6 +108,7 @@ def evaluate(model, loader):
 # ==================== Training Loop ==============================
 def train(model_, train_loader_, val_loader_, writer):
     best_val_acc = 0.0
+    epochs_no_improve = 0
     time_start_ = timer()
     print("🎯 Starting training...")
 
@@ -110,8 +120,8 @@ def train(model_, train_loader_, val_loader_, writer):
             batch = batch.to(device_)
             optimizer_.zero_grad()
             pred = model_(batch)
-            label = batch.y.view(-1)                 # ← fix shape labels
-            loss = F.nll_loss(pred, label)
+            label = batch.y.view(-1)
+            loss = F.nll_loss(pred, label, weight=class_weights)
             loss.backward()
             optimizer_.step()
             epoch_loss += loss.item() * batch.num_graphs
@@ -129,12 +139,18 @@ def train(model_, train_loader_, val_loader_, writer):
               f"Val Loss: {val_loss:.4f} | "
               f"Val Acc: {val_acc:.3f}")
 
-        # Save best model
+        # Save best model + early stopping
         if val_acc > best_val_acc:
             best_val_acc = val_acc
+            epochs_no_improve = 0
             os.makedirs("experiments", exist_ok=True)
             torch.save(model_.state_dict(), "experiments/best_model.pth")
             print(f"💾 Saved best model (Val Acc = {val_acc:.3f})")
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
+                print(f"⏹️  Early stopping at epoch {epoch+1} (no improvement for {EARLY_STOPPING_PATIENCE} epochs)")
+                break
 
     total_time = timer() - time_start_
     print(f"\n⏱️  Training completed in {total_time/60:.2f} min.")
