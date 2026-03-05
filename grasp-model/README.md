@@ -179,6 +179,54 @@ CSVs are generated from the raw HOGraspNet annotations using `scripts/ingestion/
 
 **To request access:** https://hograspnet2024.github.io/
 
+### Why 28 classes and not 33?
+
+The original Feix GRASP taxonomy (2016) defines 33 grasp types. HOGraspNet deliberately covers 28:
+
+> *"Some grasp classes out of 33 are seemingly redundant, visually hard to distinguish, and geometrically close; we redefined them to 28 grasp classes."*
+> — Cho et al., ECCV 2024
+
+The 5 absent Feix IDs are **6, 8, 15, 21, 32** — merged into geometrically similar classes or excluded as uncommon. The exact merging is detailed in the HOGraspNet supplementary material (Cho et al., ECCV 2024).
+
+This is a **design decision**, not a limitation. The 28 classes represent the operationally distinguishable set for real-world grasping with 3D keypoints.
+
+### Class mapping
+
+The model outputs class indices 0–27. The mapping to Feix IDs and grasp names (following Feix et al. 2016, Fig. 4) is:
+
+| Local idx | Feix ID | Grasp name | Category |
+|:---------:|:-------:|------------|----------|
+| 0 | 1 | Large Diameter | Power |
+| 1 | 2 | Small Diameter | Power |
+| 2 | 17 | Index Finger Extension | Power |
+| 3 | 18 | Extension Type | Power |
+| 4 | 22 | Parallel Extension | Precision |
+| 5 | 30 | Palmar | Power |
+| 6 | 3 | Medium Wrap | Power |
+| 7 | 4 | Adducted Thumb | Power |
+| 8 | 5 | Light Tool | Power |
+| 9 | 19 | Distal Type | Power |
+| 10 | 31 | Ring Finger | Power |
+| 11 | 10 | Power Disk | Power |
+| 12 | 11 | Power Sphere | Power |
+| 13 | 26 | Sphere 4-Finger | Power |
+| 14 | 28 | Sphere 4-Finger (variant) | Power |
+| 15 | 16 | Lateral | Intermediate |
+| 16 | 29 | Stick | Intermediate |
+| 17 | 23 | Adduction Grip | Power |
+| 18 | 20 | Writing Tripod | Precision |
+| 19 | 25 | Lateral Tripod | Intermediate |
+| 20 | 9 | Palmar Pinch | Precision |
+| 21 | 24 | Tip Pinch | Precision |
+| 22 | 33 | Inferior Pincer | Precision |
+| 23 | 7 | Prismatic 3 Finger | Precision |
+| 24 | 12 | Precision Disk | Precision |
+| 25 | 13 | Precision Sphere | Precision |
+| 26 | 27 | Quadpod | Precision |
+| 27 | 14 | Tripod | Precision |
+
+> **Note:** Feix IDs 26 and 28 are both sphere power grasps distinguished by finger configuration (Feix et al. 2016, Fig. 4, Power–Pad column). Local indices are assigned by the HOGraspNet ingestion script (`FEIX_INDICES` in `hograspnet_to_csv.py`) and do not follow Feix order.
+
 ---
 
 ## Installation
@@ -269,6 +317,103 @@ Each hand is a graph of 21 nodes (joints) with edges defined by hand kinematics:
 **Domain gap:** the model is trained on HOGraspNet data (multi-view RGBD + MANO fitting, world coordinates) but runs inference on MediaPipe output (single-view RGB, normalized [0,1] coordinates). This gap is mitigated by z-score normalization but should be discussed when interpreting real-time performance.
 
 **Hand mirroring:** left-hand samples are horizontally mirrored (`x' = 1 - x`) during dataset construction to normalize all samples to a right-hand reference frame.
+
+---
+
+## Experiment Log
+
+### Run 001 — Baseline GCN_8_8_16_16_32 (2026-03-05)
+
+**Configuration:**
+- Model: `GCN_8_8_16_16_32`
+- Dataset: HOGraspNet (1,191,319 train / 148,896 val / 148,896 test)
+- Epochs: 30 | Batch size: 256 | LR: 1e-3 | Optimizer: Adam
+- Loss: CrossEntropyLoss (uniform weights)
+- Hardware: Google Colab T4 GPU | Training time: 59.33 min
+
+**Results:**
+
+| Split | Loss | Accuracy |
+|-------|------|----------|
+| Val (best, epoch 28) | 1.2221 | **60.8%** |
+| Test | 1.2282 | **60.5%** |
+| — | Macro F1 | 0.529 |
+| — | Weighted F1 | 0.593 |
+
+**Training curve (Val Accuracy by epoch):**
+
+```
+Ep 01: 47.2%  Ep 08: 57.7%  Ep 15: 59.1%  Ep 22: 59.2%  Ep 29: 60.6%
+Ep 02: 51.2%  Ep 09: 58.1%  Ep 16: 59.7%  Ep 23: 60.3%  Ep 30: 60.6%
+Ep 03: 53.0%  Ep 10: 58.1%  Ep 17: 59.6%  Ep 24: 60.0%
+Ep 04: 54.4%  Ep 11: 59.0%  Ep 18: 59.4%  Ep 25: 60.0%
+Ep 05: 55.7%  Ep 12: 58.4%  Ep 19: 59.6%  Ep 26: 60.2%
+Ep 06: 56.6%  Ep 13: 58.1%  Ep 20: 60.3%  Ep 27: 60.4%
+Ep 07: 56.7%  Ep 14: 59.4%  Ep 21: 60.7%  Ep 28: 60.8% ← best
+```
+
+Curve nearly plateaus after epoch 21 — marginal gains (~0.001/epoch from ep 21 onward).
+
+**Per-class performance:**
+
+| Local idx | Feix | Grasp name | F1 | Notes |
+|:---------:|:----:|------------|----|-------|
+| 2 | 17 | Index Finger Extension | **0.799** | Best class |
+| 9 | 19 | Distal Type | 0.795 | |
+| 3 | 18 | Extension Type | 0.786 | |
+| 24 | 12 | Precision Disk | 0.736 | |
+| 15 | 16 | Lateral | 0.688 | |
+| 6 | 3 | Medium Wrap | **0.047** | Nearly fails — only 2.5% recall |
+| 19 | 25 | Lateral Tripod | 0.150 | 41% mistaken for Writing Tripod |
+| 16 | 29 | Stick | 0.264 | Split between Light Tool (24%) and Lateral (19%) |
+| 25 | 13 | Precision Sphere | 0.269 | 47% mistaken for Precision Disk |
+| 1 | 2 | Small Diameter | 0.339 | Scattered across Adducted Thumb, Light Tool, Lateral |
+
+**Main confusion pairs:**
+
+| True class | Feix | Predicted as | Feix | Count | % of support |
+|---|---|---|---|---|---|
+| Lateral Tripod | 25 | Writing Tripod | 20 | 850 | 41% |
+| Precision Sphere | 13 | Precision Disk | 12 | 1586 | 47% |
+| Light Tool | 5 | Lateral | 16 | 2507 | 20% |
+| Lateral | 16 | Light Tool | 5 | 1352 | 11% |
+| Adducted Thumb | 4 | Light Tool | 5 | 1108 | 15% |
+| Light Tool | 5 | Adducted Thumb | 4 | 934 | 8% |
+| Writing Tripod | 20 | Tripod | 14 | 760 | 10% |
+| Power Sphere | 11 | Large Diameter | 1 | 493 | 19% |
+
+**Discussion:**
+
+El modelo aprende bien las clases con configuraciones geométricamente distintivas —
+prismatic grasps, distal-type, index finger extension — y falla principalmente en pares
+donde la diferencia entre clases no está en la forma de la mano sino en el objeto sostenido.
+
+Esto no es una sorpresa: Feix et al. (2016) ya señalaron que las 33 clases de la taxonomía
+se reducen a 17 si se elimina el efecto del objeto (tamaño, forma, orientación). HOGraspNet
+tomó ese camino parcialmente al reducir a 28, pero los resultados muestran que varios pares
+siguen siendo geométricamente indistinguibles desde keypoints puros.
+
+Los casos más claros son Precision Sphere vs Precision Disk (47% de confusión mutua) y el
+grupo cilíndrico Large/Medium/Small Diameter: en todos ellos la mano adopta la misma
+topología y es el objeto el que varía. El modelo no tiene acceso al objeto, así que confundir
+estas clases es la respuesta correcta dado lo que ve.
+
+Esto conecta directamente con el diseño del GraspToken. La separación entre `class_id`
+(topología discreta) y `apertura` (adaptación continua al objeto) ya anticipa este problema:
+los grupos que el modelo no puede distinguir son exactamente los que `apertura` resuelve
+en tiempo de ejecución. En ese sentido, las "confusiones" del clasificador en estos grupos
+no son errores funcionales para el robot.
+
+Donde sí hay un problema real es en pares topológicamente distintos con alta confusión:
+Lateral Tripod vs Writing Tripod (41%) y Light Tool vs Lateral (20%). Ahí la diferencia
+es genuina — posición del pulgar, zona de contacto — y el modelo no la está capturando
+bien, probablemente por desbalance de clases y por las limitaciones de usar solo coordenadas
+cartesianas sin ángulos articulares.
+
+**Identified issues for next run:**
+- Class imbalance: Medium Wrap (1,260 samples) vs Lateral (12,545) → weighted loss needed
+- No early stopping → wasted ~8 epochs after plateau
+- Uniform loss weights punish rare classes implicitly
 
 ---
 
