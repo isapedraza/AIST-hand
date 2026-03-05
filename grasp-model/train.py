@@ -30,7 +30,7 @@ network_type = "GCN_8_8_16_16_32"
 weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256
-NUM_WORKERS = 4
+NUM_WORKERS = 0
 num_epochs = 30
 
 # Reproducibility
