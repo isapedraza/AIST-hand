@@ -42,7 +42,7 @@ HOGraspNet JSONs → [ingestion] → CSV → [ToGraph] → PyG Data → [train.p
 INFERENCE (online)
 ──────────────────
                   ┌─ grasp-app ──────────────────────────────────────────────────────────┐
-Cámara → MediaPipe → landmarks XYZ
+Camera → MediaPipe → landmarks XYZ
                 │
                 ↓
              ToGraph → GCN → class_id + confidence

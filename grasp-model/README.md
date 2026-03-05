@@ -58,8 +58,8 @@ from grasp_gcn import get_network, ToGraph, GraspToken, VotingWindow
 |--------|-------------|
 | `get_network(name, num_classes)` | Instantiate the GCN model |
 | `ToGraph` | Convert a dict of 21 joints to a PyG `Data` object |
-| `GraspToken` | Dataclass `{class_id, class_name, confidence}` — contract between model and robot |
-| `VotingWindow(n=5)` | Temporal smoothing: emits a `GraspToken` only after N consecutive frames agree |
+| `GraspToken` | Dataclass `{class_id, class_name, confidence, apertura}` — full intent signal passed to the robot adapter |
+| `VotingWindow(n=5)` | Returns `True` when the same class appears N consecutive frames in a row, `False` otherwise |
 
 ---
 
@@ -70,9 +70,10 @@ The `GraspToken` is the semantic output of the classification layer. It decouple
 ```python
 @dataclass
 class GraspToken:
-    class_id:   int    # grasp type index (GRASP taxonomy)
-    class_name: str    # human-readable name (e.g. "Tripod")
+    class_id:   int    # grasp type index (Feix taxonomy)
+    class_name: str    # human-readable label (e.g. "Tripod")
     confidence: float  # model confidence [0, 1]
+    apertura:   float  # normalized hand openness [0, 1]
 ```
 
 ---
@@ -111,8 +112,9 @@ The system emits a `GraspToken` only after N consecutive frames agree on the sam
 
 ```python
 window = VotingWindow(n=5)
-token = window.update(class_id, class_name, confidence)
-# returns GraspToken if consensus reached, None otherwise
+confirmed = window.update(class_id, confidence)  # returns bool
+if confirmed:
+    token = GraspToken(class_id, class_name, confidence, apertura)
 ```
 
 ---
@@ -166,27 +168,14 @@ grasp-model/
 
 ## Dataset
 
-### Current (3-class sample)
+[HOGraspNet](https://hograspnet2024.github.io/) (ECCV 2024):
+- 28 grasp classes from the Feix taxonomy
+- ~1.5M annotated frames, 99 subjects, 30 YCB objects
+- 3D hand keypoints provided (21 joints, MANO fitting) — no MediaPipe needed
 
-A small hand-curated sample using images processed with MediaPipe:
+Joint ordering matches MediaPipe's — `ToGraph` works without modification.
 
-| Class | Name | Train | Val | Test |
-|-------|------|-------|-----|------|
-| 0 | Large Diameter | 437 | 54 | 56 |
-| 1 | Parallel Extension | 310 | 38 | 40 |
-| 2 | Precision Sphere | 176 | 22 | 22 |
-
-### Target: HOGraspNet (ECCV 2024)
-
-The full training dataset is [HOGraspNet](https://hograspnet2024.github.io/), which provides:
-- 28 grasp classes from the full GRASP taxonomy (indexed 1–33)
-- ~1.5M annotated RGB-D frames, 99 subjects, 30 YCB objects
-- **3D hand keypoints already extracted** (21 joints, MANO fitting) — no MediaPipe needed
-- JSON annotations in `labeling_data/` with fields:
-  - `annotations[0].class_id` / `class_name` — grasp label
-  - `hand` — 21 joint 3D poses in world coordinates
-
-Joint ordering (OpenPose) is identical to MediaPipe's — `ToGraph` works without modification.
+CSVs are generated from the raw HOGraspNet annotations using `scripts/ingestion/hograspnet_to_csv.py` and are not versioned in git (too large). See the script's docstring for usage.
 
 **To request access:** https://hograspnet2024.github.io/
 
@@ -285,10 +274,9 @@ Each hand is a graph of 21 nodes (joints) with edges defined by hand kinematics:
 
 ## Pending / Future Work
 
-- [ ] HOGraspNet ingestion script (JSON → CSV, replaces MediaPipe for training)
-- [ ] Real-time inference script (`grasp-app`)
+- [ ] Real-time inference app (`grasp-app`)
 - [ ] Shadow Hand YAML configuration from Dexonomy dataset
-- [ ] ROS integration (`grasp-ros`)
+- [ ] ROS integration (`grasp-robot`)
 
 ---
 

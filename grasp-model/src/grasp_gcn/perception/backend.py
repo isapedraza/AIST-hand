@@ -49,13 +49,8 @@ class PerceptionBackend(ABC):
 
     @abstractmethod
     def get_landmarks(self) -> dict:
-        """Return 21 hand joint coordinates in ToGraph-compatible format.
-
-        Returns
-        -------
-        dict
-            Joint name → [x, y, z] coordinates.
-            Missing joints may be omitted; ToGraph will handle them as masked nodes.
+        """Return 21 hand joint coordinates as {joint_name: [x, y, z]}.
+        Missing joints can be omitted; ToGraph treats them as masked nodes.
         """
 
     @abstractmethod
@@ -63,27 +58,10 @@ class PerceptionBackend(ABC):
         """Return True if the backend is initialized and ready to provide landmarks."""
 
     def render(self, token=None) -> None:
-        """Optional: display current sensor state and inference results.
+        """Called every frame by the inference loop. Override to add visualization.
 
-        This method exists to decouple visualization from the inference loop.
-        `main.py` calls `backend.render()` every frame without knowing what
-        the backend will show — or whether it will show anything at all.
-
-        This design means:
-        - The inference loop (main.py) stays clean and sensor-agnostic.
-        - Each backend owns its own visualization logic.
-        - A MediaPipe backend can show an OpenCV window with landmarks.
-        - A Gradio backend can update a web UI.
-        - A haptic glove backend can skip visualization entirely.
-        - No visualization code leaks into main.py.
-
-        Parameters
-        ----------
-        token : GraspToken or None
-            Current token to display (class, confidence, aperture).
-            None if no class has been confirmed yet.
-
-        Override this method to add visualization. Default: no-op.
+        token : GraspToken or None — current prediction, None if not yet confirmed.
+        Default is a no-op.
         """
 
     def release(self) -> None:
