@@ -415,6 +415,69 @@ without joint angles.
 - No early stopping → wasted ~8 epochs after plateau
 - Uniform loss weights punish rare classes implicitly
 
+### Run 002 — Weighted Loss + Early Stopping (2026-03-05)
+
+**Configuration:**
+- Model: `GCN_8_8_16_16_32`
+- Dataset: same splits as Run 001
+- Epochs: 20 (max) | Early stopping patience=5 | Batch size: 256 | LR: 1e-3
+- Loss: CrossEntropyLoss with inverse-frequency class weights (min=0.246, max=2.800)
+- Hardware: Google Colab T4 GPU | Training time: 38.49 min
+
+**Results:**
+
+| Split | Loss | Accuracy |
+|-------|------|----------|
+| Val (best, epoch 20) | 1.3561 | **56.1%** |
+| Test | 1.3615 | **56.1%** |
+| — | Macro F1 | 0.524 |
+| — | Weighted F1 | 0.565 |
+
+**Run 001 vs Run 002 — per-class F1 delta:**
+
+| Local idx | Feix | Grasp name | R001 F1 | R002 F1 | Δ |
+|:---------:|:----:|------------|---------|---------|---|
+| 6 | 3 | Medium Wrap | 0.047 | 0.203 | **+0.156** |
+| 19 | 25 | Lateral Tripod | 0.150 | 0.295 | **+0.145** |
+| 25 | 13 | Precision Sphere | 0.269 | 0.395 | **+0.126** |
+| 1 | 2 | Small Diameter | 0.339 | 0.395 | +0.056 |
+| 16 | 29 | Stick | 0.264 | 0.314 | +0.050 |
+| 8 | 5 | Light Tool | 0.505 | 0.340 | **-0.165** |
+| 17 | 23 | Adduction Grip | 0.589 | 0.427 | **-0.162** |
+| 22 | 33 | Inferior Pincer | 0.597 | 0.488 | -0.109 |
+| 27 | 14 | Tripod | 0.584 | 0.514 | -0.070 |
+| 24 | 12 | Precision Disk | 0.736 | 0.683 | -0.053 |
+
+**Global comparison:**
+
+| Metric | Run 001 | Run 002 | Δ |
+|--------|---------|---------|---|
+| Test Accuracy | 60.5% | 56.1% | -4.4pp |
+| Macro F1 | 0.529 | 0.524 | -0.005 |
+| Macro Recall | 0.522 | 0.571 | +0.049 |
+| Macro Precision | 0.580 | 0.520 | -0.060 |
+
+**Discussion:**
+
+The weighted loss moved recall up and precision down by roughly the same margin —
+a zero-sum redistribution of errors across classes. The macro F1 difference (-0.005)
+is within run-to-run noise and is not statistically meaningful without multiple seeds.
+
+The rare classes that were nearly failing did respond: Medium Wrap went from 0.047 to
+0.203, confirming that class imbalance was part of the problem. But it still sits at
+0.203, well below the model's average — imbalance was not the whole story.
+
+The frequent classes paid the price. Light Tool dropped from 0.505 to 0.340, Adduction
+Grip from 0.589 to 0.427. The model is now predicting rare classes more aggressively
+but with lower precision, which hurts the classes that were already working.
+
+The conclusion is that the representation bottleneck dominates over the imbalance effect.
+Weighted loss does not give the model new information — it just changes how it allocates
+its existing capacity. The path forward is richer features, not better loss weighting.
+Weighted loss will be dropped for Run 003, which will return to uniform CrossEntropyLoss
+and focus on adding anatomical features (joint angles, inter-fingertip distances, palm
+normal) to the node feature matrix.
+
 ---
 
 ## Pending / Future Work
