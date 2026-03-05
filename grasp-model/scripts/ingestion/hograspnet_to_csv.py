@@ -51,7 +51,7 @@ JOINTS = [
 WRIST_IDX = 0
 MIDDLE_MCP_IDX = 9  # referencia de escala
 
-HEADER = ["object", "grasp_type", "handedness", "mirrored"] + [
+HEADER = ["object", "grasp_type"] + [
     f"{j}_{ax}" for j in JOINTS for ax in ("x", "y", "z")
 ]
 
@@ -153,7 +153,7 @@ def extract_rows_from_zip(zip_path: Path, cams: list) -> list:
             pts = normalize_geometric(pts)
 
             # Construir fila CSV
-            row = [jname, local_class, "Right", 0]
+            row = [jname, local_class]
             for i in range(21):
                 row.extend([float(pts[i, 0]), float(pts[i, 1]), float(pts[i, 2])])
             rows.append(row)

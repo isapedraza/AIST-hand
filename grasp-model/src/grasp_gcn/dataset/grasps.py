@@ -153,18 +153,13 @@ class GraspsClass(InMemoryDataset):
 
     # -------------------------------------------------------------
     def _sample_from_csv(self, grasps, idx):
-        """Extrae una muestra del CSV, ignorando columnas extra (handedness/mirrored)."""
+        """Extrae una muestra del CSV."""
         row = grasps.iloc[idx]
         object_ = row["object"]
         grasp_type_ = int(row["grasp_type"])
 
-        # Detecta columnas adicionales
-        has_handed = "handedness" in grasps.columns
-        has_mirror = "mirrored" in grasps.columns
-        base = 2 + int(has_handed) + int(has_mirror)
-
-        # Extrae 21x3 valores (MediaPipe joints)
-        vals = np.copy(row.iloc[base:base + 63]).astype(np.float32, copy=False).reshape(21, 3)
+        # Extrae 21x3 valores (MediaPipe joints) — columnas 2..64
+        vals = np.copy(row.iloc[2:65]).astype(np.float32, copy=False).reshape(21, 3)
         (WRIST_,
          THUMB_CMC_, THUMB_MCP_, THUMB_IP_, THUMB_TIP_,
          INDEX_FINGER_MCP_, INDEX_FINGER_PIP_, INDEX_FINGER_DIP_, INDEX_FINGER_TIP_,
@@ -197,11 +192,6 @@ class GraspsClass(InMemoryDataset):
             'PINKY_DIP': PINKY_DIP_,
             'PINKY_TIP': PINKY_TIP_,
         }
-
-        if has_handed:
-            sample_dict['handedness'] = row['handedness']
-        if has_mirror:
-            sample_dict['mirrored'] = int(row['mirrored'])
 
         return sample_dict
 
