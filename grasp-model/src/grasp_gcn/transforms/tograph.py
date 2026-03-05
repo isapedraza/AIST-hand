@@ -28,13 +28,38 @@ class ToGraph:
                  features: str = 'xyz',
                  make_undirected: bool = True,
                  use_confidence: bool = False,
-                 conf_threshold: float = 0.5):
+                 conf_threshold: float = 0.5,
+                 add_joint_angles: bool = False):
         assert features in ('xy', 'xyz')
         self.features = features
-        self.F = 2 if features == 'xy' else 3
         self.make_undirected = make_undirected
         self.use_confidence = use_confidence
         self.conf_threshold = conf_threshold
+        self.add_joint_angles = add_joint_angles
+        self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
+        self.F = self.F_xyz + (1 if add_joint_angles else 0)  # total features per node
+
+        # Parent joint index for each of the 21 joints (-1 = no parent).
+        # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
+        #        INDEX_MCP(5)..INDEX_TIP(8), MIDDLE_MCP(9)..MIDDLE_TIP(12),
+        #        RING_MCP(13)..RING_TIP(16), PINKY_MCP(17)..PINKY_TIP(20)
+        self._parent_of = [
+            -1,           # 0  WRIST
+             0, 1, 2, 3,  # 1-4  THUMB_CMC..TIP
+             0, 5, 6, 7,  # 5-8  INDEX_MCP..TIP
+             0, 9,10,11,  # 9-12 MIDDLE_MCP..TIP
+             0,13,14,15,  # 13-16 RING_MCP..TIP
+             0,17,18,19,  # 17-20 PINKY_MCP..TIP
+        ]
+        # First child index for each joint (-1 = tip or WRIST with multiple children).
+        self._child_of = [
+            -1,             # 0  WRIST
+             2, 3, 4, -1,   # 1-4  THUMB
+             6, 7, 8, -1,   # 5-8  INDEX
+            10,11,12, -1,   # 9-12 MIDDLE
+            14,15,16, -1,   # 13-16 RING
+            18,19,20, -1,   # 17-20 PINKY
+        ]
 
         # Orden fijo de 21 joints
         self.joints = [
@@ -93,10 +118,10 @@ class ToGraph:
             else:
                 arr = np.array(raw, dtype=float)
                 # Ajustar a F dims (recortar o rellenar)
-                if arr.shape[0] < self.F:
-                    arr = np.pad(arr, (0, self.F - arr.shape[0]), mode='constant', constant_values=0.0)
-                elif arr.shape[0] > self.F:
-                    arr = arr[:self.F]
+                if arr.shape[0] < self.F_xyz:
+                    arr = np.pad(arr, (0, self.F_xyz - arr.shape[0]), mode='constant', constant_values=0.0)
+                elif arr.shape[0] > self.F_xyz:
+                    arr = arr[:self.F_xyz]
                 valid = np.isfinite(arr).all()
                 v = np.nan_to_num(arr, nan=0.0)
 
@@ -107,6 +132,27 @@ class ToGraph:
 
             rows.append(v)
             mask_vals.append(1.0 if valid else 0.0)
+
+        # Joint flexion angles (optional)
+        if self.add_joint_angles:
+            positions = np.vstack(rows)  # [21, 3] — always xyz regardless of F
+            angles = []
+            for i in range(21):
+                p = self._parent_of[i]
+                c = self._child_of[i]
+                if p == -1 or c == -1:
+                    angles.append(0.0)
+                else:
+                    v_in  = positions[i] - positions[p]
+                    v_out = positions[c] - positions[i]
+                    n_in  = np.linalg.norm(v_in)
+                    n_out = np.linalg.norm(v_out)
+                    if n_in < 1e-8 or n_out < 1e-8:
+                        angles.append(0.0)
+                    else:
+                        cos_a = np.clip(np.dot(v_in, v_out) / (n_in * n_out), -1.0, 1.0)
+                        angles.append(float(np.arccos(cos_a)))
+            rows = [np.append(r, a) for r, a in zip(rows, angles)]
 
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]

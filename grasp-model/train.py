@@ -42,7 +42,7 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls_run002')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls_run003')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
@@ -55,12 +55,7 @@ print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTe
 print(f"✅ Num features per node: {datasetTrain.num_features}")
 print(f"✅ Num classes: {datasetTrain.num_classes}")
 
-# ==================== Class Weights ==============================
-all_labels = torch.cat([data.y.view(-1) for data in datasetTrain])
-counts = torch.bincount(all_labels, minlength=datasetTrain.num_classes).float()
-class_weights = (1.0 / counts)
-class_weights = class_weights / class_weights.sum() * datasetTrain.num_classes
-print(f"✅ Class weights computed (min={class_weights.min():.3f}, max={class_weights.max():.3f})")
+print(f"✅ Features per node: {datasetTrain.num_features} (xyz + joint angle)")
 
 # DataLoaders
 train_loader = DataLoader(datasetTrain, batch_size=BATCH_SIZE, shuffle=True,  num_workers=NUM_WORKERS)
@@ -74,7 +69,6 @@ print('--------------------------------')
 
 # ==================== Model ======================================
 model_ = get_network(network_type, datasetTrain.num_features, datasetTrain.num_classes).to(device_)
-class_weights = class_weights.to(device_)
 
 def reset_weights(m):
     """Reset model weights to avoid leakage between runs."""
@@ -121,7 +115,7 @@ def train(model_, train_loader_, val_loader_, writer):
             optimizer_.zero_grad()
             pred = model_(batch)
             label = batch.y.view(-1)
-            loss = F.nll_loss(pred, label, weight=class_weights)
+            loss = F.nll_loss(pred, label)
             loss.backward()
             optimizer_.step()
             epoch_loss += loss.item() * batch.num_graphs

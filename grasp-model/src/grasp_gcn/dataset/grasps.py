@@ -28,7 +28,7 @@ class GraspsClass(InMemoryDataset):
         self.csvs = csvs
         self.normalize = normalize
         self.stats = stats
-        self.k = 0
+        self.k = 1
 
         super(GraspsClass, self).__init__(root, transform, pre_transform)
 
@@ -91,7 +91,7 @@ class GraspsClass(InMemoryDataset):
 
     # -------------------------------------------------------------
     def process(self):
-        transform_tograph_ = ToGraph(features='xyz', make_undirected=True)
+        transform_tograph_ = ToGraph(features='xyz', make_undirected=True, add_joint_angles=True)
         data_list_ = []
 
         for csv_path in self.raw_paths:

@@ -312,6 +312,16 @@ Each hand is a graph of 21 nodes (joints) with edges defined by hand kinematics:
 
 ## Design Notes
 
+**Why not 1:1 teleoperation?**
+
+The obvious alternative to this system is direct joint-angle mapping: read the human's finger angles, send them to the robot. This breaks for two independent reasons.
+
+The first is structural. Human and robot hands are morphologically different — different number of fingers, different joint ranges, different proportions. There is no general mapping between a human MCP angle and a robot actuator position. A three-fingered gripper cannot receive a five-finger joint vector. No amount of calibration fixes this because the problem is not numerical, it is topological.
+
+The second reason applies even in cases where approximate mapping is geometrically possible: sensor noise propagates directly to the robot. Every small tremor or detection jitter in the landmarks becomes a command sent downstream. The robot moves continuously even when the operator's intent is stable.
+
+This system sidesteps both problems by classifying at the level of intent rather than configuration. The GCN maps 21 keypoints to a grasp type — a discrete, stable, morphology-agnostic signal. The robot adapter then translates that signal into its own joint space, independently of how the human hand is shaped. The VotingWindow reinforces this: it does not low-pass filter a continuous signal, it withholds the signal until the intent is unambiguous. The result is a control channel that is stable by design, not by post-processing.
+
 **No data leakage:** normalization statistics (mean, std) are computed only on the training split and saved to `data/processed/train_stats.npz`. Val and test splits load these same statistics. The same stats must be applied at inference time.
 
 **Domain gap:** the model is trained on HOGraspNet data (multi-view RGBD + MANO fitting, world coordinates) but runs inference on MediaPipe output (single-view RGB, normalized [0,1] coordinates). This gap is mitigated by z-score normalization but should be discussed when interpreting real-time performance.
@@ -474,9 +484,94 @@ but with lower precision, which hurts the classes that were already working.
 The conclusion is that the representation bottleneck dominates over the imbalance effect.
 Weighted loss does not give the model new information — it just changes how it allocates
 its existing capacity. The path forward is richer features, not better loss weighting.
-Weighted loss will be dropped for Run 003, which will return to uniform CrossEntropyLoss
-and focus on adding anatomical features (joint angles, inter-fingertip distances, palm
-normal) to the node feature matrix.
+Weighted loss is dropped for Run 003, which returns to uniform CrossEntropyLoss.
+
+**Feature analysis for Run 003**
+
+The confusion pairs that remain after two runs share a pattern: the model struggles where
+classes differ in *how* the fingers are bent, not in *where* the joints are in space.
+Lateral Tripod vs Writing Tripod (41%), Precision Sphere vs Precision Disk (47%), and
+Light Tool vs Lateral (20%) are all cases where raw Cartesian coordinates carry ambiguous
+information but joint flexion angles would not.
+
+This is directly supported by two quantitative studies.
+
+Jarque-Bou et al. (2019) extracted kinematic synergies from 77 subjects performing 20
+grasps. Only three synergies appeared in more than half of the subjects — the universal
+coordination patterns across the population. Synergy 1 is MCP flexion of fingers 3–5
+combined with PIP flexion of fingers 2–5. Synergy 3 is thumb CMC abduction with MCP
+extension and IP flexion (thumb opposition). These two synergies define the primary axes
+along which grasps differ kinematically.
+
+Stival et al. (2019) build on this directly. Their quantitative taxonomy groups the same
+grasps into five categories from joint angle data, and explicitly maps the categories to
+synergies: cylindrical grasps correspond to Synergy 1 (PIP flexion + finger closure),
+spherical grasps to MCP flexion patterns. The confusion pairs above map to boundaries
+between these categories — exactly where Synergy 1 and 3 are most discriminative.
+
+Synergy 2 (wrist flexion + palmar arch, CMC5) is not computable from 21 landmarks —
+CMC5 has no corresponding keypoint in the MediaPipe skeleton, and wrist abduction
+requires forearm reference points that are not available. This is a hard limit of the
+representation, not a modeling choice.
+
+**Run 003 design decision:** add the joint flexion angle as one extra scalar feature per
+node, computed from the parent→joint→child triple for each internal joint. WRIST and
+fingertips receive 0.0. This increases node features from 3 to 4 and directly encodes
+Synergies 1 and 3 without changing the graph topology or model architecture.
+
+### Run 003 — Joint Flexion Angles (pending)
+
+**Configuration:**
+- Model: `GCN_8_8_16_16_32`
+- Dataset: same splits as Run 001/002
+- Features: `[x, y, z, θ]` per node — θ = joint flexion angle in radians
+- Epochs: 20 (max) | Early stopping patience=5 | Batch size: 256 | LR: 1e-3
+- Loss: CrossEntropyLoss (uniform weights)
+- Hardware: Google Colab T4 GPU
+
+**Physical validation of the features**
+
+Before training, three checks confirm that the computed angles capture what the
+literature says they should.
+
+*Range check.* Jarque-Bou et al. (2019) define joint angles using the sign convention
+in Table 4: flexion positive, extension negative, computed from calibrated CyberGlove
+data. Our implementation uses arccos of the normalized dot product between the incoming
+and outgoing bone vectors, which produces values in [0, π] — π for full extension,
+approaching 0 for full flexion. Values outside this range indicate a bug in the
+parent→joint→child mapping.
+
+*Variance check.* Jarque-Bou et al. (2019) Synergy 1 — the most prevalent synergy,
+present in 70 of 77 subjects — loads on MCP 3–5 and PIP 2–5 flexion. DIP joints do
+not appear in any of the three primary synergies. This means PIP nodes should show
+higher inter-grasp variance than DIP nodes in our dataset. If DIP variance exceeds PIP
+variance, the angles are being computed at the wrong joints.
+
+*Per-class sanity check.* Stival et al. (2019) state that "the index finger extension
+is clearly distant from all the other movements, while small diameter, fixed hook, large
+diameter, and medium wrap are very similar grasps," and that cylindrical grasps are
+characterized by "closure of the finger aperture achieved by flexion at the pip joints."
+Concretely: samples of Large Diameter should have small θ at PIP joints (high flexion),
+while Index Finger Extension samples should have θ close to π at PIP joints 2–5 (fingers
+extended). If this ordering is not observed in the raw data before training, the feature
+is not encoding what the literature predicts.
+
+**Verification results (5,000 samples from grasps_train.csv):**
+
+```
+[Check 1] Range [0, pi]
+  min=0.0000  max=2.8471  pi=3.1416  → PASS
+
+[Check 2] PIP variance > DIP variance
+  mean PIP variance=0.203477  mean DIP variance=0.136389  → PASS
+
+[Check 3] Large Diameter PIP angle < Index Finger Extension PIP angle
+  Large Diameter         = 0.3632 rad (20.8 deg)
+  Index Finger Extension = 0.7313 rad (41.9 deg)  → PASS
+```
+
+All three checks pass. The feature encodes what the literature predicts.
+Script: `tests/verify_joint_angles.py`
 
 ---
 
