@@ -24,14 +24,14 @@ print('🚀 Import libraries: OK')
 # ====================== Hyperparameters =========================
 
 
-lr = 5e-4                # 🔹 Subido para acelerar el aprendizaje inicial
-normalize = True          # ✅ Mantener normalización por muestra
+lr = 1e-3
+normalize = True
 network_type = "GCN_8_8_16_16_32"
-weight_decay = 5e-4       # ✅ Mantener para regularización
-seed = 42                 # ✅ Reproducibilidad
-BATCH_SIZE = 8            # 🔹 Mayor batch para gradientes más estables
-NUM_WORKERS = 2           # 🔹 Paralelismo ligero en CPU
-num_epochs = 40           # 🔹 Más iteraciones para convergencia completa
+weight_decay = 5e-4
+seed = 42
+BATCH_SIZE = 256
+NUM_WORKERS = 4
+num_epochs = 30
 
 # Reproducibility
 torch.manual_seed(seed)
@@ -41,7 +41,7 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/testJune17')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")

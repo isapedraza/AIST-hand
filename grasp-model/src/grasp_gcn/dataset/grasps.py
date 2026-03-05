@@ -52,11 +52,11 @@ class GraspsClass(InMemoryDataset):
     @property
     def raw_file_names(self):
         if self.split == "train":
-            return ['grasps_sample_train.csv']
+            return ['grasps_train.csv']
         elif self.split == "val":
-            return ['grasps_sample_val.csv']
+            return ['grasps_val.csv']
         elif self.split == "test":
-            return ['grasps_sample_test.csv']
+            return ['grasps_test.csv']
         elif self.split is None and self.csvs is not None:
             out = []
             raw_dir_abs = os.path.abspath(self.raw_dir)

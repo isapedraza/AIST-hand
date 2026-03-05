@@ -1,0 +1,17 @@
+# Shadow Hand grasp configuration
+# Format per class:
+#   pose_base: canonical joint angles (degrees) for this grasp type
+#   aperture_joints: MediaPipe landmarks used to compute aperture [0,1]
+#
+# Canonical poses must be defined via simulation-based pose synthesis.
+# See Dexonomy (RSS 2025) for methodology reference.
+#
+# Status: TODO
+
+# Example structure (not yet populated):
+# 0:  # Large Diameter
+#   pose_base:
+#     rh_FFJ1: 90
+#     rh_FFJ2: 45
+#     ...
+#   aperture_joints: [THUMB_TIP, MIDDLE_FINGER_TIP]
