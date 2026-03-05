@@ -384,31 +384,31 @@ Curve nearly plateaus after epoch 21 — marginal gains (~0.001/epoch from ep 21
 
 **Discussion:**
 
-El modelo aprende bien las clases con configuraciones geométricamente distintivas —
-prismatic grasps, distal-type, index finger extension — y falla principalmente en pares
-donde la diferencia entre clases no está en la forma de la mano sino en el objeto sostenido.
+The model learns well on classes with geometrically distinctive keypoint configurations —
+prismatic grasps, distal-type, index finger extension — and fails mainly on pairs where
+the class difference lies in the object being held rather than in the hand shape itself.
 
-Esto no es una sorpresa: Feix et al. (2016) ya señalaron que las 33 clases de la taxonomía
-se reducen a 17 si se elimina el efecto del objeto (tamaño, forma, orientación). HOGraspNet
-tomó ese camino parcialmente al reducir a 28, pero los resultados muestran que varios pares
-siguen siendo geométricamente indistinguibles desde keypoints puros.
+This is not surprising: Feix et al. (2016) noted that the 33 taxonomy classes reduce to
+17 if object properties (size, shape, orientation) are factored out. HOGraspNet took a
+partial step in that direction by reducing to 28, but the results show that several pairs
+remain geometrically indistinguishable from keypoints alone.
 
-Los casos más claros son Precision Sphere vs Precision Disk (47% de confusión mutua) y el
-grupo cilíndrico Large/Medium/Small Diameter: en todos ellos la mano adopta la misma
-topología y es el objeto el que varía. El modelo no tiene acceso al objeto, así que confundir
-estas clases es la respuesta correcta dado lo que ve.
+The clearest cases are Precision Sphere vs Precision Disk (47% mutual confusion) and the
+cylindrical group Large/Medium/Small Diameter: in all of these, the hand adopts the same
+topology and it is the object that varies. The model has no access to the object, so
+confusing these classes is the correct response given what it observes.
 
-Esto conecta directamente con el diseño del GraspToken. La separación entre `class_id`
-(topología discreta) y `apertura` (adaptación continua al objeto) ya anticipa este problema:
-los grupos que el modelo no puede distinguir son exactamente los que `apertura` resuelve
-en tiempo de ejecución. En ese sentido, las "confusiones" del clasificador en estos grupos
-no son errores funcionales para el robot.
+This connects directly to the GraspToken design. The separation between `class_id`
+(discrete topology) and `apertura` (continuous adaptation to the object) already anticipates
+this problem: the groups the classifier cannot distinguish are exactly those that `apertura`
+resolves at runtime. In that sense, the classifier's "confusions" within these groups are
+not functional errors for the robot.
 
-Donde sí hay un problema real es en pares topológicamente distintos con alta confusión:
-Lateral Tripod vs Writing Tripod (41%) y Light Tool vs Lateral (20%). Ahí la diferencia
-es genuina — posición del pulgar, zona de contacto — y el modelo no la está capturando
-bien, probablemente por desbalance de clases y por las limitaciones de usar solo coordenadas
-cartesianas sin ángulos articulares.
+Where there is a genuine problem is in topologically distinct pairs with high confusion:
+Lateral Tripod vs Writing Tripod (41%) and Light Tool vs Lateral (20%). The difference
+there is real — thumb position, contact surface — and the model is not capturing it well,
+likely due to class imbalance and the limitations of using raw Cartesian coordinates
+without joint angles.
 
 **Identified issues for next run:**
 - Class imbalance: Medium Wrap (1,260 samples) vs Lateral (12,545) → weighted loss needed
