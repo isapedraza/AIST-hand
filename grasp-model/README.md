@@ -794,6 +794,201 @@ The two-step approach is therefore: apply the Feix cell collapse as the structur
 then decide on the Tripod cluster based on robot execution requirements. That decision
 is deferred to Run 004 design.
 
+### Run 004 — Feix Cell Collapse: 28 → 16 Classes (2026-03-06)
+
+**Configuration:**
+- Model: `GCN_8_8_16_16_32`
+- Dataset: same CSV splits as Run 001–003, `collapse=True` (28 → 16 Feix functional classes)
+- Features: `[x, y, z, θ]` per node — same as Run 003
+- Epochs: 20 (max) | Batch size: 256 | LR: 1e-3
+- Loss: CrossEntropyLoss (uniform weights)
+- Early stopping: patience=10 (not triggered — model still improving at epoch 20)
+- Hardware: Google Colab T4 GPU | Training time: 41.4 min
+
+**Results:**
+
+| Split | Loss | Accuracy |
+|-------|------|----------|
+| Val (best, epoch 19) | 0.9140 | **69.3%** |
+| Test | 0.9350 | **68.5%** |
+| — | Macro F1 | 0.621 |
+| — | Weighted F1 | 0.678 |
+
+**Global comparison:**
+
+| Metric | Run 001 | Run 002 | Run 003 | Run 004 | Δ (vs 003) |
+|--------|---------|---------|---------|---------|------------|
+| Test Accuracy | 60.5% | 56.1% | 63.8% | **68.5%** | +4.7pp |
+| Macro F1 | 0.529 | 0.524 | 0.573 | **0.621** | +0.048 |
+| Weighted F1 | 0.593 | 0.565 | 0.630 | **0.678** | +0.048 |
+
+> Run 001–003 use 28 classes; Run 004 uses 16. The comparison is valid as a measure of
+> model progress across runs, but absolute accuracy values are not directly comparable:
+> fewer classes reduce the chance of an incorrect prediction by construction.
+
+**Per-class results:**
+
+| Class | Grasp (collapsed cell) | Precision | Recall | F1 | Support |
+|:-----:|------------------------|:---------:|:------:|:--:|--------:|
+| 0 | Power, Palm, VF 2-5, Abducted | 0.567 | 0.620 | 0.593 | 13,759 |
+| 1 | Power, Palm, VF 2-5, Adducted | 0.694 | 0.693 | 0.693 | 23,370 |
+| 2 | Power, Pad, VF 2-4, Abducted | 0.709 | 0.813 | **0.758** | 9,288 |
+| 3 | Intermediate, Side, VF 2, Adducted | 0.689 | 0.741 | 0.714 | 14,663 |
+| 4 | Precision, Pad, VF 2, Abducted | 0.702 | 0.785 | 0.741 | 14,527 |
+| 5 | Precision, Pad, VF 2-4, Abducted | 0.591 | 0.382 | 0.464 | 5,550 |
+| 6 | Precision, Pad, VF 2-5, Abducted | 0.761 | 0.834 | **0.796** | 17,686 |
+| 7 | Index Finger Extension | 0.747 | 0.865 | **0.802** | 7,813 |
+| 8 | Parallel Extension | 0.788 | 0.611 | 0.688 | 3,701 |
+| 9 | Distal | 0.823 | 0.752 | 0.786 | 8,958 |
+| 10 | Ring | 0.768 | 0.289 | 0.420 | 2,025 |
+| 11 | Sphere 3-Finger | 0.782 | 0.370 | 0.502 | 5,312 |
+| 12 | Adduction Grip | 0.799 | 0.551 | 0.652 | 2,172 |
+| 13 | Writing Tripod | 0.473 | 0.660 | 0.551 | 7,812 |
+| 14 | Lateral Tripod | 0.507 | 0.100 | 0.167 | 2,069 |
+| 15 | Tripod | 0.660 | 0.564 | 0.608 | 10,191 |
+
+**Main confusion pairs:**
+
+| True class | Grasp | Predicted as | Grasp | Count | % support |
+|---|---|---|---|---:|---:|
+| 14 | Lateral Tripod | 13 | Writing Tripod | 817 | 39% |
+| 10 | Ring | 4 | Precision, Pad, VF 2 | 862 | 43% |
+| 11 | Sphere 3-Finger | 15 | Tripod | 1182 | 22% |
+| 5 | Precision, Pad, VF 2-4 | 13 | Writing Tripod | 899 | 16% |
+| 15 | Tripod | 13 | Writing Tripod | 1228 | 12% |
+| 1 | Power, Palm, VF 2-5, Adducted | 3 | Intermediate, Side, VF 2 | 2794 | 12% |
+| 0 | Power, Palm, VF 2-5, Abducted | 6 | Precision, Pad, VF 2-5 | 1716 | 12% |
+
+**Discussion:**
+
+The Feix cell collapse raises Macro F1 by 0.048 and Test Accuracy by 4.7pp relative to
+Run 003. Both changes are structural: the collapse removes distinctions the model cannot
+make, specifically within-cell separations based on object size or contact surface, not
+distinctions it failed to learn. The improvement for the removed classes is guaranteed by
+construction. The question is whether the remaining 16-class problem is easier, or whether
+new confusion patterns emerge at cell boundaries.
+
+The answer is both. The Precision Sphere–Disk confusion that accounted for 43% of Precision
+Sphere errors in Run 003 is eliminated by definition: both merge into class 6, which
+reaches F1=0.796, the highest in the run. The cylindrical group (Large Diameter, Small
+Diameter, Medium Wrap, Power Disk, Power Sphere) collapses into class 0, removing whatever
+within-group confusion existed between them. Both outcomes match the predictions in the
+Run 003 cross-reference table.
+
+The Tripod cluster does not improve. Lateral Tripod (class 14) reaches F1=0.167, the
+worst class by a large margin. The model assigns 39% of Lateral Tripod samples to Writing
+Tripod (class 13) and another 10% to class 3 (Intermediate Side Adducted). Writing Tripod
+(class 13), Lateral Tripod (class 14), and Tripod (class 15) are all singletons: the
+collapse does not merge them. Their mutual confusion persists because all three involve
+three-finger opposition, and the kinematic difference between them is the specific finger
+combination and the lateral vs. palmar contact surface on the thumb, which 21 landmark
+coordinates do not reliably encode.
+
+Ring (class 10, 2,025 samples) is predicted as Precision Pad VF2 (class 4) in 43% of
+cases. Ring is a power grip on a single finger, which shares pad opposition and a small
+virtual finger count with the precision group. With only 2,025 test samples, the model
+has limited exposure to a geometrically unusual class. Sphere 3-Finger (class 11, 5,312
+samples) distributes across Tripod (22%), the cylindrical group (11%), and the adducted
+group (8%), indicating a diffuse representation with no dominant prediction target.
+
+The model had not converged at epoch 20: val acc was 0.693 at epoch 19 and early stopping
+(patience=10) was not triggered. An extended run is the next step before introducing new
+features.
+
+### Run 004b — Extended Training: 40 Epochs (2026-03-06)
+
+**Configuration changes from Run 004:** max epochs 20 → 40. Everything else identical.
+
+**Results:**
+
+| Split | Loss | Accuracy |
+|-------|------|----------|
+| Val (best, epoch 37) | 0.8640 | **71.0%** |
+| Test | 0.8680 | **70.7%** |
+| — | Macro F1 | 0.660 |
+| — | Weighted F1 | 0.703 |
+
+**Global comparison:**
+
+| Metric | Run 001 | Run 002 | Run 003 | Run 004 | Run 004b | Δ (vs 004) |
+|--------|---------|---------|---------|---------|----------|------------|
+| Test Accuracy | 60.5% | 56.1% | 63.8% | 68.5% | **70.7%** | +2.2pp |
+| Macro F1 | 0.529 | 0.524 | 0.573 | 0.621 | **0.660** | +0.039 |
+| Weighted F1 | 0.593 | 0.565 | 0.630 | 0.678 | **0.703** | +0.025 |
+
+**Per-class results (with comparison to Run 004):**
+
+| Class | Grasp (collapsed cell) | R004 F1 | R004b F1 | Δ | Support |
+|:-----:|------------------------|:-------:|:--------:|:---:|--------:|
+| 0 | Power, Palm, VF 2-5, Abducted | 0.593 | 0.612 | +0.019 | 13,759 |
+| 1 | Power, Palm, VF 2-5, Adducted | 0.693 | 0.703 | +0.010 | 23,370 |
+| 2 | Power, Pad, VF 2-4, Abducted | 0.758 | **0.770** | +0.012 | 9,288 |
+| 3 | Intermediate, Side, VF 2, Adducted | 0.714 | 0.725 | +0.011 | 14,663 |
+| 4 | Precision, Pad, VF 2, Abducted | 0.741 | 0.761 | +0.020 | 14,527 |
+| 5 | Precision, Pad, VF 2-4, Abducted | 0.464 | 0.515 | +0.051 | 5,550 |
+| 6 | Precision, Pad, VF 2-5, Abducted | 0.796 | **0.809** | +0.013 | 17,686 |
+| 7 | Index Finger Extension | 0.802 | **0.830** | +0.028 | 7,813 |
+| 8 | Parallel Extension | 0.688 | 0.694 | +0.006 | 3,701 |
+| 9 | Distal | 0.786 | **0.805** | +0.019 | 8,958 |
+| 10 | Ring | 0.420 | 0.561 | **+0.141** | 2,025 |
+| 11 | Sphere 3-Finger | 0.502 | 0.656 | **+0.154** | 5,312 |
+| 12 | Adduction Grip | 0.652 | 0.662 | +0.010 | 2,172 |
+| 13 | Writing Tripod | 0.551 | 0.594 | +0.043 | 7,812 |
+| 14 | Lateral Tripod | 0.167 | 0.229 | +0.062 | 2,069 |
+| 15 | Tripod | 0.608 | 0.633 | +0.025 | 10,191 |
+
+**Main confusion pairs:**
+
+| True class | Grasp | Predicted as | Grasp | Count | % support |
+|---|---|---|---|---:|---:|
+| 14 | Lateral Tripod | 13 | Writing Tripod | 573 | 28% |
+| 10 | Ring | 4 | Precision, Pad, VF 2 | 554 | 27% |
+| 1 | Power, Palm, VF 2-5, Adducted | 3 | Intermediate, Side, VF 2 | 3140 | 13% |
+| 5 | Precision, Pad, VF 2-4 | 15 | Tripod | 620 | 11% |
+| 11 | Sphere 3-Finger | 15 | Tripod | 628 | 12% |
+| 15 | Tripod | 11 | Sphere 3-Finger | 958 | 9% |
+| 13 | Writing Tripod | 1 | Power, Palm, VF 2-5, Adducted | 858 | 11% |
+
+**Discussion:**
+
+The additional 20 epochs confirm that Run 004 had not converged: val acc continued rising
+from 0.693 at epoch 19 to 0.710 at epoch 37, and early stopping (patience=10) was not
+triggered before the epoch limit. The improvement from 004 to 004b is distributed across
+all 16 classes, not concentrated in any single one.
+
+The two largest per-class gains are in Ring (class 10, +0.141) and Sphere 3-Finger (class
+11, +0.154). Both were the worst singletons in Run 004, with low recall caused by their
+small support relative to nearby classes. More training epochs partially resolve this: Ring
+recall rises from 29% to 51%, and Sphere 3-Finger recall from 37% to 65%. The primary
+confusion for Ring shifts from Precision Pad VF2 (43% → 27%) to the same class, suggesting
+the model is forming a cleaner boundary.
+
+Lateral Tripod (class 14) remains the worst class at F1=0.229. Recall improves from 10%
+to 15%, but the confusion with Writing Tripod (28% of support) and Intermediate Side
+Adducted (12%) is structural: the three tripod singletons differ in contact topology in
+ways that 21 landmark coordinates and joint angles do not separate. Additional epochs do
+not resolve this — the features do not contain the information required.
+
+A new confusion pattern appears between Tripod (class 15) and Sphere 3-Finger (class 11):
+9.4% of Tripod samples are predicted as Sphere 3-Finger, and 11.8% of Sphere 3-Finger
+samples are predicted as Tripod. Neither class appeared in each other's top confusions in
+Run 004. This is a boundary effect: as the model corrects the Sphere 3-Finger representation
+(improving recall from 37% to 65%), it draws on samples from nearby classes, creating a
+new bidirectional confusion at the Tripod boundary.
+
+The confusion between Power Palm Adducted (class 1) and Intermediate Side Adducted (class
+3) persists: 13% of class 1 samples are predicted as class 3. Both involve thumb adduction
+and a closed palm, with the main distinction being the opposition type (pad vs. side
+contact on the thumb). This is a cross-group boundary confusion that is not resolved by
+more training alone.
+
+The model reached epoch 40 without triggering early stopping (best at epoch 37, three
+epochs remaining within the patience window). The plateau between epochs 34 and 40 (val
+acc oscillating between 0.702 and 0.710) suggests the representational ceiling for this
+feature set and epoch budget is near. The remaining confusion clusters — Tripod singletons,
+Thumb Adducted boundary, and low-support singletons — require new features, not more
+training.
+
 ---
 
 ## Pending / Future Work
