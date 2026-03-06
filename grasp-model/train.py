@@ -31,8 +31,8 @@ weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256
 NUM_WORKERS = 0
-num_epochs = 20
-EARLY_STOPPING_PATIENCE = 5
+num_epochs = 40
+EARLY_STOPPING_PATIENCE = 10
 
 # Reproducibility
 torch.manual_seed(seed)
@@ -42,7 +42,7 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_16cls_run004')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_16cls_run004b')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
