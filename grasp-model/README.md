@@ -1399,8 +1399,25 @@ boundary between "unresolvable" and "needs a better feature" requires case-by-ca
 
 ## Pending / Future Work
 
-- [ ] Real-time inference app (`grasp-app`)
-- [ ] Shadow Hand YAML configuration from Dexonomy dataset
+### Model
+- [ ] **Run 006 — contact-dependent collapse:** Collapse class 0+6 (Power Palm Abducted +
+  Precision Pad Abducted) and class 1+3 (Power Palm Adducted + Intermediate Side Adducted).
+  Requires Dexonomy verification first to confirm robot joint trajectories are similar enough.
+- [ ] **Dexonomy verification:** Check whether collapsed pairs produce sufficiently similar
+  joint configs for Shadow Hand. Also evaluate Tripod cluster (classes 13/14/15) and
+  Sphere 3-Finger (class 11) — collapse or new features depending on result.
+- [ ] **Tripod cluster / Sphere 3-Finger:** Either new features (inter-finger abduction,
+  fingertip distances) or collapse. Not yet justified either way — verify literature first.
+  Any new feature must be grounded in literature before implementation (same process as
+  θ_flex and θ_CMC: identify confusions it targets → verify computability → empirical checks
+  → train).
+- [ ] **LR scheduler:** Try cosine annealing or ReduceLROnPlateau. Low cost, no new features.
+- [ ] **Index Finger Extension → Distal confusion (9.6%):** Investigate — unexpected given
+  θ_CMC should separate these (different rows and columns). May be a training artifact.
+
+### Framework
+- [ ] Real-time inference app (`grasp-app`): MediaPipeBackend → ToGraph → GCN → VotingWindow → GraspToken
+- [ ] Shadow Hand YAML configuration from Dexonomy dataset (`grasp-robot`)
 - [ ] ROS integration (`grasp-robot`)
 
 ---
