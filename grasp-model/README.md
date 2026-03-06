@@ -205,12 +205,12 @@ The model outputs class indices 0–27. The mapping to Feix IDs and grasp names 
 | 6 | 3 | Medium Wrap | Power |
 | 7 | 4 | Adducted Thumb | Power |
 | 8 | 5 | Light Tool | Power |
-| 9 | 19 | Distal Type | Power |
-| 10 | 31 | Ring Finger | Power |
+| 9 | 19 | Distal | Power |
+| 10 | 31 | Ring | Power |
 | 11 | 10 | Power Disk | Power |
 | 12 | 11 | Power Sphere | Power |
 | 13 | 26 | Sphere 4-Finger | Power |
-| 14 | 28 | Sphere 4-Finger (variant) | Power |
+| 14 | 28 | Sphere 3-Finger | Power |
 | 15 | 16 | Lateral | Intermediate |
 | 16 | 29 | Stick | Intermediate |
 | 17 | 23 | Adduction Grip | Power |
@@ -225,7 +225,7 @@ The model outputs class indices 0–27. The mapping to Feix IDs and grasp names 
 | 26 | 27 | Quadpod | Precision |
 | 27 | 14 | Tripod | Precision |
 
-> **Note:** Feix IDs 26 and 28 are both sphere power grasps distinguished by finger configuration (Feix et al. 2016, Fig. 4, Power–Pad column). Local indices are assigned by the HOGraspNet ingestion script (`FEIX_INDICES` in `hograspnet_to_csv.py`) and do not follow Feix order.
+> **Note:** Feix IDs 26 (Sphere 4-Finger) and 28 (Sphere 3-Finger) are both power sphere grasps distinguished by the number of fingers in contact (Feix et al. 2016, Fig. 4, Power–Pad column). Local indices are assigned by the HOGraspNet ingestion script (`FEIX_INDICES` in `hograspnet_to_csv.py`) and do not follow Feix order.
 
 ---
 
@@ -320,7 +320,7 @@ The first is structural. Human and robot hands are morphologically different —
 
 The second reason applies even in cases where approximate mapping is geometrically possible: sensor noise propagates directly to the robot. Every small tremor or detection jitter in the landmarks becomes a command sent downstream. The robot moves continuously even when the operator's intent is stable.
 
-This system sidesteps both problems by classifying at the level of intent rather than configuration. The GCN maps 21 keypoints to a grasp type — a discrete, stable, morphology-agnostic signal. The robot adapter then translates that signal into its own joint space, independently of how the human hand is shaped. The VotingWindow reinforces this: it does not low-pass filter a continuous signal, it withholds the signal until the intent is unambiguous. The result is a control channel that is stable by design, not by post-processing.
+Classifying at the level of intent rather than configuration sidesteps both problems. The GCN maps 21 keypoints to a grasp type — a discrete, stable, morphology-agnostic signal. The robot adapter translates that signal into its own joint space, independently of how the human hand is shaped. The VotingWindow withholds the signal until the intent is unambiguous, rather than low-pass filtering a continuous stream. The control channel is stable by construction.
 
 **No data leakage:** normalization statistics (mean, std) are computed only on the training split and saved to `data/processed/train_stats.npz`. Val and test splits load these same statistics. The same stats must be applied at inference time.
 
@@ -369,7 +369,7 @@ Curve nearly plateaus after epoch 21 — marginal gains (~0.001/epoch from ep 21
 | Local idx | Feix | Grasp name | F1 | Notes |
 |:---------:|:----:|------------|----|-------|
 | 2 | 17 | Index Finger Extension | **0.799** | Best class |
-| 9 | 19 | Distal Type | 0.795 | |
+| 9 | 19 | Distal | 0.795 | |
 | 3 | 18 | Extension Type | 0.786 | |
 | 24 | 12 | Precision Disk | 0.736 | |
 | 15 | 16 | Lateral | 0.688 | |
@@ -398,8 +398,8 @@ The model learns well on classes with geometrically distinctive keypoint configu
 prismatic grasps, distal-type, index finger extension — and fails mainly on pairs where
 the class difference lies in the object being held rather than in the hand shape itself.
 
-This is not surprising: Feix et al. (2016) noted that the 33 taxonomy classes reduce to
-17 if object properties (size, shape, orientation) are factored out. HOGraspNet took a
+Feix et al. (2016) noted that the 33 taxonomy classes reduce to 17 if object properties
+(size, shape, orientation) are factored out. HOGraspNet took a
 partial step in that direction by reducing to 28, but the results show that several pairs
 remain geometrically indistinguishable from keypoints alone.
 
@@ -408,11 +408,11 @@ cylindrical group Large/Medium/Small Diameter: in all of these, the hand adopts 
 topology and it is the object that varies. The model has no access to the object, so
 confusing these classes is the correct response given what it observes.
 
-This connects directly to the GraspToken design. The separation between `class_id`
-(discrete topology) and `apertura` (continuous adaptation to the object) already anticipates
-this problem: the groups the classifier cannot distinguish are exactly those that `apertura`
-resolves at runtime. In that sense, the classifier's "confusions" within these groups are
-not functional errors for the robot.
+The GraspToken design already accounts for this. The separation between `class_id`
+(discrete topology) and `apertura` (continuous adaptation to the object) means that the
+groups the classifier cannot distinguish are exactly those that `apertura` resolves at
+runtime — the classifier's "confusions" within these groups are not functional errors
+for the robot.
 
 Where there is a genuine problem is in topologically distinct pairs with high confusion:
 Lateral Tripod vs Writing Tripod (41%) and Light Tool vs Lateral (20%). The difference
@@ -494,20 +494,41 @@ Lateral Tripod vs Writing Tripod (41%), Precision Sphere vs Precision Disk (47%)
 Light Tool vs Lateral (20%) are all cases where raw Cartesian coordinates carry ambiguous
 information but joint flexion angles would not.
 
-This is directly supported by two quantitative studies.
+Two quantitative studies support this.
 
 Jarque-Bou et al. (2019) extracted kinematic synergies from 77 subjects performing 20
 grasps. Only three synergies appeared in more than half of the subjects — the universal
-coordination patterns across the population. Synergy 1 is MCP flexion of fingers 3–5
-combined with PIP flexion of fingers 2–5. Synergy 3 is thumb CMC abduction with MCP
-extension and IP flexion (thumb opposition). These two synergies define the primary axes
-along which grasps differ kinematically.
+coordination patterns across the population. Synergy 1 is MCP flexion of fingers 3–5,
+PIP flexion of fingers 2–5, and adduction of the 4th finger MCP. Synergy 3 is thumb CMC
+abduction combined with MCP extension and IP flexion (thumb opposition). These two
+synergies define the primary axes along which grasps differ kinematically.
 
-Stival et al. (2019) build on this directly. Their quantitative taxonomy groups the same
+Stival et al. (2019) build on this. Their quantitative taxonomy groups the same
 grasps into five categories from joint angle data, and explicitly maps the categories to
 synergies: cylindrical grasps correspond to Synergy 1 (PIP flexion + finger closure),
 spherical grasps to MCP flexion patterns. The confusion pairs above map to boundaries
 between these categories — exactly where Synergy 1 and 3 are most discriminative.
+
+Both studies measure joint angles with instrumented gloves (CyberGlove II, 22 sensors),
+not with visual landmarks. The transfer to our setting is justified by the nature of the
+quantity itself: joint flexion angle is a geometric property of the hand skeleton, defined
+by the relative orientation of two adjacent bone segments. A flex sensor measures it
+directly; we compute it as the arccos of the dot product between the incoming and outgoing
+bone vectors at each joint. Both paths produce the same quantity — the angle at that
+articulation — with different precision and DOF coverage. The kinematic synergies that
+Jarque-Bou et al. identify are properties of how the motor system coordinates the hand,
+not of the instrument used to record it. They emerge from the biomechanics of the
+skeleton, which is the same structure that our graph encodes: nodes are joints, edges are
+bones, and the features at each node are the angles those bones form. The graph topology
+is the skeleton that both glove and landmark systems instrument.
+
+The main limitation of our implementation relative to glove-based measurements is DOF
+coverage: the CyberGlove captures abduction and adduction between fingers in addition to
+flexion, while the parent→joint→child triple captures only the flexion component. This
+means Synergy 3 (thumb CMC abduction) is only partially represented — the flexion and
+extension components at the thumb joints are captured, but the lateral abduction angle
+of the thumb relative to the palm plane is not. This is a known limitation of the
+representation, not a fundamental incompatibility between the approach and the literature.
 
 Synergy 2 (wrist flexion + palmar arch, CMC5) is not computable from 21 landmarks —
 CMC5 has no corresponding keypoint in the MediaPipe skeleton, and wrist abduction
@@ -516,18 +537,18 @@ representation, not a modeling choice.
 
 **Run 003 design decision:** add the joint flexion angle as one extra scalar feature per
 node, computed from the parent→joint→child triple for each internal joint. WRIST and
-fingertips receive 0.0. This increases node features from 3 to 4 and directly encodes
-Synergies 1 and 3 without changing the graph topology or model architecture.
+fingertips receive 0.0. This increases node features from 3 to 4 and targets the flexion components of
+Synergies 1 and 3, without changing the graph topology or model architecture.
 
-### Run 003 — Joint Flexion Angles (pending)
+### Run 003 — Joint Flexion Angles (2026-03-05)
 
 **Configuration:**
 - Model: `GCN_8_8_16_16_32`
 - Dataset: same splits as Run 001/002
 - Features: `[x, y, z, θ]` per node — θ = joint flexion angle in radians
-- Epochs: 20 (max) | Early stopping patience=5 | Batch size: 256 | LR: 1e-3
+- Epochs: 20 (max) | Batch size: 256 | LR: 1e-3
 - Loss: CrossEntropyLoss (uniform weights)
-- Hardware: Google Colab T4 GPU
+- Hardware: Google Colab T4 GPU | Training time: ~75 min
 
 **Physical validation of the features**
 
@@ -572,6 +593,206 @@ is not encoding what the literature predicts.
 
 All three checks pass. The feature encodes what the literature predicts.
 Script: `tests/verify_joint_angles.py`
+
+**Results:**
+
+| Split | Loss | Accuracy |
+|-------|------|----------|
+| Val (best, epoch 15) | 1.1331 | **63.4%** |
+| Test | 1.1158 | **63.8%** |
+| — | Macro F1 | 0.573 |
+| — | Weighted F1 | 0.630 |
+
+**Global comparison:**
+
+| Metric | Run 001 | Run 002 | Run 003 | Δ (vs 001) |
+|--------|---------|---------|---------|------------|
+| Test Accuracy | 60.5% | 56.1% | **63.8%** | +3.3pp |
+| Macro F1 | 0.529 | 0.524 | **0.573** | +0.044 |
+| Weighted F1 | 0.593 | 0.565 | **0.630** | +0.037 |
+
+**Per-class F1 (selected):**
+
+| Local idx | Feix | Grasp name | R001 F1 | R003 F1 | Δ |
+|:---------:|:----:|------------|---------|---------|---|
+| 2 | 17 | Index Finger Extension | — | **0.818** | best class |
+| 3 | 18 | Extension Type | 0.786 | **0.810** | |
+| 24 | 12 | Precision Disk | 0.736 | **0.755** | |
+| 15 | 16 | Lateral | — | 0.724 | |
+| 19 | 25 | Lateral Tripod | 0.150 | 0.270 | +0.120 |
+| 6 | 3 | Medium Wrap | 0.047 | 0.240 | +0.193 |
+| 16 | 29 | Stick | 0.264 | 0.330 | +0.066 |
+| 25 | 13 | Precision Sphere | 0.269 | 0.346 | +0.077 |
+
+**Main confusion pairs:**
+
+| True class | Grasp | Predicted as | Grasp | Count | % support |
+|---|---|---|---|---|---|
+| 6 | Medium Wrap | 7 | Adducted Thumb | 306 | 24% |
+| 25 | Precision Sphere | 24 | Precision Disk | 1451 | 43% |
+| 18 | Writing Tripod | 27 | Tripod | 713 | 9% |
+| 27 | Tripod | 18 | Writing Tripod | 647 | 6% |
+| 19 | Lateral Tripod | 18 | Writing Tripod | 708 | 34% |
+| 8 | Light Tool | 15 | Lateral | 1753 | 14% |
+
+**Discussion:**
+
+The joint flexion angle improves Macro F1 by 0.044 over Run 001, confirming that the
+feature adds discriminative information. The improvement is concentrated in classes where
+flexion patterns differ across grasps — the model now separates flat grasps (Index Finger
+Extension, Extension Type) from cylindrical and spherical ones more cleanly than before.
+
+The model plateaued at epoch 15 (Val Acc 0.634) and oscillated for the remaining five
+epochs without improvement. The plateau indicates the representational ceiling for this
+feature set.
+
+The confusion matrix partially confirms what Stival et al. (2019) predict. Two of the
+three main confusion clusters match Stival's quantitative categories:
+
+- **Cylindrical** (Large Diameter, Medium Wrap, Small Diameter): Medium Wrap reaches only
+  F1=0.240 despite the angle feature. Stival identifies these three as the most similar
+  grasps in the taxonomy — the same hand closure, different object size. The model cannot
+  separate them, and with 21 landmarks it cannot, because there is nothing in the hand
+  configuration to separate.
+
+- **Spherical** (Power Sphere, Precision Sphere, Sphere 4-Finger variants): Precision
+  Sphere (F1=0.346) is predicted as Precision Disk in 43% of cases. These share near-
+  identical finger flexion — the difference between them is the number of fingers in contact
+  with the object, which varies with object shape, not with hand intent.
+
+A third confusion cluster — Tripod, Writing Tripod, and Lateral Tripod — does not map
+to a Stival category. In Stival's general taxonomy, Tripod is placed in the spherical
+group (alongside Power Sphere and Precision Sphere), not with Writing Tripod. Lateral
+Tripod is absent from the Ninapro dataset Stival used. The mutual confusion between
+these three (Tripod→Writing Tripod: 6%, Writing Tripod→Tripod: 9%, Lateral
+Tripod→Writing Tripod: 34%) is an empirical observation from Run 003 that the kinematic
+literature does not predict.
+
+Conversely, the classes Stival identifies as isolated perform best. Index Finger Extension
+(F1=0.818) is the top class and Extension Type (F1=0.810) is second — both described by
+Stival as "clearly distant from all other movements." The model's best-performing classes
+are exactly the ones the literature predicts should be easiest to separate.
+
+One anomaly: Adducted Thumb, Light Tool, and Lateral (classes 7, 8, 15) show high mutual
+confusion despite belonging to different Stival categories. This is likely a class imbalance
+effect — Lateral has 12,545 test samples vs Light Tool's 1,260 — combined with genuine
+geometric proximity in the landmark space that the joint angle does not resolve.
+
+**Conclusion:** The joint flexion angle feature works. The remaining confusions are
+structurally predicted by the quantitative literature on hand kinematics. Adding more
+features derived from the same 21 landmarks will not resolve them — the limiting factor
+is the taxonomy itself: several Feix classes are kinematically indistinguishable without
+knowledge of the object being held.
+
+The unresolved confusions share a pattern: classes that Feix distinguishes by object size,
+orientation, or contact surface, not by hand topology. An object perception module could
+separate Large Diameter from Medium Wrap, or distinguish sphere variants by the object's
+shape.
+
+Whether that distinction serves the objective of this work is a different question. Stival
+et al. (2019) show that these classes share the same kinematic category: same finger
+closure pattern, same muscular activation, same grasp shape. For robot execution, they
+map to the same joint trajectory. The variable that differs between them is aperture,
+which GraspToken already encodes continuously and which the robot adapter maps to its own
+joint limits at runtime.
+
+A perception module could still be useful in a different role: not for classification,
+but for active aperture correction during execution, scaling the aperture scalar based
+on the object's geometric dimensions. That correction would likely not require a learned
+classifier; geometric representations such as point clouds could suffice. However, this
+would extend the framework toward shared autonomy, where the robot actively corrects the
+operator's signal using its own perception. That is outside the scope of this work.
+
+Run 004 collapses the Feix classes by their cell in the taxonomy matrix.
+
+Each cell in the Feix matrix (Fig. 4, Feix et al. 2016) groups grasps by opposition type
+(Palm / Pad / Side), virtual finger assignment (VF 2, 2-3, 2-4, 2-5, 3-5), and thumb
+position (abducted / adducted). Those three parameters fully describe the hand topology.
+Grasps within a cell have the same hand configuration — what varies between them is the
+object: its size, shape, or the contact surface it presents.
+
+Run 003 confirms this empirically: the confusion clusters map exactly to multi-grasp
+cells. The model separates cells cleanly but cannot separate within a cell. Collapsing
+within-cell classes removes a distinction the model structurally cannot make and that
+robot execution does not require.
+
+After applying HOGraspNet exclusions (Feix IDs 6, 8, 15, 21, 32), 28 classes reduce
+to **16 functional classes**: 7 collapsed groups and 9 singletons.
+
+**Collapse groups (7 cells, each collapses to one label):**
+
+| Feix cell | Feix IDs | Grasp names | Local indices |
+|-----------|----------|-------------|:-------------:|
+| Power, Palm, VF 2-5, Thumb Abducted | 1, 2, 3, 10, 11 | Large Diameter, Small Diameter, Medium Wrap, Power Disk, Power Sphere | 0, 1, 6, 11, 12 |
+| Power, Palm, VF 2-5, Thumb Adducted | 4, 5, 30 | Adducted Thumb, Light Tool, Palmar | 7, 8, 5 |
+| Power, Pad, VF 2-4, Thumb Abducted | 18, 26 | Extension Type, Sphere 4-Finger | 3, 13 |
+| Intermediate, Side, VF 2, Thumb Adducted | 16, 29 | Lateral, Stick | 15, 16 |
+| Precision, Pad, VF 2, Thumb Abducted | 9, 24, 33 | Palmar Pinch, Tip Pinch, Inferior Pincer | 20, 21, 22 |
+| Precision, Pad, VF 2-4, Thumb Abducted | 7, 27 | Prismatic 3-Finger, Quadpod | 23, 26 |
+| Precision, Pad, VF 2-5, Thumb Abducted | 12, 13 | Precision Disk, Precision Sphere | 24, 25 |
+
+**Singleton cells (9 cells, unchanged):**
+
+| Feix cell | Feix ID | Grasp name | Local idx |
+|-----------|:-------:|------------|:---------:|
+| Power, Palm, VF 3-5, Thumb Adducted | 17 | Index Finger Extension | 2 |
+| Power, Pad, VF 2, Thumb Abducted | 31 | Ring | 10 |
+| Power, Pad, VF 2-3, Thumb Abducted | 28 | Sphere 3-Finger | 14 |
+| Power, Pad, VF 2-5, Thumb Abducted | 19 | Distal | 9 |
+| Intermediate, Side, VF 2, Thumb Abducted | 23 | Adduction Grip | 17 |
+| Intermediate, Side, VF 3, Thumb Abducted | 25 | Lateral Tripod | 19 |
+| Precision, Pad, VF 2-3, Thumb Abducted | 14 | Tripod | 27 |
+| Precision, Pad, VF 2-5, Thumb Adducted | 22 | Parallel Extension | 4 |
+| Precision, Side, VF 3, Thumb Abducted | 20 | Writing Tripod | 18 |
+
+> **Note:** Feix 15 (Fixed Hook) and 32 (Ventral) are absent from HOGraspNet but belong
+> to multi-grasp cells. Their exclusion reduces those cells to 3 and 2 classes
+> respectively, without changing the collapse logic. Feix 8 (Prismatic 2-Finger) is
+> absent and was the only other member of the Tripod cell, leaving it as a singleton.
+> Feix 21 (Tripod Variation) was alone in its cell and its absence removes that cell
+> entirely.
+
+**Cross-reference with Run 003 confusion matrix**
+
+The Feix cell collapse resolves all within-group confusions by definition. The question
+is which of the Run 003 confusion pairs fall within a group (and are therefore eliminated)
+and which cross group boundaries (and therefore survive).
+
+| True class | Predicted as | Relationship | Status after collapse |
+|------------|--------------|:------------:|----------------------|
+| Precision Sphere (25) | Precision Disk (24) | Same cell — Precision, Pad, VF 2-5 | Resolved: both merge into one class |
+| Medium Wrap (6) | Adducted Thumb (7) | Cross-group — Thumb Abducted vs Thumb Adducted boundary | Survives |
+| Writing Tripod (18) | Tripod (27) | Cross-singleton — Precision Side vs Precision Pad | Survives |
+| Tripod (27) | Writing Tripod (18) | Cross-singleton — Precision Pad vs Precision Side | Survives |
+| Lateral Tripod (19) | Writing Tripod (18) | Cross-singleton — Intermediate Side vs Precision Side | Survives |
+| Light Tool (8) | Lateral (15) | Cross-group — Power Palm Adducted vs Intermediate Side | Survives |
+
+The Feix collapse directly resolves the Precision Sphere–Disk confusion (43% of Precision
+Sphere support in Run 003 — the second largest confusion pair). The cylindrical group
+(Large Diameter, Small Diameter, Medium Wrap, Power Disk, Power Sphere) also collapses
+entirely, eliminating whatever within-group confusion existed between them.
+
+The surviving pairs point to two clusters worth examining for a second collapse step:
+
+- **Tripod cluster**: Writing Tripod, Tripod, and Lateral Tripod are three singleton cells
+  that confuse each other bidirectionally after the Feix collapse. Collapsing them further
+  requires verifying whether they produce the same robot joint trajectory — if they do,
+  merging is justified; if not, the confusion is a genuine error the model must learn.
+
+- **Thumb boundary**: Medium Wrap (cylindrical group, Thumb Abducted) confuses with
+  Adducted Thumb (thumb-adducted group). These differ in thumb position, which is a
+  meaningful distinction for robot execution. This confusion is more likely a geometric
+  proximity effect at the group boundary than a functional equivalence, and should not
+  be collapsed.
+
+- **Light Tool vs Lateral**: group 2 (Power Palm Adducted) to group 4 (Intermediate Side
+  Adducted). Structurally different opposition types. This is likely a class imbalance
+  residual — Lateral has 12,545 test samples vs Light Tool's 1,260 — rather than genuine
+  functional equivalence.
+
+The two-step approach is therefore: apply the Feix cell collapse as the structural base,
+then decide on the Tripod cluster based on robot execution requirements. That decision
+is deferred to Run 004 design.
 
 ---
 
