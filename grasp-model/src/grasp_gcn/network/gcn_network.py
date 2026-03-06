@@ -24,9 +24,10 @@ def masked_readout(x, batch, mask=None):
     return torch.cat([mean, mx], dim=1)        # [B, 2C]
 
 class GCN_8_8_16_16_32(nn.Module):
-    def __init__(self, numFeatures, numClasses):
+    def __init__(self, numFeatures, numClasses, use_cmc_angle: bool = False):
         super().__init__()
         self.numClasses = numClasses
+        self.use_cmc_angle = use_cmc_angle
 
         self.conv1 = GCNConv(numFeatures, 8)
         self.conv2 = GCNConv(8, 8)
@@ -34,16 +35,15 @@ class GCN_8_8_16_16_32(nn.Module):
         self.conv4 = GCNConv(16, 16)
         self.conv5 = GCNConv(16, 32)
 
-        # mean+max → 2*32 = 64
-        self.fc1 = nn.Linear(64, 128)
+        # mean+max → 2*32 = 64; +1 if θ_CMC is concatenated → 65
+        readout_dim = 64 + (1 if use_cmc_angle else 0)
+        self.fc1 = nn.Linear(readout_dim, 128)
         self.fc2 = nn.Linear(128, numClasses)
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        # Si llamas al modelo con un único Data (sin DataLoader), añade antes:
-        # data.batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
         batch = getattr(data, "batch", torch.zeros(x.size(0), dtype=torch.long, device=x.device))
-        mask  = getattr(data, "mask", None)  # [N,1] si tu ToGraph la provee
+        mask  = getattr(data, "mask", None)  # [N,1]
 
         x = F.elu(self.conv1(x, edge_index))
         x = F.elu(self.conv2(x, edge_index))
@@ -51,7 +51,12 @@ class GCN_8_8_16_16_32(nn.Module):
         x = F.elu(self.conv4(x, edge_index))
         x = F.elu(self.conv5(x, edge_index))   # [N, 32]
 
-        h = masked_readout(x, batch, mask)     # [B, 64]
-        h = F.elu(self.fc1(h))                 # [B, 128]
-        out = self.fc2(h)                      # [B, numClasses]
+        h = masked_readout(x, batch, mask)      # [B, 64]
+
+        if self.use_cmc_angle:
+            theta = data.theta_cmc.view(-1, 1)  # [B, 1]
+            h = torch.cat([h, theta], dim=1)    # [B, 65]
+
+        h = F.elu(self.fc1(h))                  # [B, 128]
+        out = self.fc2(h)                       # [B, numClasses]
         return F.log_softmax(out, dim=1)

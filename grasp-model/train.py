@@ -42,7 +42,7 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_16cls_run004b')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_16cls_run005')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
@@ -68,7 +68,7 @@ print(f"🖥️  Using device: {device_}")
 print('--------------------------------')
 
 # ==================== Model ======================================
-model_ = get_network(network_type, datasetTrain.num_features, datasetTrain.num_classes).to(device_)
+model_ = get_network(network_type, datasetTrain.num_features, datasetTrain.num_classes, use_cmc_angle=True).to(device_)
 
 def reset_weights(m):
     """Reset model weights to avoid leakage between runs."""

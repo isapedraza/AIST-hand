@@ -989,10 +989,161 @@ feature set and epoch budget is near. The remaining confusion clusters — Tripo
 Thumb Adducted boundary, and low-support singletons — require new features, not more
 training.
 
+**Feature analysis for Run 005**
+
+The current feature set is `[x, y, z, θ_flex]` per node. The joint flexion angle θ_flex,
+introduced in Run 003, captures MCP extension and IP flexion at each joint. What it does
+not encode is the lateral separation of the thumb from the palm: the palmar abduction
+angle of the first metacarpal.
+
+Feix et al. (2016), Section IV:
+
+> "The position of the thumb is used to differentiate between the two rows. [...] the
+> thumb CMC joint can be in either an adducted or abducted position. This is a new
+> feature introduced in the GRASP taxonomy."
+
+Section V:
+
+> "In order for the thumb to oppose the fingers, the thumb has to be in abducted
+> position. The thumb is adducted only in cases where the opposition is between the
+> thumb and the side of the finger (e.g., lateral grasp) or the thumb is not involved
+> in opposition at all."
+
+The parameter Feix introduces as the row separator in the taxonomy matrix is the one
+quantity not yet encoded in the model. The raw XYZ coordinates distribute some signal
+about thumb position across four nodes (CMC, MCP, IP, TIP), but it is confounded by
+hand scale and wrist orientation. The joint flexion angle at the thumb joints captures
+MCP extension and IP flexion, the two distal components of Jarque-Bou Synergy 3 (CMC
+abduction + MCP extension + IP flexion). It does not capture the CMC abduction
+component — the rotation of the first metacarpal away from the palm plane.
+
+**Feature definition: palmar abduction angle (θ_CMC)**
+
+The relevant motion is palmar abduction: the first metacarpal rotating out of the palm
+plane so that the thumb pad can face the fingertips. This is measured by the out-of-plane
+component of the first metacarpal direction.
+
+```
+thumb_dir   = normalize(THUMB_MCP  - THUMB_CMC)                    # landmark 2 - 1
+palm_normal = normalize(cross(WRIST→INDEX_MCP, WRIST→PINKY_MCP))   # palm plane normal
+θ_CMC       = arcsin(|dot(thumb_dir, palm_normal)|)                 # ∈ [0, π/2]
+```
+
+Large θ_CMC: metacarpal points out of the palm plane — thumb abducted, pad facing
+fingertips (Row 1 of the Feix matrix: Power/Pad, Precision/Pad grasps).
+Small θ_CMC: metacarpal lies in the palm plane — thumb adducted (Row 2: Lateral, Stick,
+Palmar, Adducted Thumb, and related classes).
+
+**Why not `WRIST→THUMB_CMC`**
+
+Landmark 1 (THUMB_CMC) is the carpometacarpal joint, anchored to the trapezium bone
+relative to the wrist. After geometric normalization (center at WRIST, scale by
+WRIST→MIDDLE_MCP), this landmark's position does not change meaningfully with
+abduction — the CMC joint does not translate, it rotates. What changes is the direction
+the first metacarpal points from that joint: `THUMB_CMC→THUMB_MCP` (landmark 1→2).
+Using `WRIST→THUMB_CMC` as the thumb direction encodes a near-constant quantity across
+poses and would carry no discriminative signal.
+
+**Why not an in-plane angle**
+
+An earlier candidate definition projected the thumb and index directions onto the palm
+plane and measured the angle between the projections. That captures radial abduction
+(thumb spreading within the palm plane), not palmar abduction (thumb rotating out of it).
+Feix's row separator is palmar abduction — the motion that positions the thumb pad in
+opposition to the fingertips. The two motions correlate in practice, but the out-of-plane
+component is the geometrically correct quantity for the stated purpose and the one that
+cleanly separates the two rows of the taxonomy.
+
+**Convergence of taxonomy and biomechanics**
+
+Jarque-Bou et al. (2019) Synergy 3 loads on CMC abduction, MCP extension, and IP
+flexion of the thumb. Run 003 added the joint flexion angle θ_flex, capturing MCP
+extension and IP flexion at the thumb joints. This run adds CMC abduction, completing
+the encoding of Synergy 3. The two design decisions are independent in origin — one from
+taxonomy analysis (Feix), one from motor control evidence (Jarque-Bou) — and converge on
+the same missing quantity.
+
+**Scope and expected impact**
+
+The feature is added as a single scalar at the graph level, concatenated to the global
+readout vector after pooling and before the fully connected layers. It is a property of
+the full hand configuration, not of a single joint.
+
+An analysis of the Run 004b confusion matrix by Feix taxonomy axis shows that the
+dominant remaining errors are column errors (Power vs Precision within the same opposition
+type and VF assignment), not row errors (Abducted vs Adducted, same column). The model
+already extracts partial row signal from XYZ coordinates and from thumb flexion angles.
+CMC abduction provides the geometrically correct encoding of that signal, but its impact
+will be bounded: it directly addresses row errors, while the larger confusion mass lies on
+the column axis.
+
+**Empirical verification (tests/verify_cmc_abduction.py)**
+
+Before implementing, the feature was verified against 5,000 samples from `grasps_train.csv`
+using three checks grounded in Feix et al. (2016):
+
+```
+[Check 1] Range [0, π/2]
+  min=0.0064  max=1.1175  π/2=1.5708  → PASS
+
+[Check 2] mean θ_CMC(abducted) > mean θ_CMC(adducted)
+  abducted classes  (3246 samples): mean=0.5575 rad (31.9°)
+  adducted classes  (1754 samples): mean=0.4194 rad (24.0°)  → PASS
+
+[Check 3] High-contrast class pairs
+  Adducted Thumb  (adducted): 0.3834 rad (22.0°)
+  Tripod          (abducted): 0.5659 rad (32.4°)  → PASS
+  Lateral         (adducted): 0.4446 rad (25.5°)
+  Palmar Pinch    (abducted): 0.5761 rad (33.0°)  → PASS
+```
+
+**Per-class mean θ_CMC (ascending):**
+
+| Idx | Grasp | Row | mean θ (deg) |
+|----:|-------|-----|-------------:|
+| 7 | Adducted Thumb | adducted | 22.0° |
+| 8 | Light Tool | adducted | 23.2° |
+| 4 | Parallel Extension | adducted | 23.7° |
+| 2 | Index Finger Extension | adducted | 24.7° |
+| 16 | Stick | adducted | 24.8° |
+| 15 | Lateral | adducted | 25.5° |
+| 5 | Palmar | adducted | 25.5° |
+| 17 | Adduction Grip | abducted | 25.6° |
+| 6 | Medium Wrap | abducted | 25.8° |
+| 13 | Sphere 4-Finger | abducted | 26.1° |
+| 10 | Ring | abducted | 28.4° |
+| ... | ... | ... | ... |
+| 12 | Power Sphere | abducted | 37.0° |
+
+The 7 adducted classes cluster cleanly at the bottom (22°–25.5°). The abducted classes
+occupy the upper range (25.6°–37°) with two boundary cases discussed below.
+
+**Taxonomy consistency: two boundary cases**
+
+*Parallel Extension (#22, local 4, 23.7°).* The paper notes explicitly (Section IV-B):
+"The Parallel Extension Grasp (#22) [is] in some intermediate position between abduction
+and adduction. As the opposition is done partly by the side of the thumb, we then put the
+grasp into the adducted category." The data confirms the intermediate position: 23.7° is
+slightly above the most clearly adducted classes but within the adducted cluster.
+
+*Adduction Grip (#23, local 17, 25.6°).* Feix places this grasp in the abducted row of
+Fig. 4 but notes it as the exception: "The only exception to this 'rule' is the Adduction
+Grasp, where the thumb is not in contact with the object." Section V states that the thumb
+is adducted when "the thumb is not involved in opposition at all (e.g., fixed hook and
+palmar)." The Adduction Grip also has the thumb uninvolved, creating an internal tension
+in the taxonomy that Feix does not resolve explicitly. The empirical θ_CMC (25.6°) places
+it at the boundary between the two clusters, consistent with the ambiguous status in the
+paper. With only 53 samples in the draw the estimate is noisy. This class is not a dominant
+source of confusion in Run 004b and does not affect the implementation decision.
+
+The verification confirms that θ_CMC separates the two rows of the Feix taxonomy as
+intended. All checks pass.
+
 ---
 
 ## Pending / Future Work
 
+- [ ] Run 005: palmar abduction angle (θ_CMC) as graph-level feature — verify, implement, train
 - [ ] Real-time inference app (`grasp-app`)
 - [ ] Shadow Hand YAML configuration from Dexonomy dataset
 - [ ] ROS integration (`grasp-robot`)

@@ -30,5 +30,5 @@ networks = {
                 #'SplineConv_test' : network.splineconv_network.SplineConv_test,
 }
 
-def get_network(name, numFeatures, numClasses):  
-  return networks[name](numFeatures, numClasses)
+def get_network(name, numFeatures, numClasses, **kwargs):
+    return networks[name](numFeatures, numClasses, **kwargs)

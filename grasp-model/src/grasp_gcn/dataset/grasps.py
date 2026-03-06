@@ -133,7 +133,7 @@ class GraspsClass(InMemoryDataset):
     # -------------------------------------------------------------
     @property
     def processed_file_names(self):
-        suffix = f"_{self.k}" + ("_c16" if self.collapse else "")
+        suffix = f"_{self.k}" + ("_c16" if self.collapse else "") + "_cmc"
         if self.split == "train":
             return [f"grasps_train{suffix}.pt"]
         elif self.split == "val":
@@ -149,7 +149,7 @@ class GraspsClass(InMemoryDataset):
 
     # -------------------------------------------------------------
     def process(self):
-        transform_tograph_ = ToGraph(features='xyz', make_undirected=True, add_joint_angles=True)
+        transform_tograph_ = ToGraph(features='xyz', make_undirected=True, add_joint_angles=True, add_cmc_angle=True)
         data_list_ = []
 
         for csv_path in self.raw_paths:
