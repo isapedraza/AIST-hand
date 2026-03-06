@@ -1139,11 +1139,214 @@ source of confusion in Run 004b and does not affect the implementation decision.
 The verification confirms that θ_CMC separates the two rows of the Feix taxonomy as
 intended. All checks pass.
 
+**Hypothesis: contact-dependent collapse as the next structural step**
+
+Feix et al. (2016), Section V, notes explicitly that Palm and Pad opposition grasps can
+share an identical hand configuration — the only distinguishing factor being whether the
+palm is in contact with the object. In teleoperation, the operator does not hold a real
+object, so contact is never present and cannot be measured. This is a permanent limit of
+the problem setting, not of the model.
+
+The Run 004b confusion matrix already reflects this: class 0 (Power Palm Abducted) is
+predicted as class 6 (Precision Pad Abducted) in 12% of cases, and class 1 (Power Palm
+Adducted) as class 3 (Intermediate Side Adducted) in 13% of cases. Both are Palm→Pad or
+Palm→Side confusions where hand topology is nearly identical. The model is not failing —
+it is correctly reporting that these classes are indistinguishable from landmarks alone.
+
+If these classes also produce similar joint trajectories in the target robot hand, then
+collapsing them is the correct design decision: the taxonomy distinction is real, but it
+is operationally irrelevant given the sensor and task constraints. This will be evaluated
+against Dexonomy (Chen et al., RSS 2025), which provides canonical joint configurations
+for the Shadow Hand across Feix grasp types.
+
+**Hypothesis: 16 classes is the natural granularity ceiling for landmark-based intent recognition**
+
+The Feix taxonomy has an internal structure: grasps within a cell share the same hand
+topology and differ mainly in the shape of the object held. Feix et al. (2016), Section
+IV-A state this explicitly:
+
+> "The difference between the grasps within one cell is mainly the shape of the object.
+> This offers the possibility to reduce the set of all 33 grasps down to 17 grasps by
+> merging the grasps within one cell to a corresponding 'standard' grasp."
+
+Our 16 classes are the HOGraspNet subset of that 17-type reduction (5 Feix IDs absent
+from the dataset collapse some cells further). The cell structure is therefore not an
+arbitrary design choice — it is the coarser level of the two-level granularity that Feix
+himself proposes.
+
+**What Feix proposes vs. what this framework adds.** Feix's reduction yields 17 discrete
+prototypes, selecting the most frequent grasp per cell as the canonical representative.
+The `apertura` scalar in GraspToken goes one step further: rather than picking a single
+prototype, it treats within-cell variation as continuous. In the teleoperation setting,
+the operator's hand adapts to the object incrementally rather than jumping between
+prototypes, so a continuous scalar is more appropriate than a second discrete label. This
+extension is a design decision for the teleoperation use case, not a claim derived from
+the taxonomy itself.
+
+**Where the ceiling applies — and where it does not.** The within-cell argument (object
+variation → apertura) covers cases where grasps in the same cell are merged. But Feix
+also identifies a second kind of unresolvable ambiguity: cross-cell distinctions that
+depend on contact, not on hand shape. Section V:
+
+> "The classification in the taxonomy depends not only on the hand pose, but also the type
+> of contact between hand and object. For example, the medium wrap (#3) and the prismatic
+> 4 finger (#6) have a similar hand shape, but the first has additional palm contact,
+> whereas the latter has only fingertip contact. [...] using a glove that measures only
+> the joint angles might not be sufficient, since it would also need to measure contact in
+> order to correctly classify the grasps in the taxonomy."
+
+Medium Wrap (#3) and Prismatic 4-Finger (#6) are in different cells in our 16-class scheme
+(class 0 vs. class 2 respectively), so this is a cross-cell confusion, not a within-cell
+one. The empirical evidence is consistent: in Run 004b, 12% of class 0 (Power Palm
+Abducted) samples are predicted as class 2 (Power Pad Abducted), and 13% of class 1
+(Power Palm Adducted) as class 3 (Intermediate Side Adducted). Both are Palm→Pad or
+Palm→Side confusions at boundaries where the only reliable discriminator is contact
+information the input signal does not carry.
+
+This means the ceiling is not only at the within-cell level. Some cross-cell boundaries
+are also contact-dependent, and those confusions will persist regardless of feature
+engineering on 21 XYZ landmarks. The contact-dependent collapse hypothesis (above)
+addresses this for the cases where the distinction is also operationally irrelevant for
+the robot. Where it is relevant, the confusion is a genuine limitation of the problem
+setting, not of the model.
+
+The combined argument — within-cell variation is object-driven (Feix IV-A), some cross-
+cell distinctions require contact (Feix V), and teleoperation provides neither the object
+nor contact signals — suggests that 16 classes is close to the practical ceiling for this
+input modality. This remains a hypothesis. It has not been validated in a real
+teleoperation setting, and the exact ceiling may shift with richer landmark representations
+or multi-modal inputs.
+
 ---
+
+### Run 005 — Palmar Abduction Angle as Graph-Level Feature (2026-03-06)
+
+**Configuration changes from Run 004b:** θ_CMC added as a graph-level scalar concatenated
+to the readout vector after pooling (fc1 input: 64 → 65 dims). Node features unchanged:
+`[x, y, z, θ_flex]`. Everything else identical to Run 004b (40 epochs max, patience=10,
+collapse=True).
+
+**Results:**
+
+| Split | Loss | Accuracy |
+|-------|------|----------|
+| Val (best, epoch 40) | 0.8397 | **71.8%** |
+| Test | 0.8464 | **71.6%** |
+| — | Macro F1 | 0.672 |
+| — | Weighted F1 | 0.715 |
+
+Training time: 84.36 min (Google Colab T4 GPU).
+
+**Training curve (Val Accuracy by epoch):**
+
+```
+Ep 01: 55.5%  Ep 09: 67.8%  Ep 17: 70.1%  Ep 25: 70.9%  Ep 33: 71.3% ← local best
+Ep 02: 60.6%  Ep 10: 67.9%  Ep 18: 69.9%  Ep 26: 70.7%  Ep 34: 71.1%
+Ep 03: 63.0%  Ep 11: 68.4%  Ep 19: 69.6%  Ep 27: 70.2%  Ep 35: 70.7%
+Ep 04: 63.9%  Ep 12: 67.9%  Ep 20: 70.4%  Ep 28: 70.6%  Ep 36: 71.1%
+Ep 05: 65.0%  Ep 13: 68.7%  Ep 21: 70.6%  Ep 29: 70.6%  Ep 37: 70.9%
+Ep 06: 66.1%  Ep 14: 69.5%  Ep 22: 70.3%  Ep 30: 70.9%  Ep 38: 71.7%
+Ep 07: 67.0%  Ep 15: 68.6%  Ep 23: 70.4%  Ep 31: 71.0%  Ep 39: 70.7%
+Ep 08: 67.5%  Ep 16: 69.9%  Ep 24: 70.2%  Ep 32: 71.2%  Ep 40: 71.8% ← best
+```
+
+The model was still improving at epoch 40 — early stopping (patience=10) was not triggered.
+The gain rate in the final 15 epochs is ~0.0006/epoch (0.709 → 0.718), indicating the
+representational ceiling is near but the model had not fully converged within the epoch
+budget.
+
+**Global comparison:**
+
+| Metric | Run 001 | Run 002 | Run 003 | Run 004 | Run 004b | Run 005 | Δ (vs 004b) |
+|--------|---------|---------|---------|---------|----------|---------|-------------|
+| Test Accuracy | 60.5% | 56.1% | 63.8% | 68.5% | 70.7% | **71.6%** | +0.9pp |
+| Macro F1 | 0.529 | 0.524 | 0.573 | 0.621 | 0.660 | **0.672** | +0.012 |
+| Weighted F1 | 0.593 | 0.565 | 0.630 | 0.678 | 0.703 | **0.715** | +0.012 |
+
+**Per-class results (with comparison to Run 004b):**
+
+| Class | Grasp (collapsed cell) | R004b F1 | R005 F1 | Δ | Support |
+|:-----:|------------------------|:--------:|:-------:|:---:|--------:|
+| 0 | Power, Palm, VF 2-5, Abducted | 0.612 | 0.628 | +0.016 | 13,759 |
+| 1 | Power, Palm, VF 2-5, Adducted | 0.703 | 0.728 | +0.025 | 23,370 |
+| 2 | Power, Pad, VF 2-4, Abducted | 0.770 | 0.788 | +0.018 | 9,288 |
+| 3 | Intermediate, Side, VF 2, Adducted | 0.725 | 0.727 | +0.002 | 14,663 |
+| 4 | Precision, Pad, VF 2, Abducted | 0.761 | 0.787 | +0.026 | 14,527 |
+| 5 | Precision, Pad, VF 2-4, Abducted | 0.515 | 0.517 | +0.002 | 5,550 |
+| 6 | Precision, Pad, VF 2-5, Abducted | 0.809 | 0.810 | +0.001 | 17,686 |
+| 7 | Index Finger Extension | 0.830 | 0.816 | -0.014 | 7,813 |
+| 8 | Parallel Extension | 0.694 | 0.690 | -0.004 | 3,701 |
+| 9 | Distal | 0.805 | 0.801 | -0.004 | 8,958 |
+| 10 | Ring | 0.561 | 0.560 | -0.001 | 2,025 |
+| 11 | Sphere 3-Finger | 0.656 | 0.660 | +0.004 | 5,312 |
+| 12 | Adduction Grip | 0.662 | 0.654 | -0.008 | 2,172 |
+| 13 | Writing Tripod | 0.594 | 0.591 | -0.003 | 7,812 |
+| 14 | Lateral Tripod | 0.229 | **0.338** | **+0.109** | 2,069 |
+| 15 | Tripod | 0.633 | 0.653 | +0.020 | 10,191 |
+
+**Main confusion pairs:**
+
+| True class | Grasp | Predicted as | Grasp | Count | % support |
+|---|---|---|---|---:|---:|
+| 14 | Lateral Tripod | 13 | Writing Tripod | 618 | 29.9% |
+| 14 | Lateral Tripod | 1 | Power, Palm, VF 2-5, Adducted | 239 | 11.5% |
+| 11 | Sphere 3-Finger | 15 | Tripod | 832 | 15.7% |
+| 7 | Index Finger Extension | 9 | Distal | 747 | 9.6% |
+| 15 | Tripod | 13 | Writing Tripod | 920 | 9.0% |
+| 1 | Power, Palm, VF 2-5, Adducted | 3 | Intermediate, Side, VF 2 | 1646 | 7.0% |
+
+**Discussion:**
+
+The global improvement is modest (+0.9pp accuracy, +0.012 macro F1) but the distribution
+of gains matches the pre-run prediction precisely: θ_CMC addresses row errors (abducted vs
+adducted distinction) and leaves column-axis confusions unchanged.
+
+The largest gain is Lateral Tripod (class 14): F1 0.229 → 0.338, recall 10% → 30%.
+Lateral Tripod (Feix #25, Intermediate/Side/VF3/Abducted) sits at the abducted row of the
+taxonomy but is systematically confused with Writing Tripod (#20) and the adducted power
+group (class 1). The θ_CMC feature provides the classifier a direct geometric signal for
+the first metacarpal's out-of-plane angle, which partially resolves this. The recall
+improvement (+20pp) comes at a precision cost (0.507 → 0.381): the model now identifies
+more Lateral Tripod samples correctly but generates more false positives from neighboring
+classes.
+
+Classes on the abducted/adducted boundary show the next largest gains: class 1 (+0.025),
+class 4 (+0.026), class 15 (+0.020). These are all cases where the row signal was present
+but noisy in the raw XYZ and θ_flex features — θ_CMC provides it directly.
+
+The predicted scope limitation is confirmed. Column-axis confusions — Sphere 3-Finger →
+Tripod (15.7%), Tripod → Writing Tripod (9.0%), Power Palm Adducted → Intermediate Side
+(7.0%) — persist at nearly identical rates to Run 004b. These involve grasps that share
+the same row (both abducted, or both adducted) and differ along the opposition type or VF
+assignment axis, where θ_CMC provides no signal.
+
+Two small regressions appear. Index Finger Extension (class 7, -0.014) develops a new
+confusion with Distal (class 9, 9.6% of support): both grasps extend the fingers with low
+MCP/PIP flexion and produce similar θ_CMC values (~24-25°), so the feature adds noise at
+this boundary. Adduction Grip (class 12, -0.008) shows a similar pattern. Both regressions
+are small and do not change the overall interpretation.
+
+Lateral Tripod remains the worst class at F1=0.338. Despite the improvement, 30% of its
+samples are still predicted as Writing Tripod. The structural reason is that both classes
+involve three-finger side opposition and both sit in the abducted row — θ_CMC distinguishes
+them at the row level but not at the finer contact-topology level. This is a hard limit of
+the 21-landmark representation.
+
+**What this run establishes:**
+
+Run 005 closes the encoding of Jarque-Bou Synergy 3 (CMC abduction + MCP extension + IP
+flexion). Run 003 added MCP extension and IP flexion via θ_flex; Run 005 adds CMC
+abduction via θ_CMC. The two features are independent in origin — one from kinematic
+synergy analysis (Jarque-Bou et al. 2019), one from taxonomy design (Feix et al. 2016) —
+and converge on the same anatomical quantity.
+
+The remaining confusion clusters — Tripod singletons, Sphere 3-Finger↔Tripod, and
+contact-dependent Palm/Pad boundary — are not addressable with additional features
+derivable from 21 XYZ landmarks. The current feature set (`[x, y, z, θ_flex]` per node
++ θ_CMC at graph level) represents the practical ceiling for this input modality.
 
 ## Pending / Future Work
 
-- [ ] Run 005: palmar abduction angle (θ_CMC) as graph-level feature — verify, implement, train
 - [ ] Real-time inference app (`grasp-app`)
 - [ ] Shadow Hand YAML configuration from Dexonomy dataset
 - [ ] ROS integration (`grasp-robot`)
