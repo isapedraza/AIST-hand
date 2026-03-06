@@ -1345,6 +1345,58 @@ contact-dependent Palm/Pad boundary — are not addressable with additional feat
 derivable from 21 XYZ landmarks. The current feature set (`[x, y, z, θ_flex]` per node
 + θ_CMC at graph level) represents the practical ceiling for this input modality.
 
+**Analysis of residual confusions: contact-dependent vs postural**
+
+The confusions that survive Run 005 fall into two qualitatively different categories. The
+distinction matters because each implies a different response.
+
+*Contact-dependent confusions.* Some Feix classes are only distinguishable by where the
+hand contacts the object — not by the hand configuration itself. Feix et al. (2016),
+Section V, give the canonical example: Medium Wrap (Palm opposition) and Prismatic
+4-Finger (Pad opposition) share nearly identical hand shapes, but differ in whether the
+palm contacts the object. Without an object, the operator is not executing either grasp
+specifically — they are in a configuration that could become either upon contact. This is
+not a modeling failure or a missing feature. It is an ontological property of the grasps
+themselves: they do not fully exist as acts until contact is made.
+
+In teleoperation, the operator has no real object. The classifier correctly identifies the
+base hand topology, and the apertura scalar captures how the operator adapts their hand
+configuration continuously. The specific contact surface that would disambiguate Palm from
+Pad is not communicated through intent — it is concretized by the operator's physical hand
+movement as the grasp is executed. This is not a limitation to be fixed by a new feature;
+it is the boundary of what intent-from-morphology can resolve.
+
+The Palm/Pad boundary (class 0 vs class 6, 12%) and the Palm/Side boundary (class 1 vs
+class 3, 7%) have persisted across every run regardless of added features, confirming this.
+For these classes, collapse is the structurally consistent option: treat them as one intent
+class representing a base hand topology, with the specific execution concretized through
+the operator's continuous hand adaptation. Whether the collapsed pairs produce sufficiently
+similar joint trajectories in a given robot to justify this will be evaluated against
+Dexonomy (Chen et al., RSS 2025).
+
+*Posturally ambiguous confusions.* The remaining confusion clusters are less clear.
+
+The Tripod group (Writing Tripod class 13, Lateral Tripod class 14, Tripod class 15) and
+Sphere 3-Finger (class 11) confuse each other significantly. These grasps do differ in
+hand posture — Lateral Tripod has a distinct lateral thumb contact, Tripod and Writing
+Tripod differ in finger curl and opposition angle — but the differences are subtle and may
+not be well-encoded by the current feature set. Whether new features (inter-finger
+abduction, relative fingertip distances) would resolve these confusions, or whether the
+grasps are posturally too similar to separate reliably from landmarks, is not confirmed.
+Collapse of some or all of these is possible but not yet justified without further evidence.
+
+Index Finger Extension (class 7) confusing with Distal (class 9, 9.6%) is unexpected:
+these classes are in different rows and columns, and θ_CMC was added precisely to address
+row separation. This confusion appeared only in Run 005 and warrants investigation before
+attributing it to a structural cause.
+
+*On when to stop.* The stopping criterion for feature engineering on this representation
+is not fully defined. The contact-dependent confusions set a hard floor that no additional
+feature can lower. The posturally ambiguous confusions may or may not improve with new
+features — the only way to know is to try, verify against literature first, and measure.
+The diminishing returns pattern across runs suggests the ceiling is near, but the exact
+boundary between "unresolvable" and "needs a better feature" requires case-by-case analysis.
+
 ## Pending / Future Work
 
 - [ ] Real-time inference app (`grasp-app`)
