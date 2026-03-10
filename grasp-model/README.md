@@ -1397,6 +1397,125 @@ features — the only way to know is to try, verify against literature first, an
 The diminishing returns pattern across runs suggests the ceiling is near, but the exact
 boundary between "unresolvable" and "needs a better feature" requires case-by-case analysis.
 
+---
+
+### Dataset Analysis — HOGraspNet Frame Phase Distribution (2026-03-09)
+
+**Question:** Do the CSVs contain only stable-grasp frames, or do they include approach and release phases?
+
+**Findings:** Each trial in HOGraspNet covers the full temporal sequence of a grasp event. The annotated frames ("sparse frames" in the paper) are a manual subselection across the entire trial, not filtered to the stable phase. Empirical inspection of contact maps across a 70-frame sequence confirms three distinct phases:
+
+- Frames at the start of the sequence (e.g., frame 1): contact_sum ~23, low contact -- approach phase.
+- Middle frames (e.g., frames 7-82): contact_sum ~180-260, consistent high contact -- stable grasp.
+- Frames at the end (e.g., frame 89): contact_sum ~17 -- release phase.
+
+Approximately 6% of frames in the dataset have contact_sum < 0.5 (effectively zero contact). These frames carry a class label assigned from the sequence name, but the hand is not yet touching the object or has already released it.
+
+**Available JSON fields not currently extracted in the CSVs:**
+
+- `contact`: 778 float values [0,1], one per MANO hand mesh vertex, indicating contact intensity with the object. This is the only available proxy for grasp stability.
+- `Mesh[0].mano_pose`: 45 MANO pose parameters -- an alternative/complementary representation to raw XYZ landmarks.
+- `Mesh[0].mano_betas`: 10 MANO shape parameters capturing inter-subject hand shape variation.
+- `actor.*`: subject demographics (sex, age, height, hand size).
+- `projected_2D_pose_per_cam`: 2D projection of the 21 landmarks onto the image plane.
+
+**Recommended action:** Re-extract CSVs including `contact_sum` per frame and filter training data to frames with contact_sum above a threshold (~50-100). This removes approach and release noise while keeping the stable-grasp core of the dataset.
+
+---
+
+---
+
+### Dataset Split Revision — Migration to Subject-Based Split (s1) (2026-03-09)
+
+**Decision:** Migrate from the current frame-stratified split to the official HOGraspNet `s1` (Unseen Subjects) protocol.
+
+**Problem with current split:** The existing CSVs were generated with a stratified split at the frame level. This allows frames from the same trial to appear in both train and test simultaneously. In practice, the model is evaluated on frames it has already seen partial versions of during training. The model learns to generalize frames, not complete grasp instances from unseen subjects.
+
+**Why this matters:** The target deployment is teleoperation with arbitrary users. A model that generalizes frames from known subjects does not guarantee generalization to new users with different hand morphologies. HOGraspNet covers subjects aged 10 to 74, with hand sizes varying from children to adults -- subject identity is a meaningful covariate.
+
+**The s1 protocol** is defined in the official HOGraspNet dataloader and is designed explicitly to measure generalization to unseen subjects:
+- Train: S11-S73 (~1M frames, 68%)
+- Val: S01-S10 (~147K frames, 10%)
+- Test: S74-S99 (~327K frames, 22%)
+
+Test subjects never appear in train. All 28 classes are represented in all three splits. Results under this protocol are directly comparable to other work using HOGraspNet s1.
+
+**Implication:** All runs prior to this decision (001-005) were evaluated under the frame-stratified split. Their results are internally consistent but may overestimate generalization to new subjects. Re-training under s1 is required to obtain honest generalization metrics. This is tracked as a pending item.
+
+---
+
+### Experiment: Synergy-Taxonomy Analysis v1 (2026-03-09)
+
+*This is not a model training run. It is a dataset-level analysis establishing what grasp categories are empirically distinguishable using only the geometry of points and connections that a monocular sensor can capture. The result defines the reduced taxonomy that feeds Head A of the multitask model.*
+
+---
+
+#### Paso 1 — Preparación y Curaduría de Datos
+
+**Filtro de Existencia (exclusivo para este experimento):** Se recorre cada frame del dataset original y se conservan únicamente aquellos donde la suma del mapa de contacto (`contact_sum`, suma de los 778 valores del campo `contact` en los JSONs de HOGraspNet) sea estrictamente mayor a cero. Este filtro elimina frames donde la mano no interactúa físicamente con el objeto sin penalizar las clases de agarre de precisión, cuyo contacto intrínseco es bajo pero real. El entrenamiento del GCN utiliza el dataset completo sin este filtro, únicamente segmentado por sujetos según el Split S1.
+
+**Segmentación por Sujetos — Split S1 (oficial HOGraspNet):** El dataset se divide por identidad del participante, siguiendo el protocolo `s1` del dataloader oficial de HOGraspNet:
+
+- Entrenamiento: Sujetos S11 a S73
+- Validación: Sujetos S01 a S10
+- Prueba: Sujetos S74 a S99
+
+Esta segmentación garantiza que los resultados midan la generalización a nuevas manos con morfologías no vistas durante el entrenamiento (el dataset cubre sujetos de 10 a 74 años), y no la memorización de secuencias específicas de video.
+
+---
+
+#### Paso 2 — Derivación del Subespacio de Observación
+
+El subespacio de observación se construye sobre los 21 keypoints XYZ siguiendo el orden estándar MediaPipe/HOGraspNet: 0 (Muñeca), 1-4 (Pulgar), 5-8 (Índice), 9-12 (Medio), 13-16 (Anular), 17-20 (Meñique).
+
+**Normalización de Escala:** Para cada frame se aplica una normalización root-relative: se resta la posición de la muñeca (keypoint 0) a todos los puntos. A continuación se escala todo el esqueleto de forma que la distancia entre la muñeca (0) y el nudillo medio (MIDDLE_MCP, keypoint 9) sea unitaria, en consistencia con el pipeline de normalización del GCN.
+
+**Cálculo de Vectores Óseos:** Se calculan 20 vectores 3D que representan los segmentos óseos de la mano siguiendo la cadena cinemática: `b_ij = j_i - j_j`, donde `j_i` y `j_j` son las coordenadas XYZ de dos articulaciones adyacentes. Estos vectores preservan la topología del esqueleto y constituyen la representación base para el cálculo de ángulos y para la red de grafos.
+
+**Extracción de Ángulos Articulares:** A partir de los vectores óseos se derivan los ángulos articulares mediante el arccoseno del producto punto normalizado de los vectores que convergen en cada articulación: `θ_j = arccos( (b_ij · b_jk) / (|b_ij| |b_jk|) )`. Este paso destila los grados de libertad reales de la mano, descartando la rotación global. Se extraen entre 15 y 20 ángulos: 3 ángulos de flexión por cada uno de los 4 dedos largos (12 total), 2 ángulos para el pulgar, y ángulos de abducción entre los vectores de los nudillos (keypoints 5, 9, 13, 17) respecto a la base de la palma.
+
+**Síntesis por Mediana -- El Punto de Trial:** Los frames se agrupan por `sequence_id`. Para cada ángulo calculado se obtiene la mediana estadística sobre todos los frames del trial que sobrevivieron el filtro de existencia. El resultado es un único vector de ángulos por trial, que elimina el ruido de las fases de aproximación y liberación, y es robusto a los saltos de muestreo irregular del dataset.
+
+---
+
+#### Paso 3 — Análisis de Sinergias Posturales (PCA)
+
+**Normalización Estadística:** Los vectores de ángulos de los sujetos de entrenamiento se normalizan para que cada ángulo tenga media cero y varianza unitaria. Esto evita que las flexiones de gran rango opaquen los movimientos informativos de menor amplitud, como la oposición del pulgar.
+
+**Ejecución del PCA:** Se aplica Análisis de Componentes Principales sobre la matriz de vectores medianos de los sujetos de entrenamiento (S11-S73). El PCA se ajusta exclusivamente sobre el conjunto de entrenamiento; la transformación aprendida se aplica posteriormente a validación y prueba para evitar fuga de datos en el Paso 5.
+
+**Criterio de Selección:** Se identifican los componentes principales que explican entre el 80% y el 85% de la varianza total, típicamente los primeros 2 a 3 PCs. Adicionalmente se registran los coeficientes de los PCs 4 al 6, ya que la literatura sugiere que estos capturan la destreza fina asociada a la conformación a objetos específicos (Santello et al., 1998).
+
+---
+
+#### Paso 4 — Agrupamiento No Supervisado (Ensemble Clustering)
+
+**Algoritmos:** Se ejecutan en paralelo k-means++, Modelos de Mezcla Gaussiana (GMM) y Clustering Jerárquico Aglomerativo sobre el subespacio de los componentes principales seleccionados.
+
+**Métrica:** Se utiliza la distancia de Mahalanobis, que considera las correlaciones intrínsecas entre articulaciones y es más apropiada que la distancia euclidiana para datos con covarianza no esférica.
+
+**Reducción Taxonómica:** A partir de los dendrogramas y métricas de separación de clusters, las 28 clases de HOGraspNet se colapsan en un conjunto de 5 a 9 categorías funcionales identificables (por ejemplo: plana, distal, cilíndrica, esférica y anillo). El número final de clusters se determina empíricamente por los resultados.
+
+---
+
+#### Paso 5 — Validación de Identificabilidad
+
+Este paso constituye el criterio de realidad definitivo: confirma si el sensor puede distinguir los clusters propuestos desde su representación nativa.
+
+**Reetiquetado:** Los frames del dataset se reetiquetan con las nuevas etiquetas de cluster. Frames que pertenecían a clases distintas bajo la taxonomía original pero que el clustering asignó al mismo grupo reciben la misma etiqueta, reflejando su equivalencia funcional geométrica.
+
+**Entrenamiento del Clasificador:** Se entrena un MLP simple tomando como entrada los vectores óseos (bone vectors) de los sujetos de entrenamiento (S11-S73) y como objetivo las etiquetas de cluster. Los bone vectors representan la entrada real del sensor, lo que hace esta validación directamente comparable con las condiciones de despliegue.
+
+**Prueba sobre Sujetos No Vistos:** El clasificador se evalúa exclusivamente sobre los datos de los sujetos de prueba (S74-S99), garantizando que ningún sujeto del conjunto de prueba haya participado en la definición de los clusters ni en el entrenamiento del clasificador.
+
+**Criterio de Colapso Final:** Se genera una matriz de confusión sobre el conjunto de prueba. Si dos clusters presentan una tasa de confusión recíproca superior al 50%, la metodología dicta que deben fusionarse en una única categoría funcional, ya que son geométricamente redundantes para el sensor bajo las condiciones de observación monocular.
+
+---
+
+**Results:** TODO
+
+---
+
 ## Pending / Future Work
 
 ### Model
