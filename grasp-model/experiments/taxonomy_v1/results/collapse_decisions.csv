@@ -1,0 +1,14 @@
+class_a,class_b,name_a,name_b,d_synergy,c_gcn,same_feix,collapse
+15,16,Lateral,Stick,1.729,0.3699,True,True
+24,25,Precision_Disk,Precision_Sphere,0.9617,0.3125,True,True
+23,27,Prismatic_3F,Tripod,2.2623,0.2891,False,True
+8,15,Light_Tool,Lateral,2.6765,0.2813,False,True
+8,16,Light_Tool,Stick,1.6149,0.2389,False,True
+10,22,Ring,Inferior_Pincer,1.884,0.2205,False,True
+18,19,Writing_Tripod,Lateral_Tripod,1.3517,0.2136,False,True
+19,27,Lateral_Tripod,Tripod,2.9799,0.2112,False,True
+20,21,Palmar_Pinch,Tip_Pinch,1.1971,0.1956,True,True
+0,11,Large_Diameter,Power_Disk,2.921,0.1893,True,True
+14,27,Sphere_3_Finger,Tripod,1.7394,0.1823,False,True
+20,22,Palmar_Pinch,Inferior_Pincer,1.7615,0.1787,True,True
+18,27,Writing_Tripod,Tripod,1.7071,0.1773,False,True

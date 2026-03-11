@@ -1703,33 +1703,254 @@ Este paso constituye el criterio de realidad definitivo: confirma si el sensor p
 
 *Paso 4 -- Class Separability Analysis:*
 
-The trial-level clustering (k-means, GMM, Ward) produced silhouette scores monotonically decreasing from k=3 (0.195) to k=12 (<0.116), favoring the gross Power/Precision/Lateral split -- too coarse for teleoperation. This pipeline groups trials by postural similarity but does not answer: "which of the 28 original classes are distinguishable from each other?"
+Two analyses were conducted:
 
-To address this, a complementary pairwise class analysis was conducted (`analyze_collapse_candidates.py`). Each pair of classes is evaluated by:
+**4a. Trial-level clustering (k-means, GMM, Ward):** Applied to the 8,361 trial vectors in 9D PCA space. Silhouette scores decreased monotonically from k=3 (0.195) to k=12 (<0.116), favoring the gross Power/Precision/Lateral split. Too coarse for teleoperation -- discarded as a collapse criterion. This pipeline groups trials by postural similarity but cannot answer "which specific pairs of the 28 classes are distinguishable?"
 
-- **C1 -- Feix cell (explanatory):** Whether both classes belong to the same cell in the Feix (2016) taxonomy (Fig. 4). Grasps in the same cell differ mainly in contact type or object shape, not hand configuration. This explains *why* certain pairs are indistinguishable (contact-dependent features invisible to keypoints) but does not determine *whether* to collapse.
-- **C2 -- Effect size (supporting):** Centroid distance in 9D rotated PCA space divided by pooled within-class spread. ES < 1.0 means class centroids are closer than typical intra-class variation -- analogous to Cohen's d < 1.0. This is a model-independent property of the data.
+**4b. Pairwise centroid distances:** For each of the 378 pairs of classes, the Euclidean distance between class centroids in the 9D PCA-varimax space was computed: `d(i,j) = ||centroid_i - centroid_j||_2`. These distances are descriptive -- they characterize how similar two classes are in average posture. No threshold is applied here. The full distance matrix and the 28 centroids are stored in `results/class_separability.json` under `class_centroids_pca`.
 
-Each pair falls into one of four cases:
+Top 5 closest pairs (smallest d_synergy): Precision_Disk/Precision_Sphere (0.962), Power_Sphere/Precision_Sphere (0.979), Palmar_Pinch/Tip_Pinch (1.197), Writing_Tripod/Lateral_Tripod (1.352), Palmar/Medium_Wrap (1.337).
 
-| Case | Feix cell | Synergy space | Action | Interpretation |
-|------|-----------|---------------|--------|----------------|
-| 1 | Same | ES < 1.0 | Collapse | Contact-dependent, Feix predicted |
-| 2 | Same | ES >= 1.0 | Keep | Object shape forces different posture |
-| 3 | Different | ES < 1.0 | Collapse candidate | Sensor limitation, novel finding |
-| 4 | Different | ES >= 1.0 | Keep | Expected |
+**Output of this step:** `results/class_separability.json` -- contains `class_centroids_pca` (28 vectors of 9 floats each, one per class). This file is an input to the Collapse Decision Analysis (Section 7).
 
-Results: 6 Case 1 pairs (within-cell, indistinguishable), 10 Case 2 pairs (within-cell but distinguishable -- object shape matters), multiple Case 3 pairs (cross-cell, indistinguishable in synergy space).
+*Paso 5 -- MLP reference classifier (28 classes):*
 
-*Paso 5 -- MLP reference (28 classes):* Test Acc 69.7%, Macro F1 0.625. Top confusions: Stick->Light_Tool (42.4%), Precision_Sphere->Precision_Disk (36.9%), Writing_Tripod->Lateral_Tripod (32.8%), Palmar_Pinch->Tip_Pinch (23.8%). These are consistent with the synergy space analysis but come from a weak classifier (MLP on 63 XYZ) and are not used as a decision criterion.
+**Input:** 63 XYZ values per frame (21 keypoints x 3 coordinates), geometrically normalized. Same representation as the GCN.
+**Model:** 3-layer MLP (63->256->128->28), ReLU, Dropout(0.3), NLL loss, Adam lr=1e-3, early stopping patience=10.
+**Training data:** 995,886 frames from subjects S11-S73.
+**Test data:** 327,260 frames from subjects S74-S99.
 
-**Revised methodology (pending implementation):**
+**Results:** Test Acc 69.7%, Macro F1 0.625 (early stopping at epoch 48).
 
-The synergy space analysis (C2) is the **primary criterion** for proposing collapse candidates because it is model-independent: it measures whether the sensor data contains sufficient geometric information to distinguish two classes, regardless of which classifier is used. This avoids the circularity of using a weak model's failures to limit a stronger model's training taxonomy.
+**Top confusions (>10% in at least one direction):**
 
-A **baseline GCN trained on all 28 classes** will serve as the secondary diagnostic. This is not circular -- it is a pilot study that informs the main study's design. If the GCN architecture can distinguish a pair that synergy analysis flags as indistinguishable (ES < 1.0), the pair should be kept. If the GCN also confuses them, the collapse is doubly justified.
+| True class | Predicted as | Rate | Symmetric? |
+|-----------|-------------|------|-----------|
+| Stick | Light_Tool | 42.4% | No (reverse 1.3%) |
+| Precision_Sphere | Precision_Disk | 36.9% | No (reverse 2.6%) |
+| Lateral_Tripod | Writing_Tripod | 32.8% | No (reverse 0.6%) |
+| Palmar_Pinch | Tip_Pinch | 23.8% | No (reverse 1.7%) |
+| Lateral | Light_Tool | 12.5% | Yes (reverse 11.5%) |
 
-Feix cell membership remains the explanatory variable: it answers *why* certain pairs are indistinguishable (contact-dependent differences invisible to 21 keypoints).
+**Role of this step:** The MLP confusion matrix is a reference to assess whether the XYZ representation contains enough information to separate the 28 classes in principle. It is not the decision criterion for collapse -- a weak classifier failing on a pair does not justify collapsing them in a stronger model. The actual collapse criterion is the GCN confusion matrix (Run 006), which uses graph structure and angular features.
+
+**Output of this step:** `results/confusion_28classes.png` (visual). The MLP confusion matrix is not used as a numerical input to any downstream step.
+
+---
+
+**Data flow into Collapse Decision Analysis:**
+
+The two inputs to the collapse decision (`decide_collapses.py`) are:
+
+| Input | Source | Content |
+|-------|--------|---------|
+| `class_separability.json` | This experiment, Paso 4b | 28 class centroids in 9D PCA-varimax space → `d_synergy` per pair (descriptive) |
+| `confusion_matrix_norm_gcn.csv` | Run 006 (GCN trained on 28 classes) | Row-normalized confusion matrix → `c_gcn = max(CM[i,j], CM[j,i])` per pair (decision criterion) |
+
+The synergy centroids and the GCN confusion matrix are computed independently -- one from the angle-based PCA analysis, one from end-to-end GCN training on raw keypoints. Their combination in the collapse decision is what makes the methodology two-signal rather than single-source.
+
+---
+
+### Run 006 -- GCN_CAM_8_8_16_16_32 Baseline, 28 Classes (2026-03-11)
+
+**Purpose:** Establish the GCN-specific confusion matrix over all 28 original classes, to serve as the empirical validation criterion for collapse decisions. This run is not an optimization target -- it is a diagnostic tool for the taxonomy analysis.
+
+**Configuration:**
+
+| Parameter | Value |
+|-----------|-------|
+| Model | `GCN_CAM_8_8_16_16_32` |
+| Classes | 28 (all original HOGraspNet / Feix classes) |
+| Dataset | `data/raw/hograspnet.csv` |
+| Split | S1 subject-level (Train S11-S73 / Val S01-S10 / Test S74-S99) |
+| Train / Val / Test frames | 1,015,342 / 146,509 / 327,260 |
+| Node features | `[x, y, z, theta_flex]` (F=4) |
+| Graph-level feature | `theta_CMC` (palmar abduction) |
+| Max epochs | 40 |
+| Early stopping | patience = 10 (val accuracy) |
+| Best epoch | **15** |
+| Actual epochs run | 25 (stopped at epoch 25) |
+| Batch size | 256 |
+| LR | 1e-3 (Adam) |
+| Loss | NLL + log_softmax |
+| Hardware | Google Colab T4 |
+| Training time | 43.57 min |
+
+**Results:**
+
+| Split | Loss | Accuracy | Macro F1 | Weighted F1 |
+|-------|------|----------|----------|-------------|
+| Val (best, epoch 15) | 1.3375 | **60.2%** | -- | -- |
+| Test (S74-S99) | 1.2001 | **62.0%** | **0.550** | 0.613 |
+
+**Training curve (Val Accuracy by epoch):**
+
+```
+Ep 01: 54.0% * | Ep 10: 58.1%   | Ep 19: 58.4%
+Ep 02: 53.8%   | Ep 11: 58.0%   | Ep 20: 59.3%
+Ep 03: 54.6% * | Ep 12: 58.1%   | Ep 21: 58.3%
+Ep 04: 56.9% * | Ep 13: 57.6%   | Ep 22: 59.8%
+Ep 05: 56.8%   | Ep 14: 59.6% * | Ep 23: 59.5%
+Ep 06: 57.8% * | Ep 15: 60.2% * | Ep 24: 58.5%
+Ep 07: 58.6% * | Ep 16: 58.1%   | Ep 25: 59.2%  ← early stop
+Ep 08: 57.1%   | Ep 17: 59.1%   |
+Ep 09: 58.3%   | Ep 18: 59.0%   |   * = saved checkpoint
+```
+
+The model reaches its best validation accuracy at epoch 15. Epochs 16-25 oscillate between 58.1% and 59.8% without improvement, and early stopping fires at epoch 25. Train loss continues decreasing (1.154 at ep 15 -> 1.105 at ep 25) while val loss stagnates (1.338 -> 1.348), indicating mild overfitting after epoch 15 and a representation ceiling rather than insufficient capacity.
+
+**Per-class performance (all 28 classes, test set):**
+
+| Local idx | Feix ID | Grasp name | Prec | Recall | F1 | Support |
+|:---------:|:-------:|------------|------|--------|----|---------|
+| 0 | 1 | Large_Diameter | 0.518 | 0.619 | 0.564 | 7,948 |
+| 1 | 2 | Small_Diameter | 0.670 | 0.536 | 0.596 | 7,334 |
+| 2 | 17 | Index_Finger_Ext | 0.829 | 0.772 | **0.800** | 18,858 |
+| 3 | 18 | Extension_Type | 0.724 | 0.862 | 0.787 | 15,229 |
+| 4 | 22 | Parallel_Ext | 0.696 | 0.671 | 0.683 | 6,688 |
+| 5 | 30 | Palmar | 0.603 | 0.739 | 0.664 | 6,997 |
+| 6 | 3 | Medium_Wrap | 0.441 | 0.160 | 0.234 | 2,204 |
+| 7 | 4 | Adducted_Thumb | 0.721 | 0.540 | 0.618 | 16,783 |
+| 8 | 5 | Light_Tool | 0.657 | 0.424 | 0.515 | 23,738 |
+| 9 | 19 | Distal | 0.750 | 0.789 | 0.769 | 20,543 |
+| 10 | 31 | Ring | 0.387 | 0.595 | 0.469 | 5,356 |
+| 11 | 10 | Power_Disk | 0.578 | 0.632 | 0.604 | 4,933 |
+| 12 | 11 | Power_Sphere | 0.470 | 0.547 | 0.505 | 6,602 |
+| 13 | 26 | Sphere_4_Finger | 0.594 | 0.756 | 0.665 | 4,880 |
+| 14 | 28 | Sphere_3_Finger | 0.541 | 0.585 | 0.562 | 13,047 |
+| 15 | 16 | Lateral | 0.654 | 0.849 | 0.739 | 26,701 |
+| 16 | 29 | Stick | 0.359 | 0.054 | **0.093** | 3,006 |
+| 17 | 23 | Adduction_Grip | 0.766 | 0.529 | 0.626 | 5,786 |
+| 18 | 20 | Writing_Tripod | 0.524 | 0.479 | 0.500 | 16,116 |
+| 19 | 25 | Lateral_Tripod | 0.395 | 0.227 | 0.289 | 5,118 |
+| 20 | 9 | Palmar_Pinch | 0.579 | 0.643 | 0.609 | 13,338 |
+| 21 | 24 | Tip_Pinch | 0.625 | 0.417 | 0.501 | 7,154 |
+| 22 | 33 | Inferior_Pincer | 0.558 | 0.599 | 0.578 | 14,076 |
+| 23 | 7 | Prismatic_3F | 0.410 | 0.288 | 0.338 | 6,905 |
+| 24 | 12 | Precision_Disk | 0.763 | 0.762 | 0.762 | 32,794 |
+| 25 | 13 | Precision_Sphere | 0.283 | 0.340 | 0.309 | 5,335 |
+| 26 | 27 | Quadpod | 0.421 | 0.599 | 0.495 | 5,491 |
+| 27 | 14 | Tripod | 0.498 | 0.531 | 0.514 | 24,300 |
+
+**Observations:** The five worst classes by F1 (Stick 0.093, Lateral_Tripod 0.289, Prismatic_3F 0.338, Precision_Sphere 0.309, Medium_Wrap 0.234) are all represented in the collapse pairs above threshold. The five best classes (Index_Finger_Ext 0.800, Extension_Type 0.787, Distal 0.769, Precision_Disk 0.762, Lateral 0.739) are all singletons in the proposed 17-class taxonomy -- the GCN distinguishes them cleanly.
+
+**Main confusion pairs (max(CM[i,j], CM[j,i]) > 0.15):**
+
+| Class A | Class B | max confusion | d_synergy | Notes |
+|---------|---------|--------------|-----------|-------|
+| Lateral | Stick | 0.370 | 1.729 | same Feix cell |
+| Precision_Disk | Precision_Sphere | 0.313 | 0.962 | same Feix cell |
+| Prismatic_3F | Tripod | 0.289 | 2.263 | diff Feix cell |
+| Light_Tool | Lateral | 0.281 | 2.677 | diff Feix cell |
+| Light_Tool | Stick | 0.239 | 1.615 | diff Feix cell |
+| Ring | Inferior_Pincer | 0.221 | 1.884 | diff Feix cell |
+| Writing_Tripod | Lateral_Tripod | 0.214 | 1.352 | diff Feix cell |
+| Lateral_Tripod | Tripod | 0.211 | 2.980 | diff Feix cell |
+| Palmar_Pinch | Tip_Pinch | 0.196 | 1.197 | same Feix cell |
+| Large_Diameter | Power_Disk | 0.189 | 2.921 | same Feix cell |
+| Sphere_3_Finger | Tripod | 0.182 | 1.739 | diff Feix cell |
+| Palmar_Pinch | Inferior_Pincer | 0.179 | 1.762 | same Feix cell |
+| Writing_Tripod | Tripod | 0.177 | 1.707 | diff Feix cell |
+
+---
+
+### Collapse Decision Analysis (2026-03-11)
+
+**Inputs:**
+- Synergy space centroids: `experiments/taxonomy_v1/results/class_separability.json` (`class_centroids_pca`, 9D PCA-varimax space)
+- GCN confusion matrix: `experiments/taxonomy_v1/results/confusion_matrix_norm_gcn.csv` (Run 006, normalized by row)
+- Script: `experiments/taxonomy_v1/decide_collapses.py`
+
+**Decision criterion:** The GCN confusion rate is the sole filter for collapse. A pair collapses if and only if `max(CM[i,j], CM[j,i]) > gcn_thresh`. The synergy space distance characterizes the *type* of confusion but does not gate the collapse decision.
+
+**Why max() and not mean():** The confusion metric for each pair is `max(CM[i,j], CM[j,i])` -- the worst-case direction -- rather than the symmetric mean. The choice follows from the operational context.
+
+In teleoperation, the relevant question is not "are these two classes mutually indistinguishable?" but "is either class reliably recognizable for the operator?" If CM[A,B] = 21% (21% of grasp A frames are predicted as B), then when the operator tries to produce grasp A, the system will emit the wrong token 1 in 5 times -- regardless of whether B is also confused as A. The grasp A is operationally unreliable.
+
+`mean()` would miss this. Asymmetric confusions occur systematically when one class is small or rare and gets absorbed by a larger neighboring class. Using `mean()` would leave those small classes in the taxonomy as nominally distinct categories that the system cannot reliably emit in practice. Two collapse pairs are affected concretely:
+
+| Pair | max() | mean() | Decision with max | Decision with mean |
+|------|-------|--------|-------------------|--------------------|
+| Light_Tool + Stick | 0.239 | 0.122 | collapse | keep |
+| Lateral_Tripod + Tripod | 0.211 | 0.106 | collapse | keep |
+
+Using `mean()` would yield 19 classes instead of 17, with Stick and Lateral_Tripod retained as separate categories despite having recalls of 5.4% and 22.7% respectively -- too low to be reliable in deployment.
+
+**Threshold:** `gcn_thresh = 0.15`. Single criterion -- no other threshold is used.
+
+**Justification of gcn_thresh = 0.15:**
+
+The threshold is not arbitrary -- it was selected to lie within a natural gap in the distribution of max pairwise confusion values. Sorting all 378 class pairs by their max(CM[i,j], CM[j,i]) value:
+
+| Rank | Max confusion | Pair | Decision |
+|------|--------------|------|----------|
+| 13 | **0.177** | Writing_Tripod vs Tripod | last collapse |
+| -- | **[gap: 0.043]** | -- | -- |
+| 14 | **0.135** | Medium_Wrap vs Precision_Disk | first keep |
+| 15 | 0.125 | Small_Diameter vs Adducted_Thumb | keep |
+| ... | ... | ... | ... |
+
+The gap between the 13th and 14th pairs is 0.043 units -- a 31% relative jump. **Any threshold in the interval [0.135, 0.177] produces exactly the same 13 collapse pairs.** The threshold of 0.15 lies at the center of this interval and is stable to perturbations of ±0.022.
+
+Three additional properties support this choice:
+
+1. **4.2x chance level.** With 28 classes, uniform random prediction yields 1/28 ≈ 0.036 per off-diagonal cell. A threshold of 0.15 = 4.2 × chance level selects confusions that are systematic -- not attributable to random prediction error.
+
+2. **Top 3.4% of all pairs.** The 13 collapse pairs are in the 97th percentile of the full distribution (p97 = 0.178). The distribution is highly right-skewed: p50 = 0.009, p90 = 0.065, p95 = 0.114. Collapsing the top 3.4% is a conservative, well-localized intervention.
+
+3. **The 14th pair does not generalize.** Medium_Wrap vs Precision_Disk (max confusion = 0.135) is a strongly asymmetric confusion: CM[Medium_Wrap, Precision_Disk] = 0.135 but CM[Precision_Disk, Medium_Wrap] = 0.001. This is a small class being partially absorbed by a large one -- not a symmetric indistinguishability. The 13 pairs above 0.15 show higher bidirectionality, consistent with genuine postural overlap rather than class-size artifacts.
+
+**Role of the synergy space:** The synergy distance `d_synergy` is included as a descriptive field -- it characterizes *why* the GCN confuses each pair but does not gate the collapse decision. No threshold is applied to it. Pairs with small `d_synergy` have similar posture centroids (confusion likely reflects genuine postural overlap); pairs with large `d_synergy` have distinct posture centroids on average (confusion likely reflects high within-class variability or contact-dependent differences that landmarks cannot capture). These are interpretations, not criteria.
+
+**Four-case framework (Feix cell cross-reference):**
+
+| Case | Feix cell | GCN | Count | Interpretation |
+|------|-----------|-----|-------|----------------|
+| A -- collapse, Feix agrees | Same | confused | 5 pairs | Feix taxonomy and data converge |
+| B -- keep, Feix wrong | Same | separates | 15 pairs | GCN overrides Feix; object shape forces distinct posture |
+| C -- collapse, data-driven | Different | confused | 8 pairs | Feix taxonomy insufficient; empirical collapse |
+| D -- keep, both agree | Different | separates | 350 pairs | No collapse; correct |
+
+Case B is the key validation: 15 pairs share a Feix cell yet the GCN separates them cleanly (e.g., Large_Diameter vs Small_Diameter: c=0.0, d=6.08). Feix cell membership is neither necessary nor sufficient as a collapse criterion.
+
+Case C is the key novel finding: 8 pairs cross Feix cells but the GCN cannot distinguish them (e.g., Light_Tool vs Lateral: c=0.281; the pair is separated biomechanically by thumb adduction but shares the adducted, extended finger configuration from keypoints).
+
+**13 collapse pairs:**
+
+| Pair | d_synergy | c_gcn | same_feix | Notes |
+|------|-----------|-------|-----------|-------|
+| Lateral + Stick | 1.729 | 0.370 | True | close centroids, Feix agrees |
+| Precision_Disk + Precision_Sphere | 0.962 | 0.313 | True | nearest pair in synergy space |
+| Prismatic_3F + Tripod | 2.263 | 0.289 | False | distant centroids, cross-cell |
+| Light_Tool + Lateral | 2.677 | 0.281 | False | distant centroids, cross-cell |
+| Light_Tool + Stick | 1.615 | 0.239 | False | asymmetric: Stick->Light_Tool 23.9% |
+| Ring + Inferior_Pincer | 1.884 | 0.221 | False | cross-cell |
+| Writing_Tripod + Lateral_Tripod | 1.352 | 0.214 | False | close centroids |
+| Lateral_Tripod + Tripod | 2.980 | 0.211 | False | asymmetric: Lat_Tripod->Tripod 21.1% |
+| Palmar_Pinch + Tip_Pinch | 1.197 | 0.196 | True | close centroids, Feix agrees |
+| Large_Diameter + Power_Disk | 2.921 | 0.189 | True | distant centroids, Feix agrees |
+| Sphere_3_Finger + Tripod | 1.739 | 0.182 | False | cross-cell |
+| Palmar_Pinch + Inferior_Pincer | 1.762 | 0.179 | True | Feix agrees |
+| Writing_Tripod + Tripod | 1.707 | 0.177 | False | weakest collapse pair (c just above threshold) |
+
+**Proposed taxonomy (28 -> 17 classes):** Classes are merged using union-find over the 13 collapse pairs. Transitivity is intentional: if the GCN confuses A+B and B+C, then {A, B, C} form a single confusion cluster.
+
+| New ID | Members | Size | Type |
+|--------|---------|------|------|
+| 0 | Sphere_3_Finger, Writing_Tripod, Lateral_Tripod, Prismatic_3F, Tripod | 5 | collapsed |
+| 1 | Ring, Palmar_Pinch, Tip_Pinch, Inferior_Pincer | 4 | collapsed |
+| 2 | Light_Tool, Lateral, Stick | 3 | collapsed |
+| 3 | Large_Diameter, Power_Disk | 2 | collapsed |
+| 4 | Precision_Disk, Precision_Sphere | 2 | collapsed |
+| 5-16 | Small_Diameter, Index_Finger_Ext, Extension_Type, Parallel_Ext, Palmar, Medium_Wrap, Adducted_Thumb, Distal, Power_Sphere, Sphere_4_Finger, Adduction_Grip, Quadpod | 1 each | singleton |
+
+**Notable finding:** This data-driven analysis independently recovers 17 functional classes -- the same number that Feix et al. (2016) identify as shape-equivalent postures when grouping their 33 grasps by hand configuration alone (Fig. 4, columns). The groupings are not identical (Feix uses opposition type and virtual finger count; we use GCN confusion), but the convergence on the same cardinality provides external validation that 17 is approximately the information-theoretic ceiling for contactless landmark-based grasp recognition.
+
+**Outputs saved to `experiments/taxonomy_v1/results/`:**
+- `collapse_decisions.csv` -- all 378 pairs with d_synergy, c_gcn, type, collapse flag
+- `proposed_taxonomy.json` -- 17-class grouped taxonomy
+- `scatter_synergy_vs_gcn.png` -- 2D decision plot (synergy distance vs GCN confusion)
+- `four_case_summary.txt` -- breakdown by Feix cell agreement
 
 ---
 

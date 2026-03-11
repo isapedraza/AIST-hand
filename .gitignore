@@ -4,7 +4,14 @@ __pycache__/
 .venv/
 venv/
 data/
-experiments/
+experiments/**
+!experiments/**/
+!experiments/**/*.py
+!experiments/**/*.md
+!experiments/**/*.json
+!experiments/**/*.csv
+!experiments/**/*.txt
+!experiments/**/*.png
 *.pt
 *.pth
 events.out.tfevents.*

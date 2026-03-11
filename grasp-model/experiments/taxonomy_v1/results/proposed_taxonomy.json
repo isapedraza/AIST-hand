@@ -1,0 +1,211 @@
+[
+  {
+    "new_id": 0,
+    "members": [
+      14,
+      18,
+      19,
+      23,
+      27
+    ],
+    "names": [
+      "Sphere_3_Finger",
+      "Writing_Tripod",
+      "Lateral_Tripod",
+      "Prismatic_3F",
+      "Tripod"
+    ],
+    "size": 5,
+    "type": "collapsed"
+  },
+  {
+    "new_id": 1,
+    "members": [
+      10,
+      20,
+      21,
+      22
+    ],
+    "names": [
+      "Ring",
+      "Palmar_Pinch",
+      "Tip_Pinch",
+      "Inferior_Pincer"
+    ],
+    "size": 4,
+    "type": "collapsed"
+  },
+  {
+    "new_id": 2,
+    "members": [
+      8,
+      15,
+      16
+    ],
+    "names": [
+      "Light_Tool",
+      "Lateral",
+      "Stick"
+    ],
+    "size": 3,
+    "type": "collapsed"
+  },
+  {
+    "new_id": 3,
+    "members": [
+      0,
+      11
+    ],
+    "names": [
+      "Large_Diameter",
+      "Power_Disk"
+    ],
+    "size": 2,
+    "type": "collapsed"
+  },
+  {
+    "new_id": 4,
+    "members": [
+      24,
+      25
+    ],
+    "names": [
+      "Precision_Disk",
+      "Precision_Sphere"
+    ],
+    "size": 2,
+    "type": "collapsed"
+  },
+  {
+    "new_id": 5,
+    "members": [
+      1
+    ],
+    "names": [
+      "Small_Diameter"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 6,
+    "members": [
+      2
+    ],
+    "names": [
+      "Index_Finger_Ext"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 7,
+    "members": [
+      3
+    ],
+    "names": [
+      "Extension_Type"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 8,
+    "members": [
+      4
+    ],
+    "names": [
+      "Parallel_Ext"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 9,
+    "members": [
+      5
+    ],
+    "names": [
+      "Palmar"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 10,
+    "members": [
+      6
+    ],
+    "names": [
+      "Medium_Wrap"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 11,
+    "members": [
+      7
+    ],
+    "names": [
+      "Adducted_Thumb"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 12,
+    "members": [
+      9
+    ],
+    "names": [
+      "Distal"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 13,
+    "members": [
+      12
+    ],
+    "names": [
+      "Power_Sphere"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 14,
+    "members": [
+      13
+    ],
+    "names": [
+      "Sphere_4_Finger"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 15,
+    "members": [
+      17
+    ],
+    "names": [
+      "Adduction_Grip"
+    ],
+    "size": 1,
+    "type": "singleton"
+  },
+  {
+    "new_id": 16,
+    "members": [
+      26
+    ],
+    "names": [
+      "Quadpod"
+    ],
+    "size": 1,
+    "type": "singleton"
+  }
+]

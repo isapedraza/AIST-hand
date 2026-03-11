@@ -1,0 +1,50 @@
+Four-case framework
+============================================================
+
+
+Case A -- Same Feix cell, GCN confused    -> collapse (Feix and data agree)
+  (5 pairs)
+  Large_Diameter + Power_Disk (d_syn=2.921, c_gcn=0.1893)
+  Lateral + Stick (d_syn=1.729, c_gcn=0.3699)
+  Palmar_Pinch + Tip_Pinch (d_syn=1.1971, c_gcn=0.1956)
+  Palmar_Pinch + Inferior_Pincer (d_syn=1.7615, c_gcn=0.1787)
+  Precision_Disk + Precision_Sphere (d_syn=0.9617, c_gcn=0.3125)
+
+Case B -- Same Feix cell, GCN separates   -> KEEP SEPARATE (Feix wrong)
+  (15 pairs)
+  Large_Diameter + Small_Diameter (d_syn=6.0764, c_gcn=0.0)
+  Large_Diameter + Medium_Wrap (d_syn=4.0713, c_gcn=0.005)
+  Large_Diameter + Power_Sphere (d_syn=2.8186, c_gcn=0.056)
+  Small_Diameter + Medium_Wrap (d_syn=2.2793, c_gcn=0.1139)
+  Small_Diameter + Power_Disk (d_syn=3.8803, c_gcn=0.0431)
+  Small_Diameter + Power_Sphere (d_syn=4.7132, c_gcn=0.0034)
+  Extension_Type + Sphere_4_Finger (d_syn=3.3079, c_gcn=0.0029)
+  Palmar + Adducted_Thumb (d_syn=2.1304, c_gcn=0.0057)
+  Palmar + Light_Tool (d_syn=2.5477, c_gcn=0.0569)
+  Medium_Wrap + Power_Disk (d_syn=2.1221, c_gcn=0.0123)
+  ... and 5 more
+
+Case C -- Diff Feix cell, GCN confused    -> data-driven collapse
+  (8 pairs)
+  Light_Tool + Lateral (d_syn=2.6765, c_gcn=0.2813)
+  Light_Tool + Stick (d_syn=1.6149, c_gcn=0.2389)
+  Ring + Inferior_Pincer (d_syn=1.884, c_gcn=0.2205)
+  Sphere_3_Finger + Tripod (d_syn=1.7394, c_gcn=0.1823)
+  Writing_Tripod + Lateral_Tripod (d_syn=1.3517, c_gcn=0.2136)
+  Writing_Tripod + Tripod (d_syn=1.7071, c_gcn=0.1773)
+  Lateral_Tripod + Tripod (d_syn=2.9799, c_gcn=0.2112)
+  Prismatic_3F + Tripod (d_syn=2.2623, c_gcn=0.2891)
+
+Case D -- Diff Feix cell, GCN separates   -> keep separate (correct)
+  (350 pairs)
+  Large_Diameter + Index_Finger_Ext (d_syn=5.208, c_gcn=0.0002)
+  Large_Diameter + Extension_Type (d_syn=3.4392, c_gcn=0.0444)
+  Large_Diameter + Parallel_Ext (d_syn=2.133, c_gcn=0.1014)
+  Large_Diameter + Palmar (d_syn=5.0529, c_gcn=0.0086)
+  Large_Diameter + Adducted_Thumb (d_syn=5.6581, c_gcn=0.0046)
+  Large_Diameter + Light_Tool (d_syn=6.7984, c_gcn=0.0055)
+  Large_Diameter + Distal (d_syn=2.2197, c_gcn=0.0767)
+  Large_Diameter + Ring (d_syn=1.5567, c_gcn=0.0667)
+  Large_Diameter + Sphere_4_Finger (d_syn=1.8889, c_gcn=0.0068)
+  Large_Diameter + Sphere_3_Finger (d_syn=4.9904, c_gcn=0.0091)
+  ... and 340 more
