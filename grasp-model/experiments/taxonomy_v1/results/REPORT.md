@@ -757,14 +757,16 @@ Los 13 pares se agrupan via union-find (la transitividad es intencional: si el G
    de clases pequenas son menos estables. El MLP tambien puede sesgar hacia clases grandes.
 
 9. **Filtro asimetrico entre sinergias y GCN:** El pipeline de sinergias (Secciones 2-6)
-   aplica filtro contact_sum > 0 (solo frames con contacto activo), mientras que Run 006
-   se entreno sobre todos los frames. Esto tiene dos efectos opuestos: (a) la matriz de
-   confusion del GCN es mas conservadora porque incluye frames de transicion donde la
-   postura es ambigua -- si el GCN confunde dos clases incluso bajo estas condiciones mas
-   dificiles, el colapso esta mas justificado; (b) los centroides del espacio de sinergias
-   representan posturas "en estado estable" y pueden no capturar la confusion que ocurre
-   durante las transiciones. Para un analisis completamente consistente, ambos pipelines
-   deberian usar el mismo filtro.
+   aplica filtro contact_sum > 0 porque esos son los frames donde la intencion de agarre
+   ya esta formada -- la postura es estable y representativa de la clase. Eso es correcto
+   para analizar sinergias. El GCN de Run 006 se entreno sin este filtro, por lo que su
+   matriz de confusion incluye frames de aproximacion y liberacion donde la postura aun
+   esta transitando. Algunas confusiones del GCN pueden ser artefactos de estos frames
+   transicionales, no indistinguibilidad genuina entre las posturas caracteristicas de cada
+   clase. Para un analisis completamente consistente, Run 006 deberia reentrenarse con el
+   mismo filtro contact_sum > 0. El impacto esperado es que algunas confusiones marginales
+   (pares con c_gcn cercano al umbral de 0.15) podrian desaparecer, posiblemente reduciendo
+   el numero de colapsos.
 
 10. **Single-view depth:** HOGraspNet usa una sola camara de profundidad. Las confusiones
    pueden estar amplificadas por auto-oclusiones que un sistema multi-camara resolveria.
