@@ -25,8 +25,7 @@ print('🚀 Import libraries: OK')
 
 
 lr = 1e-3
-normalize = True
-network_type = "GCN_8_8_16_16_32"
+network_type = "GCN_CAM_8_8_16_16_32"
 weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256
@@ -42,14 +41,14 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_16cls_run005')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls_baseline')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
 
-datasetTrain = GraspsClass(root='data/', split='train', normalize=normalize, collapse=True)
-datasetVal   = GraspsClass(root='data/', split='val',   normalize=normalize, collapse=True)
-datasetTest  = GraspsClass(root='data/', split='test',  normalize=normalize, collapse=True)
+datasetTrain = GraspsClass(root='data/', split='train', collapse=False)
+datasetVal   = GraspsClass(root='data/', split='val',   collapse=False)
+datasetTest  = GraspsClass(root='data/', split='test',  collapse=False)
 
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")
@@ -80,6 +79,26 @@ model_.apply(reset_weights)
 
 optimizer_ = torch.optim.Adam(model_.parameters(), lr=lr, weight_decay=weight_decay)
 
+
+# ==================== Joint Dropout Augmentation =================
+JOINT_DROPOUT_P = 0.10   # probability of masking each joint during training
+
+def random_joint_dropout(batch, p=JOINT_DROPOUT_P):
+    """
+    Randomly zero out individual joints to simulate occlusion.
+    Updates both x and mask so the model learns to handle missing landmarks.
+    Applied only during training; eval uses full landmarks.
+    """
+    if p <= 0:
+        return batch
+    drop = torch.rand(batch.x.size(0), device=batch.x.device) < p
+    if drop.any():
+        batch.x    = batch.x.clone()
+        batch.x[drop] = 0.0
+        if hasattr(batch, 'mask') and batch.mask is not None:
+            batch.mask = batch.mask.clone()
+            batch.mask[drop] = 0.0
+    return batch
 
 # ==================== Evaluation Function ========================
 def evaluate(model, loader):
@@ -112,6 +131,7 @@ def train(model_, train_loader_, val_loader_, writer):
 
         for batch in train_loader_:
             batch = batch.to(device_)
+            batch = random_joint_dropout(batch)
             optimizer_.zero_grad()
             pred = model_(batch)
             label = batch.y.view(-1)
@@ -148,6 +168,10 @@ def train(model_, train_loader_, val_loader_, writer):
 
     total_time = timer() - time_start_
     print(f"\n⏱️  Training completed in {total_time/60:.2f} min.")
+
+    # Load best checkpoint before returning
+    model_.load_state_dict(torch.load("experiments/best_model.pth", map_location=device_))
+    print(f"✅ Loaded best model (Val Acc = {best_val_acc:.3f})")
     return model_
 
 # ==================== Run Training ===============================
@@ -156,11 +180,6 @@ trained_model = train(model_, train_loader, val_loader, writer)
 # ==================== Final Evaluation ===========================
 test_loss, test_acc = evaluate(trained_model, test_loader)
 print(f"\n✅ Test set → Loss: {test_loss:.4f}, Accuracy: {test_acc:.3f}")
-
-# Save final model
-os.makedirs("experiments", exist_ok=True)
-torch.save(trained_model.state_dict(), "experiments/final_model.pth")
-print("💾 Saved final model → experiments/final_model.pth")
 
 # ==================== Classification Report ======================
 y_true, y_pred = [], []
