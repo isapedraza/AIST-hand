@@ -27,16 +27,16 @@ class CAMLayer(nn.Module):
 
     def forward(self, x: torch.Tensor, cam: torch.Tensor,
                 mask: torch.Tensor = None) -> torch.Tensor:
-        B_N, F = x.shape
+        B_N, feat_dim = x.shape
         N = self.n_joints
         B = B_N // N
 
-        x_3d = x.view(B, N, F)                                # [B, N, F]
+        x_3d = x.view(B, N, feat_dim)                         # [B, N, F]
         if mask is not None:
             x_3d = x_3d * mask.view(B, N, 1)                  # zero out missing joints
         x_agg = torch.einsum('ij,bjf->bif', cam, x_3d)        # [B, N, F]
         x_cat = torch.cat([x_agg, x_3d], dim=-1)              # [B, N, 2F]
-        x_out = self.linear(x_cat.view(B_N, 2 * F))           # [B*N, F_out]
+        x_out = self.linear(x_cat.view(B_N, 2 * feat_dim))    # [B*N, F_out]
         return F.elu(x_out)
 
 
