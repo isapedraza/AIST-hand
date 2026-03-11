@@ -30,17 +30,33 @@ de colapso para una taxonomia reducida en el modelo GCN de clasificacion de inte
 **Propiedad critica:** Esta normalizacion es una traslacion + escala uniforme. Preserva angulos
 y proporciones entre segmentos. No afecta ningun calculo angular posterior.
 
-**Filtro de Existencia:** Se descartan frames con `contact_sum = 0` (mano no toca el objeto).
-Solo se analizan frames donde el agarre esta ejecutandose.
+**Filtro de Existencia (solo para el analisis de sinergias, Secciones 2-6):** Se descartan
+frames con `contact_sum = 0` (mano no toca el objeto). Solo se analizan frames donde el
+agarre esta ejecutandose activamente.
 - Frames descartados: 30,623 (2.1% del total).
 
+**Nota importante:** Este filtro se aplica **unicamente al pipeline de sinergias** (extraccion
+de angulos, PCA, MLP). El GCN de Run 006 (Seccion 7) se entrena **sin este filtro**, sobre
+todos los frames incluyendo aproximacion y liberacion. Las dos pipelines operan sobre
+distribuciones ligeramente distintas; las implicaciones se discuten en la Seccion 9.
+
 **Split S1 (por sujeto, no por frame):**
+
+Frames del pipeline de sinergias (con filtro contact_sum > 0):
 
 | Conjunto | Sujetos | Frames | % |
 |----------|---------|--------|---|
 | Train | S11-S73 (63 sujetos) | 995,886 | 68.3% |
 | Val | S01-S10 (10 sujetos) | 138,952 | 9.5% |
 | Test | S74-S99 (26 sujetos) | 323,650 | 22.2% |
+
+Frames del GCN Run 006 (sin filtro contact_sum):
+
+| Conjunto | Sujetos | Frames | % |
+|----------|---------|--------|---|
+| Train | S11-S73 (63 sujetos) | 1,015,342 | 68.2% |
+| Val | S01-S10 (10 sujetos) | 146,509 | 9.8% |
+| Test | S74-S99 (26 sujetos) | 327,260 | 22.0% |
 
 Justificacion: el split por sujeto evita data leakage temporal. Si separamos frames aleatoriamente,
 frames consecutivos del mismo video (misma secuencia, mismo sujeto) aparecen en train y test,
@@ -740,7 +756,17 @@ Los 13 pares se agrupan via union-find (la transitividad es intencional: si el G
    Lateral_Tripod, Quadpod) mientras otras tienen ~890 (Precision_Disk). Los centroides
    de clases pequenas son menos estables. El MLP tambien puede sesgar hacia clases grandes.
 
-9. **Single-view depth:** HOGraspNet usa una sola camara de profundidad. Las confusiones
+9. **Filtro asimetrico entre sinergias y GCN:** El pipeline de sinergias (Secciones 2-6)
+   aplica filtro contact_sum > 0 (solo frames con contacto activo), mientras que Run 006
+   se entreno sobre todos los frames. Esto tiene dos efectos opuestos: (a) la matriz de
+   confusion del GCN es mas conservadora porque incluye frames de transicion donde la
+   postura es ambigua -- si el GCN confunde dos clases incluso bajo estas condiciones mas
+   dificiles, el colapso esta mas justificado; (b) los centroides del espacio de sinergias
+   representan posturas "en estado estable" y pueden no capturar la confusion que ocurre
+   durante las transiciones. Para un analisis completamente consistente, ambos pipelines
+   deberian usar el mismo filtro.
+
+10. **Single-view depth:** HOGraspNet usa una sola camara de profundidad. Las confusiones
    pueden estar amplificadas por auto-oclusiones que un sistema multi-camara resolveria.
    Esto no afecta la validez del analisis para nuestro caso de uso (sensor monocular).
 
