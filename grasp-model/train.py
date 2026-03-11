@@ -41,14 +41,14 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_28cls_baseline')
+writer = SummaryWriter(log_dir='experiments/runs/hograspnet_17cls_taxonomy_v1')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
 
-datasetTrain = GraspsClass(root='data/', split='train', collapse=False)
-datasetVal   = GraspsClass(root='data/', split='val',   collapse=False)
-datasetTest  = GraspsClass(root='data/', split='test',  collapse=False)
+datasetTrain = GraspsClass(root='data/', split='train', collapse='taxonomy_v1')
+datasetVal   = GraspsClass(root='data/', split='val',   collapse='taxonomy_v1')
+datasetTest  = GraspsClass(root='data/', split='test',  collapse='taxonomy_v1')
 
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")

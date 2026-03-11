@@ -63,6 +63,60 @@ FEIX_COLLAPSE = {
     27: 15,  # Tripod                  -> singleton
 }
 
+# Data-driven taxonomy v1: 28 -> 17 classes
+# Derived from GCN Run 006 confusion analysis (decide_collapses.py, gcn_thresh=0.15)
+# Groups formed via union-find on 13 collapse pairs.
+TAXONOMY_V1_COLLAPSE = {
+    0:  3,   # Large_Diameter      -> Power_Wrap cluster
+    1:  5,   # Small_Diameter      -> singleton
+    2:  6,   # Index_Finger_Ext    -> singleton
+    3:  7,   # Extension_Type      -> singleton
+    4:  8,   # Parallel_Ext        -> singleton
+    5:  9,   # Palmar              -> singleton
+    6:  10,  # Medium_Wrap         -> singleton
+    7:  11,  # Adducted_Thumb      -> singleton
+    8:  2,   # Light_Tool          -> Lateral cluster
+    9:  12,  # Distal              -> singleton
+    10: 1,   # Ring                -> Pinch cluster
+    11: 3,   # Power_Disk          -> Power_Wrap cluster
+    12: 13,  # Power_Sphere        -> singleton
+    13: 14,  # Sphere_4_Finger     -> singleton
+    14: 0,   # Sphere_3_Finger     -> Tripod cluster
+    15: 2,   # Lateral             -> Lateral cluster
+    16: 2,   # Stick               -> Lateral cluster
+    17: 15,  # Adduction_Grip      -> singleton
+    18: 0,   # Writing_Tripod      -> Tripod cluster
+    19: 0,   # Lateral_Tripod      -> Tripod cluster
+    20: 1,   # Palmar_Pinch        -> Pinch cluster
+    21: 1,   # Tip_Pinch           -> Pinch cluster
+    22: 1,   # Inferior_Pincer     -> Pinch cluster
+    23: 0,   # Prismatic_3F        -> Tripod cluster
+    24: 4,   # Precision_Disk      -> Precision cluster
+    25: 4,   # Precision_Sphere    -> Precision cluster
+    26: 16,  # Quadpod             -> singleton
+    27: 0,   # Tripod              -> Tripod cluster
+}
+
+TAXONOMY_V1_CLASS_NAMES = {
+    0:  "Tripod_cluster",       # Sphere_3F, Writing_Tripod, Lateral_Tripod, Prismatic_3F, Tripod
+    1:  "Pinch_cluster",        # Ring, Palmar_Pinch, Tip_Pinch, Inferior_Pincer
+    2:  "Lateral_cluster",      # Light_Tool, Lateral, Stick
+    3:  "Power_Wrap_cluster",   # Large_Diameter, Power_Disk
+    4:  "Precision_cluster",    # Precision_Disk, Precision_Sphere
+    5:  "Small_Diameter",
+    6:  "Index_Finger_Ext",
+    7:  "Extension_Type",
+    8:  "Parallel_Ext",
+    9:  "Palmar",
+    10: "Medium_Wrap",
+    11: "Adducted_Thumb",
+    12: "Distal",
+    13: "Power_Sphere",
+    14: "Sphere_4_Finger",
+    15: "Adduction_Grip",
+    16: "Quadpod",
+}
+
 FEIX_CLASS_NAMES = {
     0:  "Power, Palm, VF 2-5, Abducted",
     1:  "Power, Palm, VF 2-5, Adducted",
@@ -111,6 +165,9 @@ class GraspsClass(InMemoryDataset):
     def __init__(self, root, split='train', collapse=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
+        # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
+        assert collapse in (False, True, 'feix', 'taxonomy_v1'), \
+            "collapse must be False, True, 'feix', or 'taxonomy_v1'"
         self.split = split
         self.collapse = collapse
         super().__init__(root, transform, pre_transform)
@@ -140,7 +197,12 @@ class GraspsClass(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        cls_tag = 'c16' if self.collapse else 'c28'
+        if self.collapse in (True, 'feix'):
+            cls_tag = 'c16'
+        elif self.collapse == 'taxonomy_v1':
+            cls_tag = 'c17'
+        else:
+            cls_tag = 'c28'
         return [f'hograspnet_{self.split}_{cls_tag}_cmc.pt']
 
     # ------------------------------------------------------------------
@@ -175,10 +237,14 @@ class GraspsClass(InMemoryDataset):
                 graph = self.pre_transform(graph)
             data_list.append(graph)
 
-        if self.collapse:
+        if self.collapse in (True, 'feix'):
             for d in data_list:
                 old = int(d.y.item())
                 d.y = torch.tensor([FEIX_COLLAPSE[old]], dtype=torch.long)
+        elif self.collapse == 'taxonomy_v1':
+            for d in data_list:
+                old = int(d.y.item())
+                d.y = torch.tensor([TAXONOMY_V1_COLLAPSE[old]], dtype=torch.long)
 
         data, slices = self.collate(data_list)
         os.makedirs(os.path.dirname(self.processed_paths[0]), exist_ok=True)
