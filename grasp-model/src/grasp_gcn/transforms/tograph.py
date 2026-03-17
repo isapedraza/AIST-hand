@@ -30,7 +30,8 @@ class ToGraph:
                  use_confidence: bool = False,
                  conf_threshold: float = 0.5,
                  add_joint_angles: bool = False,
-                 add_cmc_angle: bool = False):
+                 add_cmc_angle: bool = False,
+                 add_bone_vectors: bool = False):
         assert features in ('xy', 'xyz')
         self.features = features
         self.make_undirected = make_undirected
@@ -38,8 +39,11 @@ class ToGraph:
         self.conf_threshold = conf_threshold
         self.add_joint_angles = add_joint_angles
         self.add_cmc_angle = add_cmc_angle
+        self.add_bone_vectors = add_bone_vectors
         self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
-        self.F = self.F_xyz + (1 if add_joint_angles else 0)  # total features per node
+        self.F = (self.F_xyz
+                  + (1 if add_joint_angles else 0)
+                  + (3 if add_bone_vectors else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -155,6 +159,17 @@ class ToGraph:
                         cos_a = np.clip(np.dot(v_in, v_out) / (n_in * n_out), -1.0, 1.0)
                         angles.append(float(np.arccos(cos_a)))
             rows = [np.append(r, a) for r, a in zip(rows, angles)]
+
+        # Bone vectors: position_i - position_parent(i), raw (not normalized).
+        # WRIST has no parent -> [0, 0, 0].
+        # Scale is already controlled by geometric normalization (dist WRIST->INDEX_MCP=0.1),
+        # so bone length is meaningful and should not be discarded by unit-normalization.
+        if self.add_bone_vectors:
+            positions = np.vstack(rows)[:, :3]  # [21, 3] — always xyz
+            for i in range(21):
+                p = self._parent_of[i]
+                bone = np.zeros(3) if p == -1 else positions[i] - positions[p]
+                rows[i] = np.append(rows[i], bone)
 
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]

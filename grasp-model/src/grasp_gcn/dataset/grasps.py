@@ -136,6 +136,37 @@ FEIX_CLASS_NAMES = {
     15: "Tripod",
 }
 
+GRASP_CLASS_NAMES = {
+    0:  "Large Diameter",
+    1:  "Small Diameter",
+    2:  "Index Finger Extension",
+    3:  "Extension Type",
+    4:  "Parallel Extension",
+    5:  "Palmar",
+    6:  "Medium Wrap",
+    7:  "Adducted Thumb",
+    8:  "Light Tool",
+    9:  "Distal",
+    10: "Ring",
+    11: "Power Disk",
+    12: "Power Sphere",
+    13: "Sphere 4-Finger",
+    14: "Sphere 3-Finger",
+    15: "Lateral",
+    16: "Stick",
+    17: "Adduction Grip",
+    18: "Writing Tripod",
+    19: "Lateral Tripod",
+    20: "Palmar Pinch",
+    21: "Tip Pinch",
+    22: "Inferior Pincer",
+    23: "Prismatic 3 Finger",
+    24: "Precision Disk",
+    25: "Precision Sphere",
+    26: "Quadpod",
+    27: "Tripod",
+}
+
 
 class GraspsClass(InMemoryDataset):
     """
@@ -163,6 +194,7 @@ class GraspsClass(InMemoryDataset):
     """
 
     def __init__(self, root, split='train', collapse=False,
+                 add_bone_vectors=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -170,6 +202,7 @@ class GraspsClass(InMemoryDataset):
             "collapse must be False, True, 'feix', or 'taxonomy_v1'"
         self.split = split
         self.collapse = collapse
+        self.add_bone_vectors = add_bone_vectors
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -203,7 +236,8 @@ class GraspsClass(InMemoryDataset):
             cls_tag = 'c17'
         else:
             cls_tag = 'c28'
-        return [f'hograspnet_{self.split}_{cls_tag}_cmc.pt']
+        bone_tag = '_bone' if self.add_bone_vectors else ''
+        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}.pt']
 
     # ------------------------------------------------------------------
     def process(self):
@@ -212,6 +246,7 @@ class GraspsClass(InMemoryDataset):
             make_undirected=True,
             add_joint_angles=True,
             add_cmc_angle=True,
+            add_bone_vectors=self.add_bone_vectors,
         )
 
         csv_path = self.raw_paths[0]

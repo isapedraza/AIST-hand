@@ -1954,19 +1954,128 @@ Case C is the key novel finding: 8 pairs cross Feix cells but the GCN cannot dis
 
 ---
 
+### Run 007 -- Taxonomy V1 Collapse: 28 -> 17 Classes (2026-03-13)
+
+**Purpose:** Train GCN_CAM_8_8_16_16_32 on the 17-class taxonomy derived from the Run 006 confusion analysis. Primary goal: verify that the data-driven collapse improves accuracy over Run 006 (28-class baseline) while retaining discriminability for the remaining singletons.
+
+**Configuration:**
+
+| Parameter | Value |
+|-----------|-------|
+| Model | `GCN_CAM_8_8_16_16_32` |
+| Classes | 17 (`taxonomy_v1` collapse) |
+| Dataset | `data/raw/hograspnet.csv` |
+| Split | S1 subject-level (Train S11-S73 / Val S01-S10 / Test S74-S99) |
+| Node features | `[x, y, z, theta_flex]` (F=4) |
+| Graph-level feature | `theta_CMC` (palmar abduction) |
+| Max epochs | 40 |
+| Early stopping | patience = 10 (val accuracy) |
+| Best epoch | **32** |
+| Actual epochs run | 40 (no early stopping -- converged) |
+| Batch size | 256 |
+| LR | 1e-3 (Adam) |
+| Loss | NLL + log_softmax |
+| Hardware | Google Colab T4 |
+| Training time | 64.78 min |
+
+**Results:**
+
+| Split | Loss | Accuracy | Macro F1 | Weighted F1 |
+|-------|------|----------|----------|-------------|
+| Val (best, epoch 32) | -- | **76.3%** | -- | -- |
+| Test (S74-S99) | -- | **75.6%** | **0.670** | **0.750** |
+
+**Comparison vs Run 006 (28 classes):**
+
+| Metric | Run 006 | Run 007 | Delta |
+|--------|---------|---------|-------|
+| Test Accuracy | 62.0% | 75.6% | +13.6 pp |
+| Macro F1 | 0.550 | 0.670 | +0.120 |
+| Weighted F1 | 0.613 | 0.750 | +0.137 |
+
+The taxonomy collapse produces a consistent and substantial improvement across all metrics. The +13.6 pp accuracy gain is structural -- the 13 collapse pairs removed distinctions the model could not learn, and the remaining 17 classes are more reliably distinguishable from 21 XYZ landmarks.
+
+**Per-class results (test set):**
+
+| Class | Members (original) | F1 | Notes |
+|-------|-------------------|-----|-------|
+| Tripod_cluster | Sphere_3F, Writing_Tripod, Lateral_Tripod, Prismatic_3F, Tripod | 0.764 | |
+| Pinch_cluster | Ring, Palmar_Pinch, Tip_Pinch, Inferior_Pincer | 0.802 | |
+| Lateral_cluster | Light_Tool, Lateral, Stick | 0.816 | |
+| Power_Wrap_cluster | Large_Diameter, Power_Disk | 0.687 | |
+| Precision_cluster | Precision_Disk, Precision_Sphere | 0.795 | |
+| Small_Diameter | Small_Diameter | -- | singleton |
+| Index_Finger_Ext | Index_Finger_Ext | -- | singleton |
+| Extension_Type | Extension_Type | -- | singleton |
+| Parallel_Ext | Parallel_Ext | -- | singleton |
+| Palmar | Palmar | -- | singleton |
+| Medium_Wrap | Medium_Wrap | **0.178** | worst class; recall=0.105 |
+| Adducted_Thumb | Adducted_Thumb | **0.554** | strong confusion with Lateral_cluster |
+| Distal | Distal | -- | singleton |
+| Power_Sphere | Power_Sphere | **0.518** | confused with Precision_cluster |
+| Sphere_4_Finger | Sphere_4_Finger | -- | singleton |
+| Adduction_Grip | Adduction_Grip | -- | singleton |
+| Quadpod | Quadpod | **0.529** | confused with Precision_cluster |
+
+All five collapsed clusters achieve F1 > 0.68. The four worst singletons are Medium_Wrap (F1=0.178), Power_Sphere (0.518), Quadpod (0.529), and Adducted_Thumb (0.554).
+
+**Medium_Wrap analysis:**
+
+Medium_Wrap is the pathological case. Recall=0.105 -- the model almost never emits it. Confusion targets: Tripod_cluster (25%), Small_Diameter (17%), Precision_cluster (16%), Lateral_cluster (11%). Notably, it almost never maps to Power_Wrap_cluster (1%), which is its natural Feix neighbor. Hypothesized cause: YCB object #3 (bowl) produces keypoints consistent with spherical/tripod grasps, not cylindrical ones -- the physical object imposes the hand configuration and Medium_Wrap with a bowl looks nothing like Medium_Wrap in the Feix taxonomy diagram. Reference samples: subject_id=58, sequence_id=231004_S58_obj_03_grasp_3/trial_1.
+
+**Observations:**
+
+The four remaining problematic singletons represent two qualitatively different floors:
+
+- **Contact-dependent (hard floor):** Power_Sphere and Quadpod differ from neighboring classes primarily in object shape and size. Without the object, the hand configurations overlap with Precision_cluster. These are likely permanent limits of contactless landmark-based recognition.
+- **Viewpoint-sensitive (potentially addressable):** Adducted_Thumb vs Lateral_cluster confusion -- the thumb adduction that distinguishes these classes may not be stably visible from monocular webcam. Medium_Wrap likely reflects object-conditioned keypoint geometry that does not generalize.
+
+---
+
+### Run 008 -- Bone Vectors as Additional Node Features (pending)
+
+**Why 28 classes again:** Run 008 deliberately returns to the full 28-class setting (same as Run 006) rather than taxonomy_v1. The motivation is to push the representational limits of the current data before collapsing. Recent literature (Lu et al. 2026, among others) proposes feature families -- bone vectors, velocity streams, pose encodings -- that may resolve confusions that forced the collapse in taxonomy_v1. The strategy is: exhaust the feature space on 28 classes first; only collapse what remains genuinely unresolvable. This also keeps Run 008 directly comparable to Run 006, isolating the effect of the new features.
+
+**Hypothesis:** Adding bone vectors as raw displacement features per node reduces the domain gap between HOGraspNet keypoints (multi-camera, calibrated) and MediaPipe keypoints (monocular, webcam). Bone vectors -- defined as `bone_i = position_i - position_parent(i)` -- encode relative joint-to-joint displacements. The reasoning is that a uniform translation or scale error in absolute positions partially cancels in relative displacements, making the learned representations more robust to sensor-specific biases.
+
+**Theoretical basis:** Lu et al., "Skeleton-Prompt: Rethinking spatial and temporal representations for learning skeleton-based action recognition", *Pattern Recognition* 2026. Section 3.1 defines the bone stream as `b_i = p_i - p_{parent(i)}` -- a 3D vector, not a scalar magnitude -- and demonstrates that bone and joint streams carry complementary information.
+
+**Configuration:**
+
+| Parameter | Value |
+|-----------|-------|
+| Model | `GCN_CAM_8_8_16_16_32` |
+| Classes | 28 (same as Run 006, for direct comparison) |
+| Dataset | `data/raw/hograspnet.csv` |
+| Split | S1 subject-level |
+| Node features | `[x, y, z, theta_flex, bone_x, bone_y, bone_z]` (F=7) |
+| Graph-level feature | `theta_CMC` (palmar abduction) |
+| Bone vector definition | `bone_i = position_i - position_parent(i)`, raw (not unit-normalized) |
+| WRIST (no parent) | `[0, 0, 0]` |
+| Scale | Controlled by geometric normalization (dist WRIST->INDEX_MCP = 0.1) |
+| Max epochs | 40 |
+| Early stopping | patience = 10 |
+| Batch size | 256 |
+| LR | 1e-3 (Adam) |
+| Hardware | Google Colab T4 |
+| Checkpoint | `best_model_run008_c28_xyz_bone.pth` |
+| Colab env vars | `GG_RUN_NAME=run008_c28_xyz_bone`, `GG_COLLAPSE=none`, `GG_BONE_VECTORS=true` |
+
+**What changes vs Run 006:** Only the node feature vector. Run 006: F=4 `[x,y,z,theta_flex]`. Run 008: F=7 `[x,y,z,theta_flex,bone_x,bone_y,bone_z]`. Architecture, dataset, split, and hyperparameters are identical.
+
+**Evaluation plan:** Compare Run 008 vs Run 006 on the held-out test set (academic performance). The primary motivation is deployment performance -- Run 008 will also be evaluated in the HaMeR domain gap experiment (Exp 3) to measure whether bone features improve real-world recognition accuracy.
+
+---
+
 ## Pending / Future Work
 
 ### Model
-- [ ] **Baseline GCN on 28 classes:** Train GCN_CAM_8_8_16_16_32 on all 28 classes
-  using hograspnet.csv with S1 split. Provides a model-specific confusion matrix to
-  cross-reference with the synergy space analysis. Pairs indistinguishable in synergy
-  space (ES < 1.0) AND confused by the GCN are strong collapse candidates. Pairs the
-  GCN distinguishes despite low ES should be kept.
-- [ ] **Finalize collapse taxonomy:** Resolve pairwise candidates into concrete class groups
-  using the four-case framework (synergy space primary, baseline GCN secondary, Feix
-  explanatory). Produce the final reduced label set for GCN training.
-- [ ] **Run 006 with reduced taxonomy:** Train GCN on the finalized collapsed taxonomy.
-  Compare against Run 005 (16 classes, ad-hoc collapse).
+- [x] **Baseline GCN on 28 classes:** Done -- Run 006 (62.0% test acc, Macro F1=0.550).
+- [x] **Finalize collapse taxonomy:** Done -- taxonomy_v1, 17 classes, gcn_thresh=0.15.
+  See Collapse Decision Analysis section above.
+- [x] **GCN on reduced taxonomy:** Done -- Run 007 (75.6% test acc, Macro F1=0.670).
+- [ ] **Bone vectors (Run 008):** Train GCN_CAM with `[x,y,z,theta_flex,bone_x,bone_y,bone_z]`
+  (F=7) on 28 classes. Hypothesis: relative displacements reduce sensor domain gap vs Run 006.
 - [ ] **Dexonomy verification:** Check whether collapsed pairs produce sufficiently similar
   joint configs for Shadow Hand. Validates that collapsed classes are also functionally
   equivalent from the robot actuation perspective.

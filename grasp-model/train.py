@@ -21,8 +21,24 @@ from grasp_gcn.network.utils import get_network
 print('--------------------------------')
 print('🚀 Import libraries: OK')
 
-# ====================== Hyperparameters =========================
+# ====================== Run config (set via env vars from notebook) ==========
+# GG_RUN_NAME:      e.g. "run008_c28_xyz_bone"
+# GG_COLLAPSE:      "none" | "feix" | "taxonomy_v1"
+# GG_CHECKPOINT:    filename for saved model, e.g. "best_model_run008_c28_xyz_bone.pth"
+# GG_BONE_VECTORS:  "true" | "false"
 
+RUN_NAME     = os.getenv("GG_RUN_NAME",     "run_unnamed")
+_collapse    = os.getenv("GG_COLLAPSE",     "none").strip().lower()
+COLLAPSE     = False if _collapse == "none" else _collapse
+CHECKPOINT   = os.getenv("GG_CHECKPOINT",  f"best_model_{RUN_NAME}.pth")
+BONE_VECTORS = os.getenv("GG_BONE_VECTORS","false").strip().lower() == "true"
+
+print(f"Run:          {RUN_NAME}")
+print(f"Collapse:     {COLLAPSE}")
+print(f"Checkpoint:   {CHECKPOINT}")
+print(f"Bone vectors: {BONE_VECTORS}")
+
+# ====================== Hyperparameters =========================
 
 lr = 1e-3
 network_type = "GCN_CAM_8_8_16_16_32"
@@ -41,14 +57,14 @@ print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
-writer = SummaryWriter(log_dir='experiments/runs/hograspnet_17cls_taxonomy_v1')
+writer = SummaryWriter(log_dir=f'experiments/runs/{RUN_NAME}')
 
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
 
-datasetTrain = GraspsClass(root='data/', split='train', collapse='taxonomy_v1')
-datasetVal   = GraspsClass(root='data/', split='val',   collapse='taxonomy_v1')
-datasetTest  = GraspsClass(root='data/', split='test',  collapse='taxonomy_v1')
+datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS)
+datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS)
+datasetTest  = GraspsClass(root='data/', split='test',  collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS)
 
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")
@@ -158,8 +174,8 @@ def train(model_, train_loader_, val_loader_, writer):
             best_val_acc = val_acc
             epochs_no_improve = 0
             os.makedirs("experiments", exist_ok=True)
-            torch.save(model_.state_dict(), "experiments/best_model.pth")
-            print(f"💾 Saved best model (Val Acc = {val_acc:.3f})")
+            torch.save(model_.state_dict(), f"experiments/{CHECKPOINT}")
+            print(f"💾 Saved best model (Val Acc = {val_acc:.3f}) -> {CHECKPOINT}")
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
@@ -170,7 +186,7 @@ def train(model_, train_loader_, val_loader_, writer):
     print(f"\n⏱️  Training completed in {total_time/60:.2f} min.")
 
     # Load best checkpoint before returning
-    model_.load_state_dict(torch.load("experiments/best_model.pth", map_location=device_))
+    model_.load_state_dict(torch.load(f"experiments/{CHECKPOINT}", map_location=device_))
     print(f"✅ Loaded best model (Val Acc = {best_val_acc:.3f})")
     return model_
 

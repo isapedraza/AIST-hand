@@ -1,0 +1,568 @@
+session_id,phase_idx,class_id_target,class_name_target,condition,take,frame,class_id_pred,class_name_pred,confidence
+20260317_030302,0,18,Writing Tripod,air,1,0,18,Writing Tripod,0.3673
+20260317_030302,0,18,Writing Tripod,air,1,1,18,Writing Tripod,0.4072
+20260317_030302,0,18,Writing Tripod,air,1,2,18,Writing Tripod,0.4067
+20260317_030302,0,18,Writing Tripod,air,1,3,18,Writing Tripod,0.4314
+20260317_030302,0,18,Writing Tripod,air,1,4,18,Writing Tripod,0.3463
+20260317_030302,0,18,Writing Tripod,air,1,5,18,Writing Tripod,0.455
+20260317_030302,0,18,Writing Tripod,air,1,6,18,Writing Tripod,0.4394
+20260317_030302,0,18,Writing Tripod,air,1,7,18,Writing Tripod,0.5114
+20260317_030302,0,18,Writing Tripod,air,1,8,18,Writing Tripod,0.3803
+20260317_030302,0,18,Writing Tripod,air,1,9,18,Writing Tripod,0.4929
+20260317_030302,0,18,Writing Tripod,air,1,10,18,Writing Tripod,0.4773
+20260317_030302,0,18,Writing Tripod,air,1,11,18,Writing Tripod,0.5347
+20260317_030302,0,18,Writing Tripod,air,1,12,18,Writing Tripod,0.4361
+20260317_030302,0,18,Writing Tripod,air,1,13,18,Writing Tripod,0.4827
+20260317_030302,0,18,Writing Tripod,air,1,14,18,Writing Tripod,0.5097
+20260317_030302,0,18,Writing Tripod,air,1,15,18,Writing Tripod,0.4767
+20260317_030302,0,18,Writing Tripod,air,1,16,18,Writing Tripod,0.5443
+20260317_030302,0,18,Writing Tripod,air,1,17,18,Writing Tripod,0.4587
+20260317_030302,0,18,Writing Tripod,air,1,18,18,Writing Tripod,0.4421
+20260317_030302,0,18,Writing Tripod,air,1,19,18,Writing Tripod,0.5213
+20260317_030302,0,18,Writing Tripod,air,1,20,18,Writing Tripod,0.4855
+20260317_030302,0,18,Writing Tripod,air,1,21,18,Writing Tripod,0.4788
+20260317_030302,0,18,Writing Tripod,air,1,22,18,Writing Tripod,0.4656
+20260317_030302,0,18,Writing Tripod,air,1,23,18,Writing Tripod,0.4996
+20260317_030302,0,18,Writing Tripod,air,1,24,18,Writing Tripod,0.4479
+20260317_030302,0,18,Writing Tripod,air,1,25,18,Writing Tripod,0.4057
+20260317_030302,0,18,Writing Tripod,air,1,26,18,Writing Tripod,0.4182
+20260317_030302,0,18,Writing Tripod,air,1,27,18,Writing Tripod,0.4346
+20260317_030302,0,18,Writing Tripod,air,1,28,18,Writing Tripod,0.4264
+20260317_030302,0,18,Writing Tripod,air,1,29,18,Writing Tripod,0.4604
+20260317_030302,0,18,Writing Tripod,air,1,30,18,Writing Tripod,0.4357
+20260317_030302,0,18,Writing Tripod,air,1,31,18,Writing Tripod,0.4667
+20260317_030302,0,18,Writing Tripod,air,1,32,18,Writing Tripod,0.5302
+20260317_030302,0,18,Writing Tripod,air,1,33,18,Writing Tripod,0.4953
+20260317_030302,0,18,Writing Tripod,air,1,34,18,Writing Tripod,0.4627
+20260317_030302,0,18,Writing Tripod,air,1,35,18,Writing Tripod,0.4697
+20260317_030302,0,18,Writing Tripod,air,1,36,18,Writing Tripod,0.5162
+20260317_030302,0,18,Writing Tripod,air,1,37,18,Writing Tripod,0.4241
+20260317_030302,0,18,Writing Tripod,air,1,38,18,Writing Tripod,0.5461
+20260317_030302,0,18,Writing Tripod,air,1,39,18,Writing Tripod,0.527
+20260317_030302,0,18,Writing Tripod,air,1,40,18,Writing Tripod,0.5063
+20260317_030302,0,18,Writing Tripod,air,1,41,18,Writing Tripod,0.4968
+20260317_030302,0,18,Writing Tripod,air,1,42,18,Writing Tripod,0.4152
+20260317_030302,0,18,Writing Tripod,air,1,43,18,Writing Tripod,0.5155
+20260317_030302,0,18,Writing Tripod,air,1,44,18,Writing Tripod,0.4874
+20260317_030302,0,18,Writing Tripod,air,1,45,18,Writing Tripod,0.5344
+20260317_030302,0,18,Writing Tripod,air,1,46,18,Writing Tripod,0.4669
+20260317_030302,0,18,Writing Tripod,air,1,47,18,Writing Tripod,0.5069
+20260317_030302,0,18,Writing Tripod,air,1,48,18,Writing Tripod,0.5322
+20260317_030302,0,18,Writing Tripod,air,1,49,18,Writing Tripod,0.4998
+20260317_030302,0,18,Writing Tripod,air,1,50,18,Writing Tripod,0.5457
+20260317_030302,0,18,Writing Tripod,air,1,51,18,Writing Tripod,0.5396
+20260317_030302,0,18,Writing Tripod,air,1,52,18,Writing Tripod,0.5149
+20260317_030302,0,18,Writing Tripod,air,1,53,18,Writing Tripod,0.468
+20260317_030302,0,18,Writing Tripod,air,1,54,18,Writing Tripod,0.4958
+20260317_030302,0,18,Writing Tripod,air,1,55,18,Writing Tripod,0.47
+20260317_030302,0,18,Writing Tripod,air,1,56,18,Writing Tripod,0.4317
+20260317_030302,0,18,Writing Tripod,air,1,57,18,Writing Tripod,0.3922
+20260317_030302,0,18,Writing Tripod,air,1,58,18,Writing Tripod,0.4303
+20260317_030302,0,18,Writing Tripod,air,1,59,18,Writing Tripod,0.3923
+20260317_030302,0,18,Writing Tripod,air,1,60,15,Lateral,0.3561
+20260317_030302,0,18,Writing Tripod,air,1,61,18,Writing Tripod,0.3949
+20260317_030302,0,18,Writing Tripod,air,1,62,18,Writing Tripod,0.368
+20260317_030302,1,18,Writing Tripod,object,1,0,18,Writing Tripod,0.7635
+20260317_030302,1,18,Writing Tripod,object,1,1,18,Writing Tripod,0.7347
+20260317_030302,1,18,Writing Tripod,object,1,2,18,Writing Tripod,0.7308
+20260317_030302,1,18,Writing Tripod,object,1,3,18,Writing Tripod,0.7885
+20260317_030302,1,18,Writing Tripod,object,1,4,18,Writing Tripod,0.7888
+20260317_030302,1,18,Writing Tripod,object,1,5,18,Writing Tripod,0.7248
+20260317_030302,1,18,Writing Tripod,object,1,6,18,Writing Tripod,0.7976
+20260317_030302,1,18,Writing Tripod,object,1,7,18,Writing Tripod,0.7914
+20260317_030302,1,18,Writing Tripod,object,1,8,18,Writing Tripod,0.7315
+20260317_030302,1,18,Writing Tripod,object,1,9,18,Writing Tripod,0.8107
+20260317_030302,1,18,Writing Tripod,object,1,10,18,Writing Tripod,0.7373
+20260317_030302,1,18,Writing Tripod,object,1,11,18,Writing Tripod,0.7864
+20260317_030302,1,18,Writing Tripod,object,1,12,18,Writing Tripod,0.7495
+20260317_030302,1,18,Writing Tripod,object,1,13,18,Writing Tripod,0.7601
+20260317_030302,1,18,Writing Tripod,object,1,14,18,Writing Tripod,0.729
+20260317_030302,1,18,Writing Tripod,object,1,15,18,Writing Tripod,0.7003
+20260317_030302,1,18,Writing Tripod,object,1,16,18,Writing Tripod,0.7868
+20260317_030302,1,18,Writing Tripod,object,1,17,18,Writing Tripod,0.7789
+20260317_030302,1,18,Writing Tripod,object,1,18,18,Writing Tripod,0.6844
+20260317_030302,1,18,Writing Tripod,object,1,19,18,Writing Tripod,0.6924
+20260317_030302,1,18,Writing Tripod,object,1,20,18,Writing Tripod,0.603
+20260317_030302,1,18,Writing Tripod,object,1,21,18,Writing Tripod,0.5595
+20260317_030302,1,18,Writing Tripod,object,1,22,18,Writing Tripod,0.5633
+20260317_030302,1,18,Writing Tripod,object,1,23,18,Writing Tripod,0.5888
+20260317_030302,1,18,Writing Tripod,object,1,24,18,Writing Tripod,0.5978
+20260317_030302,1,18,Writing Tripod,object,1,25,18,Writing Tripod,0.6031
+20260317_030302,1,18,Writing Tripod,object,1,26,18,Writing Tripod,0.5996
+20260317_030302,1,18,Writing Tripod,object,1,27,18,Writing Tripod,0.5341
+20260317_030302,1,18,Writing Tripod,object,1,28,18,Writing Tripod,0.6096
+20260317_030302,1,18,Writing Tripod,object,1,29,18,Writing Tripod,0.6398
+20260317_030302,1,18,Writing Tripod,object,1,30,18,Writing Tripod,0.6073
+20260317_030302,1,18,Writing Tripod,object,1,31,18,Writing Tripod,0.4869
+20260317_030302,1,18,Writing Tripod,object,1,32,18,Writing Tripod,0.6286
+20260317_030302,1,18,Writing Tripod,object,1,33,18,Writing Tripod,0.6036
+20260317_030302,1,18,Writing Tripod,object,1,34,18,Writing Tripod,0.6058
+20260317_030302,1,18,Writing Tripod,object,1,35,18,Writing Tripod,0.5202
+20260317_030302,1,18,Writing Tripod,object,1,36,18,Writing Tripod,0.6056
+20260317_030302,1,18,Writing Tripod,object,1,37,18,Writing Tripod,0.597
+20260317_030302,1,18,Writing Tripod,object,1,38,18,Writing Tripod,0.6402
+20260317_030302,1,18,Writing Tripod,object,1,39,18,Writing Tripod,0.6102
+20260317_030302,1,18,Writing Tripod,object,1,40,18,Writing Tripod,0.5172
+20260317_030302,1,18,Writing Tripod,object,1,41,18,Writing Tripod,0.6198
+20260317_030302,1,18,Writing Tripod,object,1,42,18,Writing Tripod,0.6135
+20260317_030302,1,18,Writing Tripod,object,1,43,18,Writing Tripod,0.5989
+20260317_030302,1,18,Writing Tripod,object,1,44,18,Writing Tripod,0.624
+20260317_030302,1,18,Writing Tripod,object,1,45,18,Writing Tripod,0.6003
+20260317_030302,1,18,Writing Tripod,object,1,46,18,Writing Tripod,0.5811
+20260317_030302,1,18,Writing Tripod,object,1,47,18,Writing Tripod,0.5893
+20260317_030302,1,18,Writing Tripod,object,1,48,18,Writing Tripod,0.5961
+20260317_030302,1,18,Writing Tripod,object,1,49,18,Writing Tripod,0.6209
+20260317_030302,1,18,Writing Tripod,object,1,50,18,Writing Tripod,0.6477
+20260317_030302,1,18,Writing Tripod,object,1,51,18,Writing Tripod,0.6234
+20260317_030302,1,18,Writing Tripod,object,1,52,18,Writing Tripod,0.5193
+20260317_030302,1,18,Writing Tripod,object,1,53,18,Writing Tripod,0.6609
+20260317_030302,1,18,Writing Tripod,object,1,54,18,Writing Tripod,0.6383
+20260317_030302,1,18,Writing Tripod,object,1,55,18,Writing Tripod,0.6707
+20260317_030302,1,18,Writing Tripod,object,1,56,18,Writing Tripod,0.6201
+20260317_030302,2,6,Medium Wrap,air,1,0,15,Lateral,0.7021
+20260317_030302,2,6,Medium Wrap,air,1,1,15,Lateral,0.7263
+20260317_030302,2,6,Medium Wrap,air,1,2,15,Lateral,0.7351
+20260317_030302,2,6,Medium Wrap,air,1,3,15,Lateral,0.6522
+20260317_030302,2,6,Medium Wrap,air,1,4,15,Lateral,0.6536
+20260317_030302,2,6,Medium Wrap,air,1,5,15,Lateral,0.6536
+20260317_030302,2,6,Medium Wrap,air,1,6,15,Lateral,0.6151
+20260317_030302,2,6,Medium Wrap,air,1,7,15,Lateral,0.7297
+20260317_030302,2,6,Medium Wrap,air,1,8,15,Lateral,0.5312
+20260317_030302,2,6,Medium Wrap,air,1,9,15,Lateral,0.4773
+20260317_030302,2,6,Medium Wrap,air,1,10,15,Lateral,0.5244
+20260317_030302,2,6,Medium Wrap,air,1,11,18,Writing Tripod,0.5767
+20260317_030302,2,6,Medium Wrap,air,1,12,15,Lateral,0.5385
+20260317_030302,2,6,Medium Wrap,air,1,13,15,Lateral,0.5632
+20260317_030302,2,6,Medium Wrap,air,1,14,15,Lateral,0.8168
+20260317_030302,2,6,Medium Wrap,air,1,15,15,Lateral,0.6599
+20260317_030302,2,6,Medium Wrap,air,1,16,15,Lateral,0.726
+20260317_030302,2,6,Medium Wrap,air,1,17,15,Lateral,0.6318
+20260317_030302,2,6,Medium Wrap,air,1,18,15,Lateral,0.722
+20260317_030302,2,6,Medium Wrap,air,1,19,15,Lateral,0.6263
+20260317_030302,2,6,Medium Wrap,air,1,20,15,Lateral,0.7018
+20260317_030302,2,6,Medium Wrap,air,1,21,15,Lateral,0.5869
+20260317_030302,2,6,Medium Wrap,air,1,22,15,Lateral,0.6894
+20260317_030302,2,6,Medium Wrap,air,1,23,15,Lateral,0.7294
+20260317_030302,2,6,Medium Wrap,air,1,24,15,Lateral,0.7689
+20260317_030302,2,6,Medium Wrap,air,1,25,15,Lateral,0.7081
+20260317_030302,2,6,Medium Wrap,air,1,26,15,Lateral,0.7823
+20260317_030302,2,6,Medium Wrap,air,1,27,15,Lateral,0.8297
+20260317_030302,2,6,Medium Wrap,air,1,28,15,Lateral,0.8193
+20260317_030302,2,6,Medium Wrap,air,1,29,18,Writing Tripod,0.6286
+20260317_030302,2,6,Medium Wrap,air,1,30,18,Writing Tripod,0.6853
+20260317_030302,2,6,Medium Wrap,air,1,31,15,Lateral,0.5351
+20260317_030302,2,6,Medium Wrap,air,1,32,15,Lateral,0.5227
+20260317_030302,2,6,Medium Wrap,air,1,33,15,Lateral,0.5465
+20260317_030302,2,6,Medium Wrap,air,1,34,15,Lateral,0.5887
+20260317_030302,2,6,Medium Wrap,air,1,35,15,Lateral,0.8012
+20260317_030302,2,6,Medium Wrap,air,1,36,15,Lateral,0.8228
+20260317_030302,2,6,Medium Wrap,air,1,37,15,Lateral,0.8017
+20260317_030302,2,6,Medium Wrap,air,1,38,15,Lateral,0.8399
+20260317_030302,2,6,Medium Wrap,air,1,39,15,Lateral,0.7754
+20260317_030302,2,6,Medium Wrap,air,1,40,15,Lateral,0.865
+20260317_030302,2,6,Medium Wrap,air,1,41,15,Lateral,0.852
+20260317_030302,2,6,Medium Wrap,air,1,42,15,Lateral,0.8125
+20260317_030302,2,6,Medium Wrap,air,1,43,15,Lateral,0.7014
+20260317_030302,2,6,Medium Wrap,air,1,44,15,Lateral,0.7923
+20260317_030302,2,6,Medium Wrap,air,1,45,15,Lateral,0.6772
+20260317_030302,2,6,Medium Wrap,air,1,46,15,Lateral,0.6215
+20260317_030302,2,6,Medium Wrap,air,1,47,15,Lateral,0.6889
+20260317_030302,2,6,Medium Wrap,air,1,48,15,Lateral,0.7454
+20260317_030302,2,6,Medium Wrap,air,1,49,15,Lateral,0.5547
+20260317_030302,2,6,Medium Wrap,air,1,50,15,Lateral,0.5673
+20260317_030302,2,6,Medium Wrap,air,1,51,15,Lateral,0.6756
+20260317_030302,2,6,Medium Wrap,air,1,52,15,Lateral,0.7017
+20260317_030302,2,6,Medium Wrap,air,1,53,18,Writing Tripod,0.4695
+20260317_030302,2,6,Medium Wrap,air,1,54,15,Lateral,0.4197
+20260317_030302,2,6,Medium Wrap,air,1,55,15,Lateral,0.4301
+20260317_030302,2,6,Medium Wrap,air,1,56,15,Lateral,0.4338
+20260317_030302,3,6,Medium Wrap,object,1,0,18,Writing Tripod,0.4525
+20260317_030302,3,6,Medium Wrap,object,1,1,18,Writing Tripod,0.5349
+20260317_030302,3,6,Medium Wrap,object,1,2,18,Writing Tripod,0.4672
+20260317_030302,3,6,Medium Wrap,object,1,3,18,Writing Tripod,0.5109
+20260317_030302,3,6,Medium Wrap,object,1,4,18,Writing Tripod,0.49
+20260317_030302,3,6,Medium Wrap,object,1,5,18,Writing Tripod,0.4552
+20260317_030302,3,6,Medium Wrap,object,1,6,18,Writing Tripod,0.4885
+20260317_030302,3,6,Medium Wrap,object,1,7,18,Writing Tripod,0.4198
+20260317_030302,3,6,Medium Wrap,object,1,8,15,Lateral,0.3338
+20260317_030302,3,6,Medium Wrap,object,1,9,27,Tripod,0.447
+20260317_030302,3,6,Medium Wrap,object,1,10,15,Lateral,0.3103
+20260317_030302,3,6,Medium Wrap,object,1,11,18,Writing Tripod,0.4864
+20260317_030302,3,6,Medium Wrap,object,1,12,18,Writing Tripod,0.5638
+20260317_030302,3,6,Medium Wrap,object,1,13,18,Writing Tripod,0.5805
+20260317_030302,3,6,Medium Wrap,object,1,14,18,Writing Tripod,0.4902
+20260317_030302,3,6,Medium Wrap,object,1,15,18,Writing Tripod,0.5537
+20260317_030302,3,6,Medium Wrap,object,1,16,18,Writing Tripod,0.4951
+20260317_030302,3,6,Medium Wrap,object,1,17,18,Writing Tripod,0.531
+20260317_030302,3,6,Medium Wrap,object,1,18,18,Writing Tripod,0.6359
+20260317_030302,3,6,Medium Wrap,object,1,19,18,Writing Tripod,0.5671
+20260317_030302,3,6,Medium Wrap,object,1,20,18,Writing Tripod,0.6015
+20260317_030302,3,6,Medium Wrap,object,1,21,18,Writing Tripod,0.7038
+20260317_030302,3,6,Medium Wrap,object,1,22,18,Writing Tripod,0.6039
+20260317_030302,3,6,Medium Wrap,object,1,23,18,Writing Tripod,0.4767
+20260317_030302,3,6,Medium Wrap,object,1,24,15,Lateral,0.4823
+20260317_030302,3,6,Medium Wrap,object,1,25,18,Writing Tripod,0.3721
+20260317_030302,3,6,Medium Wrap,object,1,26,18,Writing Tripod,0.7343
+20260317_030302,3,6,Medium Wrap,object,1,27,18,Writing Tripod,0.6894
+20260317_030302,3,6,Medium Wrap,object,1,28,18,Writing Tripod,0.6555
+20260317_030302,3,6,Medium Wrap,object,1,29,18,Writing Tripod,0.6371
+20260317_030302,3,6,Medium Wrap,object,1,30,15,Lateral,0.5006
+20260317_030302,3,6,Medium Wrap,object,1,31,15,Lateral,0.5112
+20260317_030302,3,6,Medium Wrap,object,1,32,15,Lateral,0.4119
+20260317_030302,3,6,Medium Wrap,object,1,33,18,Writing Tripod,0.4238
+20260317_030302,3,6,Medium Wrap,object,1,34,18,Writing Tripod,0.517
+20260317_030302,3,6,Medium Wrap,object,1,35,18,Writing Tripod,0.5149
+20260317_030302,3,6,Medium Wrap,object,1,36,18,Writing Tripod,0.584
+20260317_030302,3,6,Medium Wrap,object,1,37,18,Writing Tripod,0.5962
+20260317_030302,3,6,Medium Wrap,object,1,38,18,Writing Tripod,0.6632
+20260317_030302,3,6,Medium Wrap,object,1,39,18,Writing Tripod,0.6503
+20260317_030302,3,6,Medium Wrap,object,1,40,18,Writing Tripod,0.7463
+20260317_030302,3,6,Medium Wrap,object,1,41,18,Writing Tripod,0.6879
+20260317_030302,3,6,Medium Wrap,object,1,42,18,Writing Tripod,0.6735
+20260317_030302,3,6,Medium Wrap,object,1,43,18,Writing Tripod,0.6515
+20260317_030302,3,6,Medium Wrap,object,1,44,18,Writing Tripod,0.6543
+20260317_030302,3,6,Medium Wrap,object,1,45,18,Writing Tripod,0.6372
+20260317_030302,3,6,Medium Wrap,object,1,46,18,Writing Tripod,0.663
+20260317_030302,3,6,Medium Wrap,object,1,47,18,Writing Tripod,0.6383
+20260317_030302,3,6,Medium Wrap,object,1,48,18,Writing Tripod,0.6381
+20260317_030302,3,6,Medium Wrap,object,1,49,18,Writing Tripod,0.6632
+20260317_030302,3,6,Medium Wrap,object,1,50,18,Writing Tripod,0.676
+20260317_030302,3,6,Medium Wrap,object,1,51,18,Writing Tripod,0.5976
+20260317_030302,3,6,Medium Wrap,object,1,52,18,Writing Tripod,0.5914
+20260317_030302,3,6,Medium Wrap,object,1,53,18,Writing Tripod,0.6596
+20260317_030302,3,6,Medium Wrap,object,1,54,18,Writing Tripod,0.6009
+20260317_030302,3,6,Medium Wrap,object,1,55,18,Writing Tripod,0.6107
+20260317_030302,3,6,Medium Wrap,object,1,56,18,Writing Tripod,0.5992
+20260317_030302,3,6,Medium Wrap,object,1,57,18,Writing Tripod,0.6173
+20260317_030302,3,6,Medium Wrap,object,1,58,18,Writing Tripod,0.6686
+20260317_030302,4,1,Small Diameter,air,1,0,15,Lateral,0.5374
+20260317_030302,4,1,Small Diameter,air,1,1,15,Lateral,0.5408
+20260317_030302,4,1,Small Diameter,air,1,2,18,Writing Tripod,0.715
+20260317_030302,4,1,Small Diameter,air,1,3,18,Writing Tripod,0.5333
+20260317_030302,4,1,Small Diameter,air,1,4,18,Writing Tripod,0.4927
+20260317_030302,4,1,Small Diameter,air,1,5,18,Writing Tripod,0.634
+20260317_030302,4,1,Small Diameter,air,1,6,18,Writing Tripod,0.6343
+20260317_030302,4,1,Small Diameter,air,1,7,18,Writing Tripod,0.6113
+20260317_030302,4,1,Small Diameter,air,1,8,18,Writing Tripod,0.6102
+20260317_030302,4,1,Small Diameter,air,1,9,18,Writing Tripod,0.654
+20260317_030302,4,1,Small Diameter,air,1,10,18,Writing Tripod,0.6088
+20260317_030302,4,1,Small Diameter,air,1,11,18,Writing Tripod,0.7275
+20260317_030302,4,1,Small Diameter,air,1,12,18,Writing Tripod,0.608
+20260317_030302,4,1,Small Diameter,air,1,13,18,Writing Tripod,0.6891
+20260317_030302,4,1,Small Diameter,air,1,14,18,Writing Tripod,0.5878
+20260317_030302,4,1,Small Diameter,air,1,15,18,Writing Tripod,0.5605
+20260317_030302,4,1,Small Diameter,air,1,16,18,Writing Tripod,0.405
+20260317_030302,4,1,Small Diameter,air,1,17,15,Lateral,0.7407
+20260317_030302,4,1,Small Diameter,air,1,18,15,Lateral,0.9328
+20260317_030302,4,1,Small Diameter,air,1,19,15,Lateral,0.789
+20260317_030302,4,1,Small Diameter,air,1,20,15,Lateral,0.5861
+20260317_030302,4,1,Small Diameter,air,1,21,18,Writing Tripod,0.4467
+20260317_030302,4,1,Small Diameter,air,1,22,18,Writing Tripod,0.8126
+20260317_030302,4,1,Small Diameter,air,1,23,18,Writing Tripod,0.7014
+20260317_030302,4,1,Small Diameter,air,1,24,18,Writing Tripod,0.7247
+20260317_030302,4,1,Small Diameter,air,1,25,18,Writing Tripod,0.7398
+20260317_030302,4,1,Small Diameter,air,1,26,18,Writing Tripod,0.7693
+20260317_030302,4,1,Small Diameter,air,1,27,18,Writing Tripod,0.7137
+20260317_030302,4,1,Small Diameter,air,1,28,18,Writing Tripod,0.5527
+20260317_030302,4,1,Small Diameter,air,1,29,15,Lateral,0.4955
+20260317_030302,4,1,Small Diameter,air,1,30,18,Writing Tripod,0.3721
+20260317_030302,4,1,Small Diameter,air,1,31,18,Writing Tripod,0.5246
+20260317_030302,4,1,Small Diameter,air,1,32,18,Writing Tripod,0.4495
+20260317_030302,4,1,Small Diameter,air,1,33,23,Prismatic 3 Finger,0.4097
+20260317_030302,4,1,Small Diameter,air,1,34,18,Writing Tripod,0.5877
+20260317_030302,4,1,Small Diameter,air,1,35,18,Writing Tripod,0.7086
+20260317_030302,4,1,Small Diameter,air,1,36,18,Writing Tripod,0.7324
+20260317_030302,4,1,Small Diameter,air,1,37,18,Writing Tripod,0.6359
+20260317_030302,4,1,Small Diameter,air,1,38,18,Writing Tripod,0.6639
+20260317_030302,4,1,Small Diameter,air,1,39,18,Writing Tripod,0.6012
+20260317_030302,4,1,Small Diameter,air,1,40,18,Writing Tripod,0.6701
+20260317_030302,4,1,Small Diameter,air,1,41,18,Writing Tripod,0.6415
+20260317_030302,4,1,Small Diameter,air,1,42,18,Writing Tripod,0.6985
+20260317_030302,4,1,Small Diameter,air,1,43,18,Writing Tripod,0.7074
+20260317_030302,4,1,Small Diameter,air,1,44,18,Writing Tripod,0.412
+20260317_030302,4,1,Small Diameter,air,1,45,18,Writing Tripod,0.3758
+20260317_030302,4,1,Small Diameter,air,1,46,18,Writing Tripod,0.4678
+20260317_030302,4,1,Small Diameter,air,1,47,18,Writing Tripod,0.6742
+20260317_030302,4,1,Small Diameter,air,1,48,18,Writing Tripod,0.9085
+20260317_030302,4,1,Small Diameter,air,1,49,18,Writing Tripod,0.7668
+20260317_030302,4,1,Small Diameter,air,1,50,18,Writing Tripod,0.5622
+20260317_030302,4,1,Small Diameter,air,1,51,18,Writing Tripod,0.5972
+20260317_030302,4,1,Small Diameter,air,1,52,18,Writing Tripod,0.5728
+20260317_030302,4,1,Small Diameter,air,1,53,18,Writing Tripod,0.747
+20260317_030302,4,1,Small Diameter,air,1,54,18,Writing Tripod,0.6316
+20260317_030302,4,1,Small Diameter,air,1,55,18,Writing Tripod,0.4689
+20260317_030302,4,1,Small Diameter,air,1,56,18,Writing Tripod,0.4106
+20260317_030302,5,1,Small Diameter,object,1,0,18,Writing Tripod,0.7626
+20260317_030302,5,1,Small Diameter,object,1,1,18,Writing Tripod,0.7693
+20260317_030302,5,1,Small Diameter,object,1,2,18,Writing Tripod,0.7759
+20260317_030302,5,1,Small Diameter,object,1,3,18,Writing Tripod,0.8103
+20260317_030302,5,1,Small Diameter,object,1,4,18,Writing Tripod,0.7713
+20260317_030302,5,1,Small Diameter,object,1,5,18,Writing Tripod,0.8015
+20260317_030302,5,1,Small Diameter,object,1,6,18,Writing Tripod,0.7674
+20260317_030302,5,1,Small Diameter,object,1,7,18,Writing Tripod,0.7856
+20260317_030302,5,1,Small Diameter,object,1,8,18,Writing Tripod,0.8143
+20260317_030302,5,1,Small Diameter,object,1,9,18,Writing Tripod,0.7423
+20260317_030302,5,1,Small Diameter,object,1,10,18,Writing Tripod,0.8179
+20260317_030302,5,1,Small Diameter,object,1,11,18,Writing Tripod,0.7
+20260317_030302,5,1,Small Diameter,object,1,12,18,Writing Tripod,0.7286
+20260317_030302,5,1,Small Diameter,object,1,13,18,Writing Tripod,0.7097
+20260317_030302,5,1,Small Diameter,object,1,14,18,Writing Tripod,0.7653
+20260317_030302,5,1,Small Diameter,object,1,15,18,Writing Tripod,0.7631
+20260317_030302,5,1,Small Diameter,object,1,16,18,Writing Tripod,0.7217
+20260317_030302,5,1,Small Diameter,object,1,17,18,Writing Tripod,0.7896
+20260317_030302,5,1,Small Diameter,object,1,18,18,Writing Tripod,0.7791
+20260317_030302,5,1,Small Diameter,object,1,19,18,Writing Tripod,0.7769
+20260317_030302,5,1,Small Diameter,object,1,20,18,Writing Tripod,0.7786
+20260317_030302,5,1,Small Diameter,object,1,21,18,Writing Tripod,0.8026
+20260317_030302,5,1,Small Diameter,object,1,22,18,Writing Tripod,0.827
+20260317_030302,5,1,Small Diameter,object,1,23,18,Writing Tripod,0.7843
+20260317_030302,5,1,Small Diameter,object,1,24,18,Writing Tripod,0.7574
+20260317_030302,5,1,Small Diameter,object,1,25,18,Writing Tripod,0.8351
+20260317_030302,5,1,Small Diameter,object,1,26,18,Writing Tripod,0.8178
+20260317_030302,5,1,Small Diameter,object,1,27,18,Writing Tripod,0.796
+20260317_030302,5,1,Small Diameter,object,1,28,18,Writing Tripod,0.826
+20260317_030302,5,1,Small Diameter,object,1,29,18,Writing Tripod,0.7877
+20260317_030302,5,1,Small Diameter,object,1,30,18,Writing Tripod,0.8182
+20260317_030302,5,1,Small Diameter,object,1,31,18,Writing Tripod,0.8248
+20260317_030302,5,1,Small Diameter,object,1,32,18,Writing Tripod,0.8079
+20260317_030302,5,1,Small Diameter,object,1,33,18,Writing Tripod,0.8212
+20260317_030302,5,1,Small Diameter,object,1,34,18,Writing Tripod,0.8133
+20260317_030302,5,1,Small Diameter,object,1,35,18,Writing Tripod,0.8401
+20260317_030302,5,1,Small Diameter,object,1,36,18,Writing Tripod,0.8298
+20260317_030302,5,1,Small Diameter,object,1,37,18,Writing Tripod,0.7682
+20260317_030302,5,1,Small Diameter,object,1,38,18,Writing Tripod,0.8291
+20260317_030302,5,1,Small Diameter,object,1,39,18,Writing Tripod,0.7781
+20260317_030302,5,1,Small Diameter,object,1,40,18,Writing Tripod,0.7257
+20260317_030302,5,1,Small Diameter,object,1,41,18,Writing Tripod,0.7655
+20260317_030302,5,1,Small Diameter,object,1,42,18,Writing Tripod,0.7786
+20260317_030302,5,1,Small Diameter,object,1,43,18,Writing Tripod,0.8087
+20260317_030302,5,1,Small Diameter,object,1,44,18,Writing Tripod,0.8308
+20260317_030302,5,1,Small Diameter,object,1,45,18,Writing Tripod,0.8338
+20260317_030302,5,1,Small Diameter,object,1,46,18,Writing Tripod,0.7729
+20260317_030302,5,1,Small Diameter,object,1,47,18,Writing Tripod,0.821
+20260317_030302,5,1,Small Diameter,object,1,48,18,Writing Tripod,0.8237
+20260317_030302,5,1,Small Diameter,object,1,49,18,Writing Tripod,0.7901
+20260317_030302,5,1,Small Diameter,object,1,50,18,Writing Tripod,0.7819
+20260317_030302,5,1,Small Diameter,object,1,51,18,Writing Tripod,0.8117
+20260317_030302,5,1,Small Diameter,object,1,52,18,Writing Tripod,0.8522
+20260317_030302,5,1,Small Diameter,object,1,53,18,Writing Tripod,0.8244
+20260317_030302,5,1,Small Diameter,object,1,54,18,Writing Tripod,0.8164
+20260317_030302,5,1,Small Diameter,object,1,55,18,Writing Tripod,0.8225
+20260317_030302,5,1,Small Diameter,object,1,56,18,Writing Tripod,0.8674
+20260317_030302,5,1,Small Diameter,object,1,57,18,Writing Tripod,0.8185
+20260317_030302,6,11,Power Disk,air,1,0,11,Power Disk,0.3103
+20260317_030302,6,11,Power Disk,air,1,1,25,Precision Sphere,0.4746
+20260317_030302,6,11,Power Disk,air,1,2,11,Power Disk,0.3345
+20260317_030302,6,11,Power Disk,air,1,3,11,Power Disk,0.3296
+20260317_030302,6,11,Power Disk,air,1,4,11,Power Disk,0.3487
+20260317_030302,6,11,Power Disk,air,1,5,11,Power Disk,0.3925
+20260317_030302,6,11,Power Disk,air,1,6,25,Precision Sphere,0.3211
+20260317_030302,6,11,Power Disk,air,1,7,25,Precision Sphere,0.3439
+20260317_030302,6,11,Power Disk,air,1,8,11,Power Disk,0.376
+20260317_030302,6,11,Power Disk,air,1,9,11,Power Disk,0.3251
+20260317_030302,6,11,Power Disk,air,1,10,11,Power Disk,0.3143
+20260317_030302,6,11,Power Disk,air,1,11,11,Power Disk,0.3069
+20260317_030302,6,11,Power Disk,air,1,12,11,Power Disk,0.3397
+20260317_030302,6,11,Power Disk,air,1,13,11,Power Disk,0.3286
+20260317_030302,6,11,Power Disk,air,1,14,11,Power Disk,0.3051
+20260317_030302,6,11,Power Disk,air,1,15,11,Power Disk,0.3357
+20260317_030302,6,11,Power Disk,air,1,16,11,Power Disk,0.335
+20260317_030302,6,11,Power Disk,air,1,17,11,Power Disk,0.3027
+20260317_030302,6,11,Power Disk,air,1,18,11,Power Disk,0.3477
+20260317_030302,6,11,Power Disk,air,1,19,11,Power Disk,0.2988
+20260317_030302,6,11,Power Disk,air,1,20,11,Power Disk,0.3884
+20260317_030302,6,11,Power Disk,air,1,21,11,Power Disk,0.3495
+20260317_030302,6,11,Power Disk,air,1,22,11,Power Disk,0.3417
+20260317_030302,6,11,Power Disk,air,1,23,11,Power Disk,0.3781
+20260317_030302,6,11,Power Disk,air,1,24,11,Power Disk,0.3905
+20260317_030302,6,11,Power Disk,air,1,25,11,Power Disk,0.3494
+20260317_030302,6,11,Power Disk,air,1,26,11,Power Disk,0.3956
+20260317_030302,6,11,Power Disk,air,1,27,11,Power Disk,0.3692
+20260317_030302,6,11,Power Disk,air,1,28,11,Power Disk,0.3808
+20260317_030302,6,11,Power Disk,air,1,29,11,Power Disk,0.394
+20260317_030302,6,11,Power Disk,air,1,30,11,Power Disk,0.4289
+20260317_030302,6,11,Power Disk,air,1,31,11,Power Disk,0.3985
+20260317_030302,6,11,Power Disk,air,1,32,11,Power Disk,0.3712
+20260317_030302,6,11,Power Disk,air,1,33,11,Power Disk,0.4027
+20260317_030302,6,11,Power Disk,air,1,34,11,Power Disk,0.3883
+20260317_030302,6,11,Power Disk,air,1,35,11,Power Disk,0.4477
+20260317_030302,6,11,Power Disk,air,1,36,11,Power Disk,0.4258
+20260317_030302,6,11,Power Disk,air,1,37,11,Power Disk,0.3902
+20260317_030302,6,11,Power Disk,air,1,38,11,Power Disk,0.3891
+20260317_030302,6,11,Power Disk,air,1,39,11,Power Disk,0.3591
+20260317_030302,6,11,Power Disk,air,1,40,11,Power Disk,0.3448
+20260317_030302,6,11,Power Disk,air,1,41,11,Power Disk,0.3358
+20260317_030302,6,11,Power Disk,air,1,42,11,Power Disk,0.3773
+20260317_030302,6,11,Power Disk,air,1,43,11,Power Disk,0.3693
+20260317_030302,6,11,Power Disk,air,1,44,11,Power Disk,0.3662
+20260317_030302,6,11,Power Disk,air,1,45,11,Power Disk,0.3559
+20260317_030302,6,11,Power Disk,air,1,46,11,Power Disk,0.3999
+20260317_030302,6,11,Power Disk,air,1,47,11,Power Disk,0.3233
+20260317_030302,6,11,Power Disk,air,1,48,11,Power Disk,0.3672
+20260317_030302,6,11,Power Disk,air,1,49,11,Power Disk,0.3372
+20260317_030302,6,11,Power Disk,air,1,50,11,Power Disk,0.3386
+20260317_030302,6,11,Power Disk,air,1,51,11,Power Disk,0.3907
+20260317_030302,6,11,Power Disk,air,1,52,11,Power Disk,0.3744
+20260317_030302,6,11,Power Disk,air,1,53,11,Power Disk,0.3959
+20260317_030302,6,11,Power Disk,air,1,54,11,Power Disk,0.3416
+20260317_030302,6,11,Power Disk,air,1,55,11,Power Disk,0.381
+20260317_030302,6,11,Power Disk,air,1,56,11,Power Disk,0.3595
+20260317_030302,6,11,Power Disk,air,1,57,11,Power Disk,0.4339
+20260317_030302,6,11,Power Disk,air,1,58,11,Power Disk,0.375
+20260317_030302,7,11,Power Disk,object,1,0,5,Palmar,0.2947
+20260317_030302,7,11,Power Disk,object,1,1,5,Palmar,0.3905
+20260317_030302,7,11,Power Disk,object,1,2,5,Palmar,0.4426
+20260317_030302,7,11,Power Disk,object,1,3,5,Palmar,0.3737
+20260317_030302,7,11,Power Disk,object,1,4,5,Palmar,0.3654
+20260317_030302,7,11,Power Disk,object,1,5,5,Palmar,0.3703
+20260317_030302,7,11,Power Disk,object,1,6,5,Palmar,0.3995
+20260317_030302,7,11,Power Disk,object,1,7,5,Palmar,0.3973
+20260317_030302,7,11,Power Disk,object,1,8,5,Palmar,0.3408
+20260317_030302,7,11,Power Disk,object,1,9,5,Palmar,0.2268
+20260317_030302,7,11,Power Disk,object,1,10,5,Palmar,0.3848
+20260317_030302,7,11,Power Disk,object,1,11,5,Palmar,0.5154
+20260317_030302,7,11,Power Disk,object,1,12,5,Palmar,0.481
+20260317_030302,7,11,Power Disk,object,1,13,5,Palmar,0.2611
+20260317_030302,7,11,Power Disk,object,1,14,5,Palmar,0.4455
+20260317_030302,7,11,Power Disk,object,1,15,5,Palmar,0.3965
+20260317_030302,7,11,Power Disk,object,1,16,5,Palmar,0.3393
+20260317_030302,7,11,Power Disk,object,1,17,27,Tripod,0.3517
+20260317_030302,7,11,Power Disk,object,1,18,5,Palmar,0.2938
+20260317_030302,7,11,Power Disk,object,1,19,27,Tripod,0.2817
+20260317_030302,7,11,Power Disk,object,1,20,27,Tripod,0.3512
+20260317_030302,7,11,Power Disk,object,1,21,27,Tripod,0.2987
+20260317_030302,7,11,Power Disk,object,1,22,22,Inferior Pincer,0.2974
+20260317_030302,7,11,Power Disk,object,1,23,5,Palmar,0.2886
+20260317_030302,7,11,Power Disk,object,1,24,15,Lateral,0.523
+20260317_030302,7,11,Power Disk,object,1,25,20,Palmar Pinch,0.4263
+20260317_030302,7,11,Power Disk,object,1,26,5,Palmar,0.41
+20260317_030302,7,11,Power Disk,object,1,27,5,Palmar,0.4429
+20260317_030302,7,11,Power Disk,object,1,28,5,Palmar,0.3606
+20260317_030302,7,11,Power Disk,object,1,29,5,Palmar,0.5152
+20260317_030302,7,11,Power Disk,object,1,30,25,Precision Sphere,0.351
+20260317_030302,7,11,Power Disk,object,1,31,25,Precision Sphere,0.6854
+20260317_030302,7,11,Power Disk,object,1,32,25,Precision Sphere,0.4891
+20260317_030302,7,11,Power Disk,object,1,33,25,Precision Sphere,0.4183
+20260317_030302,7,11,Power Disk,object,1,34,25,Precision Sphere,0.4627
+20260317_030302,8,8,Light Tool,air,1,0,8,Light Tool,0.4669
+20260317_030302,8,8,Light Tool,air,1,1,8,Light Tool,0.4571
+20260317_030302,8,8,Light Tool,air,1,2,8,Light Tool,0.4373
+20260317_030302,8,8,Light Tool,air,1,3,8,Light Tool,0.4443
+20260317_030302,8,8,Light Tool,air,1,4,8,Light Tool,0.4665
+20260317_030302,8,8,Light Tool,air,1,5,8,Light Tool,0.5059
+20260317_030302,8,8,Light Tool,air,1,6,8,Light Tool,0.4786
+20260317_030302,8,8,Light Tool,air,1,7,8,Light Tool,0.4802
+20260317_030302,8,8,Light Tool,air,1,8,8,Light Tool,0.4723
+20260317_030302,8,8,Light Tool,air,1,9,8,Light Tool,0.4642
+20260317_030302,8,8,Light Tool,air,1,10,8,Light Tool,0.4641
+20260317_030302,8,8,Light Tool,air,1,11,8,Light Tool,0.4584
+20260317_030302,8,8,Light Tool,air,1,12,8,Light Tool,0.4583
+20260317_030302,8,8,Light Tool,air,1,13,8,Light Tool,0.4521
+20260317_030302,8,8,Light Tool,air,1,14,8,Light Tool,0.472
+20260317_030302,8,8,Light Tool,air,1,15,8,Light Tool,0.4626
+20260317_030302,8,8,Light Tool,air,1,16,8,Light Tool,0.4682
+20260317_030302,8,8,Light Tool,air,1,17,8,Light Tool,0.4566
+20260317_030302,8,8,Light Tool,air,1,18,8,Light Tool,0.4877
+20260317_030302,8,8,Light Tool,air,1,19,8,Light Tool,0.4564
+20260317_030302,8,8,Light Tool,air,1,20,8,Light Tool,0.4432
+20260317_030302,8,8,Light Tool,air,1,21,8,Light Tool,0.4475
+20260317_030302,8,8,Light Tool,air,1,22,8,Light Tool,0.4271
+20260317_030302,8,8,Light Tool,air,1,23,8,Light Tool,0.4387
+20260317_030302,8,8,Light Tool,air,1,24,8,Light Tool,0.4952
+20260317_030302,8,8,Light Tool,air,1,25,8,Light Tool,0.4828
+20260317_030302,8,8,Light Tool,air,1,26,8,Light Tool,0.431
+20260317_030302,8,8,Light Tool,air,1,27,8,Light Tool,0.4553
+20260317_030302,8,8,Light Tool,air,1,28,8,Light Tool,0.4653
+20260317_030302,8,8,Light Tool,air,1,29,8,Light Tool,0.4698
+20260317_030302,8,8,Light Tool,air,1,30,8,Light Tool,0.4558
+20260317_030302,8,8,Light Tool,air,1,31,8,Light Tool,0.4673
+20260317_030302,8,8,Light Tool,air,1,32,8,Light Tool,0.4846
+20260317_030302,8,8,Light Tool,air,1,33,8,Light Tool,0.4457
+20260317_030302,8,8,Light Tool,air,1,34,8,Light Tool,0.4514
+20260317_030302,8,8,Light Tool,air,1,35,8,Light Tool,0.4446
+20260317_030302,8,8,Light Tool,air,1,36,8,Light Tool,0.4497
+20260317_030302,8,8,Light Tool,air,1,37,8,Light Tool,0.4317
+20260317_030302,8,8,Light Tool,air,1,38,8,Light Tool,0.4389
+20260317_030302,8,8,Light Tool,air,1,39,8,Light Tool,0.4118
+20260317_030302,8,8,Light Tool,air,1,40,8,Light Tool,0.425
+20260317_030302,8,8,Light Tool,air,1,41,8,Light Tool,0.4426
+20260317_030302,8,8,Light Tool,air,1,42,8,Light Tool,0.4257
+20260317_030302,8,8,Light Tool,air,1,43,8,Light Tool,0.4253
+20260317_030302,8,8,Light Tool,air,1,44,15,Lateral,0.3467
+20260317_030302,8,8,Light Tool,air,1,45,8,Light Tool,0.35
+20260317_030302,8,8,Light Tool,air,1,46,15,Lateral,0.3497
+20260317_030302,8,8,Light Tool,air,1,47,7,Adducted Thumb,0.4445
+20260317_030302,8,8,Light Tool,air,1,48,7,Adducted Thumb,0.6167
+20260317_030302,8,8,Light Tool,air,1,49,7,Adducted Thumb,0.5691
+20260317_030302,8,8,Light Tool,air,1,50,7,Adducted Thumb,0.5641
+20260317_030302,8,8,Light Tool,air,1,51,7,Adducted Thumb,0.558
+20260317_030302,8,8,Light Tool,air,1,52,7,Adducted Thumb,0.6589
+20260317_030302,8,8,Light Tool,air,1,53,7,Adducted Thumb,0.4181
+20260317_030302,8,8,Light Tool,air,1,54,7,Adducted Thumb,0.5635
+20260317_030302,8,8,Light Tool,air,1,55,7,Adducted Thumb,0.7942
+20260317_030302,8,8,Light Tool,air,1,56,7,Adducted Thumb,0.6049
+20260317_030302,8,8,Light Tool,air,1,57,7,Adducted Thumb,0.6701
+20260317_030302,8,8,Light Tool,air,1,58,7,Adducted Thumb,0.6292
+20260317_030302,8,8,Light Tool,air,1,59,7,Adducted Thumb,0.6723
+20260317_030302,8,8,Light Tool,air,1,60,7,Adducted Thumb,0.7052
+20260317_030302,9,8,Light Tool,object,1,0,7,Adducted Thumb,0.45
+20260317_030302,9,8,Light Tool,object,1,1,7,Adducted Thumb,0.4856
+20260317_030302,9,8,Light Tool,object,1,2,7,Adducted Thumb,0.521
+20260317_030302,9,8,Light Tool,object,1,3,7,Adducted Thumb,0.3652
+20260317_030302,9,8,Light Tool,object,1,4,8,Light Tool,0.3669
+20260317_030302,9,8,Light Tool,object,1,5,7,Adducted Thumb,0.371
+20260317_030302,9,8,Light Tool,object,1,6,15,Lateral,0.3438
+20260317_030302,9,8,Light Tool,object,1,7,15,Lateral,0.3626
+20260317_030302,9,8,Light Tool,object,1,8,7,Adducted Thumb,0.3823
+20260317_030302,9,8,Light Tool,object,1,9,15,Lateral,0.3494
+20260317_030302,9,8,Light Tool,object,1,10,15,Lateral,0.3568
+20260317_030302,9,8,Light Tool,object,1,11,7,Adducted Thumb,0.5147
+20260317_030302,9,8,Light Tool,object,1,12,15,Lateral,0.34
+20260317_030302,9,8,Light Tool,object,1,13,7,Adducted Thumb,0.3475
+20260317_030302,9,8,Light Tool,object,1,14,7,Adducted Thumb,0.4034
+20260317_030302,9,8,Light Tool,object,1,15,7,Adducted Thumb,0.3426
+20260317_030302,9,8,Light Tool,object,1,16,7,Adducted Thumb,0.3687
+20260317_030302,9,8,Light Tool,object,1,17,7,Adducted Thumb,0.4387
+20260317_030302,9,8,Light Tool,object,1,18,7,Adducted Thumb,0.3932
+20260317_030302,9,8,Light Tool,object,1,19,7,Adducted Thumb,0.4138
+20260317_030302,9,8,Light Tool,object,1,20,7,Adducted Thumb,0.4699
+20260317_030302,9,8,Light Tool,object,1,21,7,Adducted Thumb,0.438
+20260317_030302,9,8,Light Tool,object,1,22,7,Adducted Thumb,0.3807
+20260317_030302,9,8,Light Tool,object,1,23,15,Lateral,0.3627
+20260317_030302,9,8,Light Tool,object,1,24,15,Lateral,0.4197
+20260317_030302,9,8,Light Tool,object,1,25,15,Lateral,0.4173
+20260317_030302,9,8,Light Tool,object,1,26,15,Lateral,0.4036
+20260317_030302,9,8,Light Tool,object,1,27,15,Lateral,0.4099
+20260317_030302,9,8,Light Tool,object,1,28,7,Adducted Thumb,0.4528
+20260317_030302,9,8,Light Tool,object,1,29,8,Light Tool,0.347
+20260317_030302,9,8,Light Tool,object,1,30,7,Adducted Thumb,0.469
+20260317_030302,9,8,Light Tool,object,1,31,7,Adducted Thumb,0.5049
+20260317_030302,9,8,Light Tool,object,1,32,7,Adducted Thumb,0.5103
+20260317_030302,9,8,Light Tool,object,1,33,7,Adducted Thumb,0.4556
+20260317_030302,9,8,Light Tool,object,1,34,15,Lateral,0.3967
+20260317_030302,9,8,Light Tool,object,1,35,15,Lateral,0.3975
+20260317_030302,9,8,Light Tool,object,1,36,7,Adducted Thumb,0.4804
+20260317_030302,9,8,Light Tool,object,1,37,8,Light Tool,0.4518
+20260317_030302,9,8,Light Tool,object,1,38,15,Lateral,0.4448
+20260317_030302,9,8,Light Tool,object,1,39,7,Adducted Thumb,0.3555
+20260317_030302,9,8,Light Tool,object,1,40,15,Lateral,0.3958
+20260317_030302,9,8,Light Tool,object,1,41,15,Lateral,0.3879
+20260317_030302,9,8,Light Tool,object,1,42,15,Lateral,0.3641
+20260317_030302,9,8,Light Tool,object,1,43,15,Lateral,0.3796
+20260317_030302,9,8,Light Tool,object,1,44,15,Lateral,0.3511
+20260317_030302,9,8,Light Tool,object,1,45,8,Light Tool,0.3469
+20260317_030302,9,8,Light Tool,object,1,46,7,Adducted Thumb,0.507
+20260317_030302,9,8,Light Tool,object,1,47,15,Lateral,0.4264
+20260317_030302,9,8,Light Tool,object,1,48,7,Adducted Thumb,0.3584
+20260317_030302,9,8,Light Tool,object,1,49,7,Adducted Thumb,0.3747
+20260317_030302,9,8,Light Tool,object,1,50,7,Adducted Thumb,0.3809
+20260317_030302,9,8,Light Tool,object,1,51,7,Adducted Thumb,0.3948
+20260317_030302,9,8,Light Tool,object,1,52,7,Adducted Thumb,0.511
+20260317_030302,9,8,Light Tool,object,1,53,7,Adducted Thumb,0.4138
+20260317_030302,9,8,Light Tool,object,1,54,7,Adducted Thumb,0.4193
+20260317_030302,9,8,Light Tool,object,1,55,7,Adducted Thumb,0.3443
+20260317_030302,9,8,Light Tool,object,1,56,7,Adducted Thumb,0.3629
+20260317_030302,9,8,Light Tool,object,1,57,7,Adducted Thumb,0.3906
+20260317_030302,9,8,Light Tool,object,1,58,7,Adducted Thumb,0.3595
+20260317_030302,9,8,Light Tool,object,1,59,15,Lateral,0.3393
+20260317_030302,9,8,Light Tool,object,1,60,7,Adducted Thumb,0.3668

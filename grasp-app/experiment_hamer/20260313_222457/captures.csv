@@ -1,0 +1,51 @@
+session_id,phase_idx,class_id_target,class_name_target,condition,take,frame,class_id_pred,class_name_pred,confidence,confirmed,min_visibility,mean_visibility,landmarks_low_vis
+20260313_222457,0,0,Large Diameter,air,1,0,5,Palmar,0.4055,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,1,5,Palmar,0.4055,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,2,5,Palmar,0.4055,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,3,5,Palmar,0.4055,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,4,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,5,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,6,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,7,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,8,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,9,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,10,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,11,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,12,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,13,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,14,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,15,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,16,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,17,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,18,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,19,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,20,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,21,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,22,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,23,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,24,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,25,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,26,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,27,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,28,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,29,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,30,5,Palmar,0.4055,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,31,5,Palmar,0.6591,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,32,5,Palmar,0.6591,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,33,5,Palmar,0.6591,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,34,5,Palmar,0.6591,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,35,5,Palmar,0.6591,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,36,24,Precision Disk,0.3811,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,37,24,Precision Disk,0.3811,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,38,24,Precision Disk,0.3811,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,39,24,Precision Disk,0.3811,False,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,40,24,Precision Disk,0.3811,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,41,24,Precision Disk,0.5782,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,42,24,Precision Disk,0.5782,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,43,24,Precision Disk,0.5782,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,44,24,Precision Disk,0.5782,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,45,24,Precision Disk,0.5782,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,46,24,Precision Disk,0.5817,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,47,24,Precision Disk,0.5817,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,48,24,Precision Disk,0.5817,True,0.0,0.0,21
+20260313_222457,0,0,Large Diameter,air,1,49,24,Precision Disk,0.5817,True,0.0,0.0,21

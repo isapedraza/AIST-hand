@@ -1,0 +1,112 @@
+{
+  "run": "Run_007",
+  "model": "GCN_CAM_8_8_16_16_32",
+  "taxonomy": "taxonomy_v1",
+  "num_classes": 17,
+  "test_accuracy": 0.7561,
+  "macro_f1": 0.6704,
+  "per_class": {
+    "Tripod_cluster": {
+      "precision": 0.7959,
+      "recall": 0.7353,
+      "f1": 0.7644,
+      "support": 65486
+    },
+    "Pinch_cluster": {
+      "precision": 0.7687,
+      "recall": 0.838,
+      "f1": 0.8018,
+      "support": 39924
+    },
+    "Lateral_cluster": {
+      "precision": 0.7733,
+      "recall": 0.8634,
+      "f1": 0.8159,
+      "support": 53445
+    },
+    "Power_Wrap_cluster": {
+      "precision": 0.6098,
+      "recall": 0.7859,
+      "f1": 0.6867,
+      "support": 12881
+    },
+    "Precision_cluster": {
+      "precision": 0.7451,
+      "recall": 0.852,
+      "f1": 0.795,
+      "support": 38129
+    },
+    "Small_Diameter": {
+      "precision": 0.6051,
+      "recall": 0.6029,
+      "f1": 0.604,
+      "support": 7334
+    },
+    "Index_Finger_Ext": {
+      "precision": 0.8192,
+      "recall": 0.7981,
+      "f1": 0.8085,
+      "support": 18858
+    },
+    "Extension_Type": {
+      "precision": 0.7794,
+      "recall": 0.8351,
+      "f1": 0.8063,
+      "support": 15229
+    },
+    "Parallel_Ext": {
+      "precision": 0.6629,
+      "recall": 0.7201,
+      "f1": 0.6903,
+      "support": 6688
+    },
+    "Palmar": {
+      "precision": 0.6764,
+      "recall": 0.6676,
+      "f1": 0.6719,
+      "support": 6997
+    },
+    "Medium_Wrap": {
+      "precision": 0.5771,
+      "recall": 0.1053,
+      "f1": 0.1781,
+      "support": 2204
+    },
+    "Adducted_Thumb": {
+      "precision": 0.7557,
+      "recall": 0.4375,
+      "f1": 0.5541,
+      "support": 16783
+    },
+    "Distal": {
+      "precision": 0.8233,
+      "recall": 0.7462,
+      "f1": 0.7828,
+      "support": 20543
+    },
+    "Power_Sphere": {
+      "precision": 0.562,
+      "recall": 0.4797,
+      "f1": 0.5176,
+      "support": 6602
+    },
+    "Sphere_4_Finger": {
+      "precision": 0.6947,
+      "recall": 0.7436,
+      "f1": 0.7183,
+      "support": 4880
+    },
+    "Adduction_Grip": {
+      "precision": 0.81,
+      "recall": 0.5738,
+      "f1": 0.6717,
+      "support": 5786
+    },
+    "Quadpod": {
+      "precision": 0.6783,
+      "recall": 0.4331,
+      "f1": 0.5286,
+      "support": 5491
+    }
+  }
+}

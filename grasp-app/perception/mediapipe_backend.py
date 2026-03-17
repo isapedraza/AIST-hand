@@ -1,3 +1,5 @@
+import os
+
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -25,10 +27,28 @@ class MediaPipeBackend(PerceptionBackend):
     WRIST_IDX = 0
     INDEX_MCP_IDX = 5
     TARGET_DIST = 0.1
+    FALLBACK_FRAME_SHAPE = (480, 640, 3)
+
+    @staticmethod
+    def _open_capture(camera_index: int | str):
+        # Prefer V4L2 on Linux to avoid backend auto-selection issues with USB cameras.
+        backends = [cv2.CAP_V4L2, cv2.CAP_ANY] if os.name == "posix" else [cv2.CAP_ANY]
+        last_cap = None
+        for backend in backends:
+            try:
+                cap = cv2.VideoCapture(camera_index, backend)
+            except TypeError:
+                cap = cv2.VideoCapture(camera_index)
+            if cap and cap.isOpened():
+                return cap
+            last_cap = cap
+            if cap is not None:
+                cap.release()
+        return last_cap
 
     def __init__(
         self,
-        camera_index: int = 0,
+        camera_index: int | str = 0,
         mirror_left_hand: bool = True,
         selfie_mode: bool = True,
         mirror_display: bool = True,
@@ -51,12 +71,39 @@ class MediaPipeBackend(PerceptionBackend):
             min_tracking_confidence=min_tracking_confidence,
         )
 
-        self._cap = cv2.VideoCapture(camera_index)
+        self.camera_index = camera_index
+        self._cap = self._open_capture(camera_index)
         self._frame_bgr = None
         self._last_result = None
         self._last_handedness = "Unknown"
         self._window_open = True
         self._window_initialized = False
+        self._read_failures = 0
+
+    def startup_error(self) -> str | None:
+        if self._cap and self._cap.isOpened():
+            return None
+        source = self.camera_index
+        if isinstance(source, int):
+            source_desc = f"/dev/video{source}"
+        else:
+            source_desc = str(source)
+        return (
+            f"Camera source {source!r} could not be opened. "
+            f"Try another index (0, 1, 2, ...). On Linux also verify device permissions "
+            f"for {source_desc} and membership in the 'video' group."
+        )
+
+    def camera_status(self) -> str | None:
+        startup_error = self.startup_error()
+        if startup_error:
+            return startup_error
+        if self._read_failures >= 10:
+            return (
+                f"Camera source {self.camera_index!r} opened but is not delivering frames. "
+                "Try another camera index or close any process that is using the webcam."
+            )
+        return None
 
     @staticmethod
     def _normalize_geometric(pts: np.ndarray) -> np.ndarray:
@@ -90,7 +137,9 @@ class MediaPipeBackend(PerceptionBackend):
 
         ok, frame_bgr = self._cap.read()
         if not ok:
+            self._read_failures += 1
             return None
+        self._read_failures = 0
 
         self._frame_bgr = frame_bgr
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
@@ -124,17 +173,20 @@ class MediaPipeBackend(PerceptionBackend):
     def is_ready(self) -> bool:
         return bool(self._cap and self._cap.isOpened() and self._window_open)
 
-    def render(self, token=None, status_text: str = None) -> bool:
-        if not self._window_open or self._frame_bgr is None:
+    def render(self, token=None, status_text: str = None, model_lines: list[str] | None = None) -> bool:
+        if not self._window_open:
             return False
         if not self._window_initialized:
             cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
             self._window_initialized = True
 
-        frame = self._frame_bgr.copy()
-        if self.mirror_display:
+        if self._frame_bgr is None:
+            frame = np.zeros(self.FALLBACK_FRAME_SHAPE, dtype=np.uint8)
+        else:
+            frame = self._frame_bgr.copy()
+        if self.mirror_display and self._frame_bgr is not None:
             frame = cv2.flip(frame, 1)
-        if self._last_result and self._last_result.multi_hand_landmarks:
+        if self._frame_bgr is not None and self._last_result and self._last_result.multi_hand_landmarks:
             hand_landmarks = self._last_result.multi_hand_landmarks[0]
             if self.mirror_display:
                 hand_landmarks = type(hand_landmarks)()
@@ -160,8 +212,12 @@ class MediaPipeBackend(PerceptionBackend):
             f"Handedness: {self._last_handedness}",
         ]
 
+        if model_lines:
+            lines.extend(model_lines)
+
         if token is not None:
             lines.append(f"Class ID: {token.class_id}")
+            lines.append(f"Class: {token.class_name}")
             lines.append(f"Confidence: {token.confidence:.3f}")
             if getattr(token, "synergy_coeffs", None):
                 lines.append("Head B (synergy):")

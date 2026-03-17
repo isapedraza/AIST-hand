@@ -141,6 +141,43 @@ pip install -r grasp-model/requirements.txt
 
 ---
 
+## Running The App
+
+From the repository root:
+
+```bash
+source .venv/bin/activate
+python grasp-app/main.py
+python grasp-app/mujoco_canonical_demo.py
+```
+
+## Camera Selection
+
+The live app and the MuJoCo demo accept a selectable camera source so you can switch between devices such as a laptop webcam and DroidCam.
+
+Examples:
+
+```bash
+python grasp-app/main.py --camera 0
+python grasp-app/mujoco_canonical_demo.py --camera 1
+python grasp-app/mujoco_canonical_demo.py --camera http://PHONE_IP:4747/video
+```
+
+You can also set a default source with:
+
+```bash
+GRAPHGRASP_CAMERA_INDEX=1 python grasp-app/mujoco_canonical_demo.py
+```
+
+Resolution order:
+- `--camera` has highest priority
+- `GRAPHGRASP_CAMERA_INDEX` is used next
+- default fallback is camera `0`
+
+If a device opens but does not deliver frames, the app now shows a diagnostic message in the UI instead of quitting immediately.
+
+---
+
 ## Shadow Hand Simulation (ROS Noetic)
 
 Install via Shadow Robot Aurora one-liner:
