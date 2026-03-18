@@ -19,6 +19,20 @@ SPLIT_SUBJECTS = {
     'test':  TEST_SUBJECTS,
 }
 
+# Named XYZ columns in the same order as JOINT_NAMES (works for both CSVs)
+XYZ_COLS = [
+    f'{j}_{ax}'
+    for j in [
+        'WRIST',
+        'THUMB_CMC', 'THUMB_MCP', 'THUMB_IP', 'THUMB_TIP',
+        'INDEX_FINGER_MCP', 'INDEX_FINGER_PIP', 'INDEX_FINGER_DIP', 'INDEX_FINGER_TIP',
+        'MIDDLE_FINGER_MCP', 'MIDDLE_FINGER_PIP', 'MIDDLE_FINGER_DIP', 'MIDDLE_FINGER_TIP',
+        'RING_FINGER_MCP', 'RING_FINGER_PIP', 'RING_FINGER_DIP', 'RING_FINGER_TIP',
+        'PINKY_MCP', 'PINKY_PIP', 'PINKY_DIP', 'PINKY_TIP',
+    ]
+    for ax in ('x', 'y', 'z')
+]
+
 # Joint names in MediaPipe / HOGraspNet order (21 landmarks)
 JOINT_NAMES = [
     'WRIST',
@@ -195,6 +209,7 @@ class GraspsClass(InMemoryDataset):
 
     def __init__(self, root, split='train', collapse=False,
                  add_bone_vectors=False,
+                 add_velocity=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -203,6 +218,7 @@ class GraspsClass(InMemoryDataset):
         self.split = split
         self.collapse = collapse
         self.add_bone_vectors = add_bone_vectors
+        self.add_velocity = add_velocity
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -226,7 +242,8 @@ class GraspsClass(InMemoryDataset):
     # ------------------------------------------------------------------
     @property
     def raw_file_names(self):
-        return ['hograspnet.csv']
+        # velocity requires frame_id column, only present in hograspnet_mano.csv
+        return ['hograspnet_mano.csv'] if self.add_velocity else ['hograspnet.csv']
 
     @property
     def processed_file_names(self):
@@ -237,7 +254,8 @@ class GraspsClass(InMemoryDataset):
         else:
             cls_tag = 'c28'
         bone_tag = '_bone' if self.add_bone_vectors else ''
-        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}.pt']
+        vel_tag  = '_vel'  if self.add_velocity     else ''
+        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}.pt']
 
     # ------------------------------------------------------------------
     def process(self):
@@ -247,6 +265,7 @@ class GraspsClass(InMemoryDataset):
             add_joint_angles=True,
             add_cmc_angle=True,
             add_bone_vectors=self.add_bone_vectors,
+            add_velocity=self.add_velocity,
         )
 
         csv_path = self.raw_paths[0]
@@ -265,12 +284,32 @@ class GraspsClass(InMemoryDataset):
         )
 
         data_list = []
-        for i in range(len(df)):
-            sample = self._sample_from_row(df.iloc[i])
-            graph = tograph(sample)
-            if self.pre_transform is not None:
-                graph = self.pre_transform(graph)
-            data_list.append(graph)
+        if self.add_velocity:
+            # Sequence-aware loop: compute v_i = pos(t) - pos(t-1) within each
+            # (sequence_id, cam) group, ordered by frame_id.
+            # First frame of each group gets v = [0, 0, 0].
+            df = df.sort_values(['sequence_id', 'cam', 'frame_id'])
+            for _, group in df.groupby(['sequence_id', 'cam'], sort=False):
+                prev_xyz = None
+                for _, row in group.iterrows():
+                    sample = self._sample_from_row(row)
+                    curr_xyz = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
+                    sample['velocity'] = (
+                        curr_xyz - prev_xyz if prev_xyz is not None
+                        else np.zeros((21, 3), dtype=np.float32)
+                    )
+                    prev_xyz = curr_xyz
+                    graph = tograph(sample)
+                    if self.pre_transform is not None:
+                        graph = self.pre_transform(graph)
+                    data_list.append(graph)
+        else:
+            for i in range(len(df)):
+                sample = self._sample_from_row(df.iloc[i])
+                graph = tograph(sample)
+                if self.pre_transform is not None:
+                    graph = self.pre_transform(graph)
+                data_list.append(graph)
 
         if self.collapse in (True, 'feix'):
             for d in data_list:
@@ -289,13 +328,11 @@ class GraspsClass(InMemoryDataset):
     def _sample_from_row(self, row):
         """
         Build a ToGraph-compatible dict from a single CSV row.
-
-        CSV layout: subject_id(0) | sequence_id(1) | cam(2) |
-                    grasp_type(3) | contact_sum(4) | XYZ[5:68]
+        Uses named columns so it works with both hograspnet.csv and
+        hograspnet_mano.csv (which has an extra frame_id column).
         """
         grasp_type = int(row['grasp_type'])
-        # 63 XYZ values starting at column index 5
-        vals = row.iloc[5:68].values.astype(np.float32).reshape(21, 3)
+        vals = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
 
         sample = {'grasp_type': grasp_type}
         for j, name in enumerate(JOINT_NAMES):

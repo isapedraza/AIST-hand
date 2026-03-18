@@ -22,6 +22,10 @@ class ToGraph:
       make_undirected: si True, convierte edge_index a no dirigido
       use_confidence: si True, usa '<JOINT>_conf' del sample para enmascarar
       conf_threshold: umbral de confianza para marcar nodos válidos
+      add_velocity: si True, añade v_i = pos(t) - pos(t-1) como 3 features por nodo.
+        En training: se espera key 'velocity' en el sample (computada por GraspsClass).
+        En deploy: se mantiene _prev_positions entre llamadas; llamar reset_velocity()
+        cuando se pierda tracking.
     """
 
     def __init__(self,
@@ -31,7 +35,8 @@ class ToGraph:
                  conf_threshold: float = 0.5,
                  add_joint_angles: bool = False,
                  add_cmc_angle: bool = False,
-                 add_bone_vectors: bool = False):
+                 add_bone_vectors: bool = False,
+                 add_velocity: bool = False):
         assert features in ('xy', 'xyz')
         self.features = features
         self.make_undirected = make_undirected
@@ -40,10 +45,13 @@ class ToGraph:
         self.add_joint_angles = add_joint_angles
         self.add_cmc_angle = add_cmc_angle
         self.add_bone_vectors = add_bone_vectors
+        self.add_velocity = add_velocity
+        self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
         self.F = (self.F_xyz
                   + (1 if add_joint_angles else 0)
-                  + (3 if add_bone_vectors else 0))  # total features per node
+                  + (3 if add_bone_vectors else 0)
+                  + (3 if add_velocity else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -171,6 +179,23 @@ class ToGraph:
                 bone = np.zeros(3) if p == -1 else positions[i] - positions[p]
                 rows[i] = np.append(rows[i], bone)
 
+        # Velocity: v_i = pos(t) - pos(t-1), 3 features per node.
+        # Source priority:
+        #   1. 'velocity' key in sample (set by GraspsClass during training)
+        #   2. _prev_positions buffer (deploy-time, maintained between calls)
+        #   3. zeros (first frame of a sequence or buffer not initialized)
+        if self.add_velocity:
+            positions = np.vstack(rows)[:, :3]  # [21, 3] — always xyz
+            if 'velocity' in sample:
+                vel = np.array(sample['velocity'], dtype=np.float32)  # [21, 3]
+            elif self._prev_positions is not None:
+                vel = positions - self._prev_positions
+            else:
+                vel = np.zeros((21, 3), dtype=np.float32)
+            self._prev_positions = positions.copy()
+            for i in range(21):
+                rows[i] = np.append(rows[i], vel[i])
+
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]
         mask = torch.tensor(mask_vals, dtype=torch.float32).unsqueeze(1)    # [21, 1]
@@ -227,6 +252,10 @@ class ToGraph:
             )
 
         return data
+
+    def reset_velocity(self):
+        """Reset the previous-frame buffer. Call when hand tracking is lost."""
+        self._prev_positions = None
 
     def __repr__(self):
         return (f"ToGraph(features={self.features}, undirected={self.make_undirected}, "
