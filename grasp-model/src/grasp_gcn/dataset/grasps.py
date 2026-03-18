@@ -294,8 +294,12 @@ class GraspsClass(InMemoryDataset):
                 for _, row in group.iterrows():
                     sample = self._sample_from_row(row)
                     curr_xyz = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
+                    # Velocity normalized by dt so units are consistent across
+                    # frame rates.  HOGraspNet annotations are at 10 fps -> dt=0.1s.
+                    # Deploy normalizes by real elapsed time -> both in units/second.
+                    _DT_TRAIN = 0.1  # 10 fps HOGraspNet annotation rate
                     sample['velocity'] = (
-                        curr_xyz - prev_xyz if prev_xyz is not None
+                        (curr_xyz - prev_xyz) / _DT_TRAIN if prev_xyz is not None
                         else np.zeros((21, 3), dtype=np.float32)
                     )
                     prev_xyz = curr_xyz

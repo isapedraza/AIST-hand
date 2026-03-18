@@ -1,4 +1,5 @@
 import logging
+import time
 import numpy as np
 import torch
 from torch_geometric.data import Data
@@ -47,6 +48,7 @@ class ToGraph:
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
+        self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
         self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
         self.F = (self.F_xyz
                   + (1 if add_joint_angles else 0)
@@ -189,9 +191,14 @@ class ToGraph:
             if 'velocity' in sample:
                 vel = np.array(sample['velocity'], dtype=np.float32)  # [21, 3]
             elif self._prev_positions is not None:
-                vel = positions - self._prev_positions
+                now = time.time()
+                dt = now - self._prev_timestamp if self._prev_timestamp is not None else 0.1
+                dt = max(dt, 1e-3)  # guard against zero division
+                vel = (positions - self._prev_positions) / dt
+                self._prev_timestamp = now
             else:
                 vel = np.zeros((21, 3), dtype=np.float32)
+                self._prev_timestamp = time.time()
             self._prev_positions = positions.copy()
             for i in range(21):
                 rows[i] = np.append(rows[i], vel[i])
@@ -256,6 +263,7 @@ class ToGraph:
     def reset_velocity(self):
         """Reset the previous-frame buffer. Call when hand tracking is lost."""
         self._prev_positions = None
+        self._prev_timestamp = None
 
     def __repr__(self):
         return (f"ToGraph(features={self.features}, undirected={self.make_undirected}, "

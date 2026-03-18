@@ -2032,7 +2032,7 @@ The four remaining problematic singletons represent two qualitatively different 
 
 ---
 
-### Run 008 -- Bone Vectors as Additional Node Features (pending)
+### Run 008 -- Bone Vectors as Additional Node Features
 
 **Why 28 classes again:** Run 008 deliberately returns to the full 28-class setting (same as Run 006) rather than taxonomy_v1. The motivation is to push the representational limits of the current data before collapsing. Recent literature (Lu et al. 2026, among others) proposes feature families -- bone vectors, velocity streams, pose encodings -- that may resolve confusions that forced the collapse in taxonomy_v1. The strategy is: exhaust the feature space on 28 classes first; only collapse what remains genuinely unresolvable. This also keeps Run 008 directly comparable to Run 006, isolating the effect of the new features.
 
@@ -2063,7 +2063,84 @@ The four remaining problematic singletons represent two qualitatively different 
 
 **What changes vs Run 006:** Only the node feature vector. Run 006: F=4 `[x,y,z,theta_flex]`. Run 008: F=7 `[x,y,z,theta_flex,bone_x,bone_y,bone_z]`. Architecture, dataset, split, and hyperparameters are identical.
 
-**Evaluation plan:** Compare Run 008 vs Run 006 on the held-out test set (academic performance). The primary motivation is deployment performance -- Run 008 will also be evaluated in the HaMeR domain gap experiment (Exp 3) to measure whether bone features improve real-world recognition accuracy.
+**Results:**
+
+| Split | Loss | Accuracy | Macro F1 | Weighted F1 |
+|-------|------|----------|----------|-------------|
+| Val (best, epoch 19) | 1.2961 | **61.3%** | -- | -- |
+| Test (S74-S99) | 1.1241 | **64.6%** | **0.575** | **0.639** |
+
+Training stopped at epoch 29 via early stopping (patience=10, no improvement since epoch 19).
+
+**Comparison vs Run 006 (28 classes, no bone vectors):**
+
+| Metric | Run 006 | Run 008 | Delta |
+|--------|---------|---------|-------|
+| Test Accuracy | 62.0% | 64.6% | +2.6 pp |
+| Macro F1 | 0.550 | 0.575 | +0.025 |
+| Weighted F1 | 0.613 | 0.639 | +0.026 |
+| Training time | -- | 48.14 min | -- |
+
+Bone vectors produce a consistent but modest improvement across all metrics. The +2.6 pp accuracy gain confirms that relative joint displacements carry additional discriminative information beyond absolute XYZ positions.
+
+**Per-class performance (all 28 classes, test set):**
+
+| Local idx | Feix ID | Grasp name | Prec | Recall | F1 | Delta vs R006 | Support |
+|:---------:|:-------:|------------|------|--------|----|:-------------:|---------|
+| 0 | 1 | Large_Diameter | 0.534 | 0.652 | 0.587 | +0.023 | 7,948 |
+| 1 | 2 | Small_Diameter | 0.578 | 0.616 | 0.596 | +0.001 | 7,334 |
+| 2 | 17 | Index_Finger_Ext | 0.810 | 0.809 | **0.809** | +0.010 | 18,858 |
+| 3 | 18 | Extension_Type | 0.789 | 0.827 | 0.808 | +0.021 | 15,229 |
+| 4 | 22 | Parallel_Ext | 0.655 | 0.707 | 0.680 | -0.003 | 6,688 |
+| 5 | 30 | Palmar | 0.688 | 0.649 | 0.668 | +0.004 | 6,997 |
+| 6 | 3 | Medium_Wrap | 0.516 | 0.160 | 0.244 | +0.010 | 2,204 |
+| 7 | 4 | Adducted_Thumb | 0.664 | 0.537 | 0.594 | -0.024 | 16,783 |
+| 8 | 5 | Light_Tool | 0.562 | 0.664 | 0.609 | +0.094 | 23,738 |
+| 9 | 19 | Distal | 0.816 | 0.761 | 0.788 | +0.019 | 20,543 |
+| 10 | 31 | Ring | 0.494 | 0.497 | 0.495 | +0.026 | 5,356 |
+| 11 | 10 | Power_Disk | 0.593 | 0.728 | 0.654 | +0.050 | 4,933 |
+| 12 | 11 | Power_Sphere | 0.542 | 0.548 | 0.545 | +0.040 | 6,602 |
+| 13 | 26 | Sphere_4_Finger | 0.603 | 0.771 | 0.677 | +0.012 | 4,880 |
+| 14 | 28 | Sphere_3_Finger | 0.626 | 0.517 | 0.567 | +0.005 | 13,047 |
+| 15 | 16 | Lateral | 0.756 | 0.769 | 0.763 | +0.024 | 26,701 |
+| 16 | 29 | Stick | 0.378 | 0.180 | 0.244 | +0.151 | 3,006 |
+| 17 | 23 | Adduction_Grip | 0.741 | 0.580 | 0.650 | +0.024 | 5,786 |
+| 18 | 20 | Writing_Tripod | 0.497 | 0.551 | 0.523 | +0.022 | 16,116 |
+| 19 | 25 | Lateral_Tripod | 0.533 | 0.161 | 0.248 | -0.041 | 5,118 |
+| 20 | 9 | Palmar_Pinch | 0.600 | 0.692 | 0.643 | +0.034 | 13,338 |
+| 21 | 24 | Tip_Pinch | 0.640 | 0.469 | 0.541 | +0.040 | 7,154 |
+| 22 | 33 | Inferior_Pincer | 0.596 | 0.655 | 0.624 | +0.046 | 14,076 |
+| 23 | 7 | Prismatic_3F | 0.506 | 0.286 | 0.365 | +0.027 | 6,905 |
+| 24 | 12 | Precision_Disk | 0.729 | 0.826 | 0.774 | +0.012 | 32,794 |
+| 25 | 13 | Precision_Sphere | 0.318 | 0.238 | 0.272 | -0.037 | 5,335 |
+| 26 | 27 | Quadpod | 0.533 | 0.563 | 0.547 | +0.052 | 5,491 |
+| 27 | 14 | Tripod | 0.567 | 0.582 | 0.574 | +0.060 | 24,300 |
+
+Bone vectors improve 23 out of 28 classes. Largest gains: Stick (+0.151), Light_Tool (+0.094), Power_Disk (+0.050). Regressions: Lateral_Tripod (-0.041), Precision_Sphere (-0.037), Adducted_Thumb (-0.024) -- all classes with already low F1 in Run 006. The Tripod-adjacent cluster (Medium_Wrap, Stick, Lateral_Tripod) remains the worst-performing group with F1 under 0.25 and is the primary candidate for collapse once the feature space is exhausted.
+
+### Run 009 -- Bone Vectors + Velocity (28 classes)
+
+**Configuration:** Same as Run 008 plus velocity stream. `GG_BONE_VECTORS=true`, `GG_VELOCITY=true`.
+Node feature vector F=10: `[x, y, z, theta_flex, bone_x, bone_y, bone_z, vel_x, vel_y, vel_z]`.
+Dataset: `hograspnet_mano.csv` (required for `frame_id` column to compute sequence-aware velocity).
+
+**Velocity definition:** `v_i = (pos_i(t) - pos_i(t-1)) / dt`, in units/second.
+- Training: `dt = 0.1s` (HOGraspNet annotations at 10 fps, Section 3.5 of paper).
+- Deploy (HaMeR): `dt = time.time() - timestamp_prev`, measured wall-clock between consecutive
+  HaMeR responses. Measured empirically: mean ~374ms (~2.7 fps).
+
+**Why dt-normalization:** Without normalization, training velocity scale (dt=100ms) differs
+from deploy scale (dt~374ms) by a factor of ~3.7x -- the same physical movement produces
+velocity vectors ~3.7x larger in deploy than in training. Dividing by dt on both sides
+puts velocity in units/second, making the feature scale-invariant to frame rate. This
+allows the model trained on 10 fps data to generalize to any deploy frame rate.
+
+**Implementation:**
+- `grasps.py`: `vel = (curr_xyz - prev_xyz) / 0.1` per sequence group.
+- `tograph.py`: deploy branch tracks `_prev_timestamp` alongside `_prev_positions`;
+  `vel = (pos - prev_pos) / dt_real`; `reset_velocity()` clears both buffers.
+
+**Results:** TBD (pending Colab run).
 
 ---
 
@@ -2074,8 +2151,8 @@ The four remaining problematic singletons represent two qualitatively different 
 - [x] **Finalize collapse taxonomy:** Done -- taxonomy_v1, 17 classes, gcn_thresh=0.15.
   See Collapse Decision Analysis section above.
 - [x] **GCN on reduced taxonomy:** Done -- Run 007 (75.6% test acc, Macro F1=0.670).
-- [ ] **Bone vectors (Run 008):** Train GCN_CAM with `[x,y,z,theta_flex,bone_x,bone_y,bone_z]`
-  (F=7) on 28 classes. Hypothesis: relative displacements reduce sensor domain gap vs Run 006.
+- [x] **Bone vectors (Run 008):** Done -- 64.6% test acc, Macro F1=0.575. +2.6 pp over Run 006.
+- [ ] **Bone + velocity (Run 009):** Pending Colab run. F=10: `[x,y,z,theta_flex,bone_x,bone_y,bone_z,vel_x,vel_y,vel_z]`.
 - [ ] **Dexonomy verification:** Check whether collapsed pairs produce sufficiently similar
   joint configs for Shadow Hand. Validates that collapsed classes are also functionally
   equivalent from the robot actuation perspective.
