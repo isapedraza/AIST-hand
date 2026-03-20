@@ -304,9 +304,12 @@ class GraspsClass(InMemoryDataset):
             # (sequence_id, cam) group, ordered by frame_id.
             # First frame of each group gets v = [0, 0, 0].
             df = df.sort_values(['sequence_id', 'cam', 'frame_id'])
+            total = len(df)
             for _, group in df.groupby(['sequence_id', 'cam'], sort=False):
                 prev_xyz = None
                 for _, row in group.iterrows():
+                    if len(data_list) % 50_000 == 0 and len(data_list) > 0:
+                        print(f"  {len(data_list):,} / {total:,} frames processed")
                     sample = self._sample_from_row(row)
                     curr_xyz = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
                     # Velocity normalized by dt so units are consistent across
