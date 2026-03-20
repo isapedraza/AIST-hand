@@ -258,6 +258,15 @@ class GraspsClass(InMemoryDataset):
         return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}.pt']
 
     # ------------------------------------------------------------------
+    def _usecols(self):
+        """Columns to load from CSV. Skips unused columns (e.g. MANO_pose_*)
+        to reduce RAM usage during cache processing."""
+        cols = ['subject_id', 'sequence_id', 'cam', 'grasp_type', 'contact_sum']
+        if self.add_velocity:
+            cols.append('frame_id')
+        return cols + XYZ_COLS
+
+    # ------------------------------------------------------------------
     def process(self):
         tograph = ToGraph(
             features='xyz',
@@ -270,7 +279,7 @@ class GraspsClass(InMemoryDataset):
 
         csv_path = self.raw_paths[0]
         log.info(f"Reading {csv_path}")
-        df = pd.read_csv(csv_path)
+        df = pd.read_csv(csv_path, usecols=self._usecols())
 
         subjects = SPLIT_SUBJECTS[self.split]
         df = df[df['subject_id'].isin(subjects)].reset_index(drop=True)
