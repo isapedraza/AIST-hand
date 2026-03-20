@@ -131,7 +131,7 @@ class HaMeRBackend(PerceptionBackend):
             return crop
         return cv2.resize(crop, (self.CROP_SIZE, self.CROP_SIZE))
 
-    def _send_crop(self, crop: np.ndarray, is_right: bool) -> np.ndarray | None:
+    def _send_crop(self, crop: np.ndarray, is_right: bool) -> tuple[np.ndarray | None, np.ndarray | None]:
         _, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
         files = {"crop": ("crop.jpg", buf.tobytes(), "image/jpeg")}
         data  = {"is_right": int(is_right)}
@@ -142,17 +142,20 @@ class HaMeRBackend(PerceptionBackend):
                 data=data,
                 timeout=self.request_timeout,
             )
-            kp = resp.json().get("keypoints")
-            if kp is not None:
-                return np.array(kp, dtype=np.float32)  # (21, 3)
+            body = resp.json()
+            kp   = body.get("keypoints")
+            pose = body.get("mano_pose")
+            kp_arr   = np.array(kp,   dtype=np.float32) if kp   is not None else None  # (21, 3)
+            pose_arr = np.array(pose, dtype=np.float32) if pose is not None else None  # (45,)
+            return kp_arr, pose_arr
         except Exception as e:
             print(f"[HaMeRBackend] Request error: {e}")
-        return None
+        return None, None
 
     def _infer_async(self, crop: np.ndarray, is_right: bool, handedness: str) -> None:
-        """Corre en hilo separado: manda crop, recibe keypoints, actualiza _latest_sample."""
+        """Corre en hilo separado: manda crop, recibe keypoints + mano_pose, actualiza _latest_sample."""
         try:
-            pts_raw = self._send_crop(crop, is_right)
+            pts_raw, mano_pose = self._send_crop(crop, is_right)
             if pts_raw is None:
                 return
 
@@ -162,6 +165,8 @@ class HaMeRBackend(PerceptionBackend):
                 pts[:, 0] *= -1.0
 
             sample = {name: pts[i] for i, name in enumerate(self.JOINTS)}
+            if mano_pose is not None:
+                sample["mano_pose"] = mano_pose
             sample["handedness"] = handedness
             sample["grasp_type"] = 0
             self._latest_sample  = sample
