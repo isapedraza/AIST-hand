@@ -326,7 +326,10 @@ class GraspsClass(InMemoryDataset):
                         graph = self.pre_transform(graph)
                     data_list.append(graph)
         else:
-            for i in range(len(df)):
+            total = len(df)
+            for i in range(total):
+                if i % 50_000 == 0 and i > 0:
+                    print(f"  {i:,} / {total:,} frames processed")
                 sample = self._sample_from_row(df.iloc[i])
                 graph = tograph(sample)
                 if self.pre_transform is not None:
