@@ -107,7 +107,7 @@ optimizer_ = torch.optim.Adam(model_.parameters(), lr=lr, weight_decay=weight_de
 scheduler_ = (
     torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer_, mode='max', factor=LR_PLATEAU_FACTOR,
-        patience=LR_PLATEAU_PATIENCE, verbose=True
+        patience=LR_PLATEAU_PATIENCE
     )
     if LR_SCHEDULER == "plateau" else None
 )
