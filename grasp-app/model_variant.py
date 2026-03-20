@@ -68,6 +68,20 @@ _REGISTRY: dict[str, dict] = {
             "add_velocity": True,
         },
     },
+    "c28_bone_vel_pose": {
+        "model_path": "best_model_run010_c28_xyz_bone_vel_pose.pth",
+        "num_classes": 28,
+        "num_node_features": 13,  # xyz(3) + flex(1) + bone(3) + vel(3) + pose(3)
+        "class_names": GRASP_CLASS_NAMES,
+        "tograph_kwargs": {
+            "features": "xyz",
+            "add_joint_angles": True,
+            "add_cmc_angle": True,
+            "add_bone_vectors": True,
+            "add_velocity": True,
+            "add_mano_pose": True,
+        },
+    },
 }
 
 SUPPORTED_VARIANTS = set(_REGISTRY.keys())

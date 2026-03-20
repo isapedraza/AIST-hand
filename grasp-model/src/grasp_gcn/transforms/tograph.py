@@ -8,6 +8,25 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+# For each of the 21 MediaPipe nodes, the start index into the 45-element MANO
+# pose param vector (axis-angle, 15 non-root finger joints x 3).
+# Derived from mano_to_openpose = [0,13,14,15,16,1,2,3,17,4,5,6,18,10,11,12,19,7,8,9,20].
+# pose_start = (mano_joint - 1) * 3  for mano_joint in 1..15.
+# -1 = no MANO joint (root WRIST or fingertip) -> features are [0, 0, 0].
+_MANO_POSE_SLICE = [
+    -1,          # 0  WRIST        (root)
+    36, 39, 42,  # 1-3  THUMB_CMC, MCP, IP   (MANO joints 13,14,15)
+    -1,          # 4  THUMB_TIP    (tip)
+     0,  3,  6,  # 5-7  INDEX_MCP, PIP, DIP  (MANO joints 1,2,3)
+    -1,          # 8  INDEX_TIP    (tip)
+     9, 12, 15,  # 9-11 MIDDLE_MCP, PIP, DIP (MANO joints 4,5,6)
+    -1,          # 12 MIDDLE_TIP   (tip)
+    27, 30, 33,  # 13-15 RING_MCP, PIP, DIP  (MANO joints 10,11,12)
+    -1,          # 16 RING_TIP     (tip)
+    18, 21, 24,  # 17-19 PINKY_MCP, PIP, DIP (MANO joints 7,8,9)
+    -1,          # 20 PINKY_TIP    (tip)
+]
+
 class ToGraph:
     """
     Convierte un sample de MediaPipe a PyG Data:
@@ -37,7 +56,8 @@ class ToGraph:
                  add_joint_angles: bool = False,
                  add_cmc_angle: bool = False,
                  add_bone_vectors: bool = False,
-                 add_velocity: bool = False):
+                 add_velocity: bool = False,
+                 add_mano_pose: bool = False):
         assert features in ('xy', 'xyz')
         self.features = features
         self.make_undirected = make_undirected
@@ -47,13 +67,15 @@ class ToGraph:
         self.add_cmc_angle = add_cmc_angle
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
+        self.add_mano_pose = add_mano_pose
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
         self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
         self.F = (self.F_xyz
                   + (1 if add_joint_angles else 0)
                   + (3 if add_bone_vectors else 0)
-                  + (3 if add_velocity else 0))  # total features per node
+                  + (3 if add_velocity else 0)
+                  + (3 if add_mano_pose else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -202,6 +224,16 @@ class ToGraph:
             self._prev_positions = positions.copy()
             for i in range(21):
                 rows[i] = np.append(rows[i], vel[i])
+
+        # MANO pose params: 3 axis-angle values per node (zeros for WRIST and tips).
+        # Source: sample['mano_pose'] -- (45,) array from hograspnet_mano.csv.
+        # Mapping: _MANO_POSE_SLICE[i] gives the start index into the 45-element vector.
+        if self.add_mano_pose:
+            pose = np.array(sample.get('mano_pose', np.zeros(45)), dtype=np.float32)
+            for i in range(21):
+                start = _MANO_POSE_SLICE[i]
+                params = pose[start:start + 3] if start >= 0 else np.zeros(3, dtype=np.float32)
+                rows[i] = np.append(rows[i], params)
 
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]

@@ -19,6 +19,8 @@ SPLIT_SUBJECTS = {
     'test':  TEST_SUBJECTS,
 }
 
+MANO_POSE_COLS = [f'MANO_pose_{i:02d}' for i in range(45)]
+
 # Named XYZ columns in the same order as JOINT_NAMES (works for both CSVs)
 XYZ_COLS = [
     f'{j}_{ax}'
@@ -210,6 +212,7 @@ class GraspsClass(InMemoryDataset):
     def __init__(self, root, split='train', collapse=False,
                  add_bone_vectors=False,
                  add_velocity=False,
+                 add_mano_pose=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -219,6 +222,7 @@ class GraspsClass(InMemoryDataset):
         self.collapse = collapse
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
+        self.add_mano_pose = add_mano_pose
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -242,8 +246,8 @@ class GraspsClass(InMemoryDataset):
     # ------------------------------------------------------------------
     @property
     def raw_file_names(self):
-        # velocity requires frame_id column, only present in hograspnet_mano.csv
-        return ['hograspnet_mano.csv'] if self.add_velocity else ['hograspnet.csv']
+        # mano_pose and velocity both require hograspnet_mano.csv (has frame_id + MANO cols)
+        return ['hograspnet_mano.csv'] if (self.add_velocity or self.add_mano_pose) else ['hograspnet.csv']
 
     @property
     def processed_file_names(self):
@@ -255,16 +259,17 @@ class GraspsClass(InMemoryDataset):
             cls_tag = 'c28'
         bone_tag = '_bone' if self.add_bone_vectors else ''
         vel_tag  = '_vel'  if self.add_velocity     else ''
-        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}.pt']
+        pose_tag = '_pose' if self.add_mano_pose    else ''
+        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}{pose_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
-        """Columns to load from CSV. Skips unused columns (e.g. MANO_pose_*)
-        to reduce RAM usage during cache processing."""
+        """Columns to load from CSV. Skips unused columns to reduce RAM during processing."""
         cols = ['subject_id', 'sequence_id', 'cam', 'grasp_type', 'contact_sum']
         if self.add_velocity:
             cols.append('frame_id')
-        return cols + XYZ_COLS
+        extra = MANO_POSE_COLS if self.add_mano_pose else []
+        return cols + XYZ_COLS + extra
 
     # ------------------------------------------------------------------
     def process(self):
@@ -275,6 +280,7 @@ class GraspsClass(InMemoryDataset):
             add_cmc_angle=True,
             add_bone_vectors=self.add_bone_vectors,
             add_velocity=self.add_velocity,
+            add_mano_pose=self.add_mano_pose,
         )
 
         csv_path = self.raw_paths[0]
@@ -342,7 +348,7 @@ class GraspsClass(InMemoryDataset):
         """
         Build a ToGraph-compatible dict from a single CSV row.
         Uses named columns so it works with both hograspnet.csv and
-        hograspnet_mano.csv (which has an extra frame_id column).
+        hograspnet_mano.csv (which has frame_id and MANO_pose_* columns).
         """
         grasp_type = int(row['grasp_type'])
         vals = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
@@ -350,6 +356,8 @@ class GraspsClass(InMemoryDataset):
         sample = {'grasp_type': grasp_type}
         for j, name in enumerate(JOINT_NAMES):
             sample[name] = vals[j]
+        if self.add_mano_pose:
+            sample['mano_pose'] = row[MANO_POSE_COLS].values.astype(np.float32)
         return sample
 
     # ------------------------------------------------------------------

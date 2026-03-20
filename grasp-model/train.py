@@ -26,6 +26,8 @@ print('🚀 Import libraries: OK')
 # GG_COLLAPSE:      "none" | "feix" | "taxonomy_v1"
 # GG_CHECKPOINT:    filename for saved model, e.g. "best_model_run008_c28_xyz_bone.pth"
 # GG_BONE_VECTORS:  "true" | "false"
+# GG_VELOCITY:      "true" | "false"
+# GG_MANO_POSE:     "true" | "false"
 
 RUN_NAME     = os.getenv("GG_RUN_NAME",     "run_unnamed")
 _collapse    = os.getenv("GG_COLLAPSE",     "none").strip().lower()
@@ -33,12 +35,14 @@ COLLAPSE     = False if _collapse == "none" else _collapse
 CHECKPOINT   = os.getenv("GG_CHECKPOINT",  f"best_model_{RUN_NAME}.pth")
 BONE_VECTORS = os.getenv("GG_BONE_VECTORS","false").strip().lower() == "true"
 VELOCITY     = os.getenv("GG_VELOCITY",    "false").strip().lower() == "true"
+MANO_POSE    = os.getenv("GG_MANO_POSE",   "false").strip().lower() == "true"
 
 print(f"Run:          {RUN_NAME}")
 print(f"Collapse:     {COLLAPSE}")
 print(f"Checkpoint:   {CHECKPOINT}")
 print(f"Bone vectors: {BONE_VECTORS}")
 print(f"Velocity:     {VELOCITY}")
+print(f"MANO pose:    {MANO_POSE}")
 
 # ====================== Hyperparameters =========================
 
@@ -64,9 +68,9 @@ writer = SummaryWriter(log_dir=f'experiments/runs/{RUN_NAME}')
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
 
-datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY)
-datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY)
-datasetTest  = GraspsClass(root='data/', split='test',  collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY)
+datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE)
+datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE)
+datasetTest  = GraspsClass(root='data/', split='test',  collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE)
 
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")
