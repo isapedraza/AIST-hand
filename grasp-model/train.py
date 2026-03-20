@@ -52,14 +52,18 @@ weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256
 NUM_WORKERS = 0
-num_epochs = 40
-EARLY_STOPPING_PATIENCE = 10
+num_epochs = int(os.getenv("GG_NUM_EPOCHS", "40"))
+EARLY_STOPPING_PATIENCE = int(os.getenv("GG_PATIENCE", "10"))
+LR_SCHEDULER = os.getenv("GG_LR_SCHEDULER", "none").strip().lower()  # "none" | "plateau"
+LR_PLATEAU_FACTOR   = float(os.getenv("GG_LR_PLATEAU_FACTOR",   "0.5"))
+LR_PLATEAU_PATIENCE = int(os.getenv("GG_LR_PLATEAU_PATIENCE",   "5"))
 
 # Reproducibility
 torch.manual_seed(seed)
 np.random.seed(seed)
 
-print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}")
+print(f"Batch size: {BATCH_SIZE}, Epochs: {num_epochs}, LR: {lr}, Patience: {EARLY_STOPPING_PATIENCE}")
+print(f"LR scheduler: {LR_SCHEDULER}" + (f" (factor={LR_PLATEAU_FACTOR}, patience={LR_PLATEAU_PATIENCE})" if LR_SCHEDULER == "plateau" else ""))
 print('--------------------------------')
 
 # ==================== TensorBoard ================================
@@ -100,6 +104,13 @@ def reset_weights(m):
 model_.apply(reset_weights)
 
 optimizer_ = torch.optim.Adam(model_.parameters(), lr=lr, weight_decay=weight_decay)
+scheduler_ = (
+    torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer_, mode='max', factor=LR_PLATEAU_FACTOR,
+        patience=LR_PLATEAU_PATIENCE, verbose=True
+    )
+    if LR_SCHEDULER == "plateau" else None
+)
 
 
 # ==================== Joint Dropout Augmentation =================
@@ -170,10 +181,16 @@ def train(model_, train_loader_, val_loader_, writer):
         writer.add_scalar("Val/Loss", val_loss, epoch)
         writer.add_scalar("Val/Accuracy", val_acc, epoch)
 
+        current_lr = optimizer_.param_groups[0]['lr']
         print(f"Epoch {epoch+1:02d}/{num_epochs} | "
               f"Train Loss: {epoch_loss:.4f} | "
               f"Val Loss: {val_loss:.4f} | "
-              f"Val Acc: {val_acc:.3f}")
+              f"Val Acc: {val_acc:.3f} | "
+              f"LR: {current_lr:.2e}")
+
+        if scheduler_ is not None:
+            scheduler_.step(val_acc)
+        writer.add_scalar("Train/LR", current_lr, epoch)
 
         # Save best model + early stopping
         if val_acc > best_val_acc:
