@@ -95,6 +95,34 @@ _REGISTRY: dict[str, dict] = {
             "add_mano_pose": True,
         },
     },
+    "c28_bone_swing": {
+        "model_path": "best_model_run012_c28_xyz_bone_swing.pth",
+        "num_classes": 28,
+        "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + swing(3)
+        "class_names": GRASP_CLASS_NAMES,
+        "tograph_kwargs": {
+            "features": "xyz",
+            "add_joint_angles": True,
+            "add_cmc_angle": True,
+            "add_bone_vectors": True,
+            "add_global_swing": True,
+        },
+    },
+    "c28_bone_swing_ahg": {
+        "model_path": "best_model_run013_c28_xyz_bone_swing_ahg.pth",
+        "num_classes": 28,
+        "num_node_features": 30,  # xyz(3) + flex(1) + bone(3) + swing(3) + ahg_angles(10) + ahg_distances(10)
+        "class_names": GRASP_CLASS_NAMES,
+        "tograph_kwargs": {
+            "features": "xyz",
+            "add_joint_angles": True,
+            "add_cmc_angle": True,
+            "add_bone_vectors": True,
+            "add_global_swing": True,
+            "add_ahg_angles": True,
+            "add_ahg_distances": True,
+        },
+    },
 }
 
 SUPPORTED_VARIANTS = set(_REGISTRY.keys())

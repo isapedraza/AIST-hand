@@ -1,0 +1,184 @@
+{
+  "run": "run013_c28_xyz_bone_swing_ahg",
+  "model": "GCN_CAM_8_8_16_16_32",
+  "collapse": "none",
+  "bone_vectors": true,
+  "velocity": false,
+  "mano_pose": false,
+  "global_swing": true,
+  "ahg_angles": true,
+  "ahg_distances": true,
+  "num_classes": 28,
+  "test_accuracy": 0.7038,
+  "macro_f1": 0.6445,
+  "per_class": {
+    "Large Diameter": {
+      "precision": 0.7025,
+      "recall": 0.7036,
+      "f1": 0.703,
+      "support": 7948
+    },
+    "Small Diameter": {
+      "precision": 0.637,
+      "recall": 0.5933,
+      "f1": 0.6144,
+      "support": 7334
+    },
+    "Index Finger Extension": {
+      "precision": 0.857,
+      "recall": 0.8958,
+      "f1": 0.876,
+      "support": 18858
+    },
+    "Extension Type": {
+      "precision": 0.8115,
+      "recall": 0.8621,
+      "f1": 0.836,
+      "support": 15229
+    },
+    "Parallel Extension": {
+      "precision": 0.6452,
+      "recall": 0.7998,
+      "f1": 0.7142,
+      "support": 6688
+    },
+    "Palmar": {
+      "precision": 0.6573,
+      "recall": 0.6929,
+      "f1": 0.6746,
+      "support": 6997
+    },
+    "Medium Wrap": {
+      "precision": 0.5426,
+      "recall": 0.3094,
+      "f1": 0.3941,
+      "support": 2204
+    },
+    "Adducted Thumb": {
+      "precision": 0.7081,
+      "recall": 0.6026,
+      "f1": 0.6511,
+      "support": 16783
+    },
+    "Light Tool": {
+      "precision": 0.6182,
+      "recall": 0.7104,
+      "f1": 0.6611,
+      "support": 23738
+    },
+    "Distal": {
+      "precision": 0.8743,
+      "recall": 0.8328,
+      "f1": 0.8531,
+      "support": 20543
+    },
+    "Ring": {
+      "precision": 0.5009,
+      "recall": 0.6458,
+      "f1": 0.5642,
+      "support": 5356
+    },
+    "Power Disk": {
+      "precision": 0.7334,
+      "recall": 0.7823,
+      "f1": 0.757,
+      "support": 4933
+    },
+    "Power Sphere": {
+      "precision": 0.5556,
+      "recall": 0.6387,
+      "f1": 0.5943,
+      "support": 6602
+    },
+    "Sphere 4-Finger": {
+      "precision": 0.7152,
+      "recall": 0.8047,
+      "f1": 0.7573,
+      "support": 4880
+    },
+    "Sphere 3-Finger": {
+      "precision": 0.6518,
+      "recall": 0.6409,
+      "f1": 0.6463,
+      "support": 13047
+    },
+    "Lateral": {
+      "precision": 0.7335,
+      "recall": 0.8297,
+      "f1": 0.7787,
+      "support": 26701
+    },
+    "Stick": {
+      "precision": 0.3499,
+      "recall": 0.2512,
+      "f1": 0.2924,
+      "support": 3006
+    },
+    "Adduction Grip": {
+      "precision": 0.788,
+      "recall": 0.7793,
+      "f1": 0.7836,
+      "support": 5786
+    },
+    "Writing Tripod": {
+      "precision": 0.5829,
+      "recall": 0.5732,
+      "f1": 0.578,
+      "support": 16116
+    },
+    "Lateral Tripod": {
+      "precision": 0.511,
+      "recall": 0.1944,
+      "f1": 0.2817,
+      "support": 5118
+    },
+    "Palmar Pinch": {
+      "precision": 0.7097,
+      "recall": 0.7536,
+      "f1": 0.731,
+      "support": 13338
+    },
+    "Tip Pinch": {
+      "precision": 0.6257,
+      "recall": 0.461,
+      "f1": 0.5309,
+      "support": 7154
+    },
+    "Inferior Pincer": {
+      "precision": 0.7181,
+      "recall": 0.6752,
+      "f1": 0.696,
+      "support": 14076
+    },
+    "Prismatic 3 Finger": {
+      "precision": 0.4787,
+      "recall": 0.5218,
+      "f1": 0.4993,
+      "support": 6905
+    },
+    "Precision Disk": {
+      "precision": 0.8343,
+      "recall": 0.8172,
+      "f1": 0.8257,
+      "support": 32794
+    },
+    "Precision Sphere": {
+      "precision": 0.5091,
+      "recall": 0.3912,
+      "f1": 0.4424,
+      "support": 5335
+    },
+    "Quadpod": {
+      "precision": 0.6562,
+      "recall": 0.6981,
+      "f1": 0.6765,
+      "support": 5491
+    },
+    "Tripod": {
+      "precision": 0.6603,
+      "recall": 0.6065,
+      "f1": 0.6322,
+      "support": 24300
+    }
+  }
+}

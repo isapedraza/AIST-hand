@@ -80,6 +80,15 @@ class MediaPipeBackend(PerceptionBackend):
         self._window_initialized = False
         self._read_failures = 0
 
+        # Kalman filter state for 21 joints × 3 coords = 63 independent 1D filters
+        # Each filter tracks: state x (position), covariance P
+        # Q: process noise (how much joints can move between frames)
+        # R: measurement noise (how much we trust MediaPipe)
+        self._kf_Q = 1e-4   # low = smoother, assumes hand moves slowly
+        self._kf_R = 1e-2   # how much to trust MediaPipe raw output
+        self._kf_x = None   # [21, 3] estimated state
+        self._kf_P = None   # [21, 3] estimated covariance
+
     def startup_error(self) -> str | None:
         if self._cap and self._cap.isOpened():
             return None
@@ -148,6 +157,8 @@ class MediaPipeBackend(PerceptionBackend):
 
         if not result.multi_hand_landmarks:
             self._last_handedness = "Unknown"
+            self._kf_x = None  # reset Kalman when hand disappears
+            self._kf_P = None
             return None
 
         hand = result.multi_hand_landmarks[0]
@@ -162,6 +173,20 @@ class MediaPipeBackend(PerceptionBackend):
         )  # [21,3]
 
         pts = self._normalize_geometric(pts)
+
+        # Kalman filter: predict + update for each of 63 scalar values
+        if self._kf_x is None:
+            self._kf_x = pts.copy()
+            self._kf_P = np.ones_like(pts)
+        else:
+            # Predict
+            P_pred = self._kf_P + self._kf_Q
+            # Update (scalar Kalman gain per coordinate)
+            K = P_pred / (P_pred + self._kf_R)
+            self._kf_x = self._kf_x + K * (pts - self._kf_x)
+            self._kf_P = (1 - K) * P_pred
+        pts = self._kf_x.copy()
+
         if self.mirror_left_hand and handedness == "Left":
             pts[:, 0] *= -1.0
 

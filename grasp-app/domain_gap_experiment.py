@@ -1,19 +1,20 @@
 """
-Domain Gap Experiment (HaMeR): air vs object grasping.
+Domain Gap Experiment: air vs object grasping.
 
-Mismo protocolo que domain_gap_experiment.py pero usando HaMeRBackend
-en lugar de MediaPipeBackend. Permite comparacion directa entre estimadores.
+Measures the difference in model predictions between:
+  - Condition AIR:    operator performs grasp in free air
+  - Condition OBJECT: operator performs grasp holding an object
 
 Output:
-  experiment_hamer/<session_id>/
+  experiment/<session_id>/
     captures.csv
     frames/
       {class_id}_{class_name}_{condition}_f{frame:04d}.jpg
 
 Usage:
-  python domain_gap_experiment_hamer.py --url https://xxxx.trycloudflare.com
-  python domain_gap_experiment_hamer.py --url https://xxxx.trycloudflare.com --feix-images /path/to/feix
-  python domain_gap_experiment_hamer.py --url https://xxxx.trycloudflare.com --takes 3 --capture-seconds 5
+  python domain_gap_experiment.py
+  python domain_gap_experiment.py --feix-images /path/to/feix/images
+  python domain_gap_experiment.py --takes 3 --capture-seconds 5
 """
 
 from __future__ import annotations
@@ -30,15 +31,15 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 
 import cv2
+import mediapipe as mp
 import numpy as np
 import torch
 
-from grasp_gcn import ToGraph, get_network
-from grasp_gcn.dataset.grasps import GRASP_CLASS_NAMES
+from grasp_gcn import ToGraph, VotingWindow, get_network
 
-from inference_runtime import parse_model_output, to_probs
+from inference_runtime import OpenHandLatch, parse_model_output, to_probs
 from model_variant import resolve_model_spec
-from perception.hamer_backend import HaMeRBackend
+from perception.mediapipe_backend import MediaPipeBackend
 
 
 # ---------------------------------------------------------------------------
@@ -46,15 +47,18 @@ from perception.hamer_backend import HaMeRBackend
 # ---------------------------------------------------------------------------
 
 ROOT = Path(__file__).resolve().parent
-MODELS_DIR = ROOT / "models"
+NETWORK_TYPE = "GCN_CAM_8_8_16_16_32"
+N_VOTES = 5
 
-CAPTURE_SECONDS = 20
-HAMER_TIMEOUT = 15.0  # segundos sin respuesta antes de mostrar aviso de reconexion
+CAPTURE_SECONDS = 5
 COUNTDOWN_SECONDS = 3
 TAKES = 1
 
+LOW_VISIBILITY_THRESHOLD = 0.5
+
 CONDITIONS = ["object"]
 
+# class_id -> Feix image filename
 FEIX_IMAGE_MAP = {
     0:  "1_Large_Diameter.jpg",
     1:  "2_Small_Diameter.jpg",
@@ -97,9 +101,29 @@ CSV_FIELDS = [
     "class_id_pred",
     "class_name_pred",
     "confidence",
+    "confirmed",
+    "min_visibility",
+    "mean_visibility",
+    "landmarks_low_vis",
 ]
 
-WINDOW_NAME = "GraphGrasp - Domain Gap (HaMeR)"
+WINDOW_NAME = "GraphGrasp - Domain Gap Experiment"
+
+
+# ---------------------------------------------------------------------------
+# Visibility helpers
+# ---------------------------------------------------------------------------
+
+def _visibility_stats(result) -> tuple[float, float, int]:
+    """Returns (min_vis, mean_vis, count_low) from a MediaPipe result."""
+    if not result or not result.multi_hand_landmarks:
+        return 0.0, 0.0, 21
+    landmarks = result.multi_hand_landmarks[0].landmark
+    vis = [lm.visibility for lm in landmarks]
+    min_vis = float(min(vis))
+    mean_vis = float(sum(vis) / len(vis))
+    low_count = sum(1 for v in vis if v < LOW_VISIBILITY_THRESHOLD)
+    return min_vis, mean_vis, low_count
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +142,7 @@ def _load_feix_image(class_id: int, feix_dir: Path | None) -> np.ndarray | None:
     img = cv2.imread(str(path))
     if img is None:
         return None
+    # Resize to fixed height keeping aspect ratio
     target_h = 220
     h, w = img.shape[:2]
     scale = target_h / h
@@ -129,7 +154,7 @@ def _load_feix_image(class_id: int, feix_dir: Path | None) -> np.ndarray | None:
 # ---------------------------------------------------------------------------
 
 def _render_ui(
-    backend: HaMeRBackend,
+    backend: MediaPipeBackend,
     feix_img: np.ndarray | None,
     class_name: str,
     condition: str,
@@ -137,7 +162,7 @@ def _render_ui(
     total_takes: int,
     phase_idx: int,
     total_phases: int,
-    state: str,
+    state: str,           # "prepare" | "countdown" | "capturing" | "done"
     countdown_remaining: float = 0.0,
     captured_frames: int = 0,
     total_capture_frames: int = 0,
@@ -154,8 +179,6 @@ def _render_ui(
     frame = backend._frame_bgr.copy() if backend._frame_bgr is not None else np.zeros((CAM_H, CAM_W, 3), dtype=np.uint8)
     if backend.mirror_display:
         frame = cv2.flip(frame, 1)
-
-    # Draw MediaPipe landmarks (used for bbox detection)
     if backend._last_result and backend._last_result.multi_hand_landmarks:
         hand_lm = backend._last_result.multi_hand_landmarks[0]
         if backend.mirror_display:
@@ -166,19 +189,9 @@ def _render_ui(
         else:
             hand_lm_draw = hand_lm
         backend._mp_draw.draw_landmarks(frame, hand_lm_draw, backend._mp_hands.HAND_CONNECTIONS)
-
-    # Draw bbox
-    if backend._last_bbox is not None:
-        h_f, w_f = frame.shape[:2]
-        x1, y1, x2, y2 = backend._last_bbox
-        bx1 = int((1.0 - x2) * w_f) if backend.mirror_display else int(x1 * w_f)
-        bx2 = int((1.0 - x1) * w_f) if backend.mirror_display else int(x2 * w_f)
-        color = (0, 255, 0) if backend._last_handedness == "Right" else (255, 0, 0)
-        cv2.rectangle(frame, (bx1, int(y1 * h_f)), (bx2, int(y2 * h_f)), color, 2)
-
     frame = cv2.resize(frame, (CAM_W, CAM_H), interpolation=cv2.INTER_AREA)
 
-    # --- State overlay ---
+    # --- State overlay on camera ---
     if state == "countdown":
         text = f"{int(countdown_remaining) + 1}"
         cv2.putText(frame, text, (CAM_W // 2 - 30, CAM_H // 2 + 20),
@@ -193,6 +206,7 @@ def _render_ui(
     # --- Right panel ---
     panel = np.zeros((CAM_H + INFO_H, PANEL_W, 3), dtype=np.uint8)
 
+    # Feix reference image
     if feix_img is not None:
         fh, fw = feix_img.shape[:2]
         x0 = (PANEL_W - fw) // 2
@@ -202,11 +216,12 @@ def _render_ui(
     else:
         ref_bottom = 10
 
+    # Text info
     condition_color = (80, 180, 255) if condition == "air" else (80, 255, 160)
     condition_label = "AIR" if condition == "air" else "OBJECT"
 
     lines = [
-        ("GraphGrasp - HaMeR Domain Gap", (100, 200, 255), 0.65, 2),
+        ("GraphGrasp - Domain Gap", (80, 220, 120), 0.7, 2),
         (f"Phase {phase_idx + 1}/{total_phases}", (180, 180, 180), 0.55, 1),
         (f"Target: {class_name}", (235, 235, 235), 0.65, 2),
         (f"Condition: {condition_label}", condition_color, 0.65, 2),
@@ -236,14 +251,12 @@ def _render_ui(
 # ---------------------------------------------------------------------------
 
 def run_experiment(
-    url: str,
     feix_dir: Path | None,
     takes: int,
     capture_seconds: float,
     output_dir: Path,
     camera_source: int | str = 0,
     mirror: bool = True,
-    only_classes: list[str] | None = None,
 ):
     session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_dir = output_dir / session_id
@@ -257,43 +270,27 @@ def run_experiment(
 
     print(f"[experiment] Session: {session_id}")
     print(f"[experiment] Output:  {session_dir}")
-    print(f"[experiment] HaMeR URL: {url}")
 
     # --- Load model ---
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     spec = resolve_model_spec()
-    num_classes = spec["num_classes"]
-    class_names = spec["class_names"]
-
-    from grasp_gcn import get_network
-    model = get_network("GCN_CAM_8_8_16_16_32", 4, num_classes, use_cmc_angle=True).to(device)
+    model = get_network(NETWORK_TYPE, spec["num_node_features"], spec["num_classes"], use_cmc_angle=True).to(device)
     model.load_state_dict(torch.load(spec["model_path"], map_location=device, weights_only=True))
     model.eval()
-    print(f"[experiment] Model: {spec['variant']} | {num_classes} classes")
+    print(f"[experiment] Model loaded: {spec['variant']} | {spec['num_node_features']} features | {spec['num_classes']} classes")
 
     # --- Setup perception ---
-    backend = HaMeRBackend(
-        url=url,
+    backend = MediaPipeBackend(
         camera_index=camera_source,
         mirror_display=mirror,
         mirror_left_hand=mirror,
+        selfie_mode=mirror,
     )
-    if backend.startup_error():
-        print(backend.startup_error())
-        return
+    to_graph = ToGraph(make_undirected=True, **spec["tograph_kwargs"])
+    window = VotingWindow(n=N_VOTES)
 
-    to_graph = ToGraph(features="xyz", make_undirected=True, add_joint_angles=True, add_cmc_angle=True)
-
-    # --- Build phase list ---
-    class_ids = list(range(num_classes))
-    if only_classes:
-        only_lower = {c.lower() for c in only_classes}
-        class_ids = [cid for cid in class_ids
-                     if class_names.get(cid, GRASP_CLASS_NAMES.get(cid, "")).lower() in only_lower]
-        if not class_ids:
-            print(f"[experiment] ERROR: ninguna clase coincide con --classes {only_classes}")
-            return
-        print(f"[experiment] Filtrando a {len(class_ids)} clases: {[class_names.get(c) for c in class_ids]}")
+    # --- Build phase list: 28 classes x conditions, randomized ---
+    class_ids = list(range(spec["num_classes"]))
     random.shuffle(class_ids)
     phases = [(cid, cond) for cid in class_ids for cond in CONDITIONS]
     total_phases = len(phases)
@@ -308,16 +305,16 @@ def run_experiment(
 
     while running and phase_idx < total_phases:
         class_id_target, condition = phases[phase_idx]
-        class_name_target = class_names.get(class_id_target, GRASP_CLASS_NAMES.get(class_id_target, str(class_id_target)))
+        class_name_target = spec["class_names"].get(class_id_target, str(class_id_target))
         feix_img = _load_feix_image(class_id_target, feix_dir)
 
         for take in range(1, takes + 1):
             if not running:
                 break
 
-            # --- PREPARE ---
+            # --- PREPARE state: wait for SPACE ---
             condition_label = "AIR (no object)" if condition == "air" else "OBJECT (hold an object)"
-            status = f"Prepare: {condition_label} — SPACE=iniciar  U=nueva URL  Q=salir"
+            status = f"Prepare: {condition_label} — press SPACE"
 
             while running:
                 backend.get_landmarks()
@@ -329,19 +326,13 @@ def run_experiment(
                 if key == ord("q"):
                     running = False
                     break
-                if key == ord("u"):
-                    print("\n[experiment] Pega la nueva URL de Cloudflare:")
-                    new_url = input("  Nueva URL: ").strip()
-                    if new_url:
-                        backend.url = new_url.rstrip("/")
-                        print(f"[experiment] URL actualizada: {backend.url}")
                 if key == ord(" "):
                     break
 
             if not running:
                 break
 
-            # --- COUNTDOWN ---
+            # --- COUNTDOWN state ---
             countdown_start = time.time()
             while running:
                 elapsed = time.time() - countdown_start
@@ -359,15 +350,13 @@ def run_experiment(
             if not running:
                 break
 
-            # --- CAPTURE (with retry) ---
+            # --- CAPTURE state (with retry loop) ---
             while running:
+                window.reset()
                 frame_count = 0
                 capture_start = time.time()
                 pending_rows = []
-                pending_frames = []
-                last_sample_id = None
-                last_hamer_time = time.time()
-                reconnect_requested = False
+                pending_frames = []  # (fname, img)
 
                 while running:
                     elapsed = time.time() - capture_start
@@ -375,55 +364,23 @@ def run_experiment(
                         break
 
                     landmarks = backend.get_landmarks()
-                    current_sample_id = id(backend._latest_sample)
-
-                    hamer_silent = (time.time() - last_hamer_time) > HAMER_TIMEOUT
-                    if hamer_silent:
-                        status = "HAMER DOWN -- U=nueva URL  R=reintentar  Q=salir"
-                    elif pending_rows:
-                        status = f"Pred: {pending_rows[-1]['class_name_pred']} ({pending_rows[-1]['confidence']:.2f})"
-                    else:
-                        status = "Waiting for HaMeR..."
-
-                    elapsed_frames = int(elapsed * 30)
-                    key = _render_ui(
-                        backend, feix_img, class_name_target, condition,
-                        take, takes, phase_idx, total_phases,
-                        state="capturing",
-                        captured_frames=elapsed_frames,
-                        total_capture_frames=total_capture_frames,
-                        status_text=status,
-                    )
-                    if key == ord("q"):
-                        running = False
-                        break
-                    if key == ord("u") and hamer_silent:
-                        reconnect_requested = True
-                        break
-
-                    # Only record when a new HaMeR response has arrived
-                    if current_sample_id == last_sample_id:
-                        continue
-                    last_sample_id = current_sample_id
-                    last_hamer_time = time.time()
+                    min_vis, mean_vis, low_vis_count = _visibility_stats(backend._last_result)
 
                     class_id_pred = -1
                     class_name_pred = "no_hand"
                     confidence = 0.0
+                    confirmed = False
 
                     if landmarks is not None:
-                        try:
-                            data = to_graph(landmarks).to(device)
-                            with torch.no_grad():
-                                output = model(data)
-                            head_a, _ = parse_model_output(output)
-                            probs = to_probs(head_a)
-                            class_id_pred = int(probs.argmax().item())
-                            confidence = float(probs.max().item())
-                            class_name_pred = class_names.get(class_id_pred, GRASP_CLASS_NAMES.get(class_id_pred, str(class_id_pred)))
-
-                        except Exception as e:
-                            print(f"[experiment] Inference error: {e}")
+                        data = to_graph(landmarks).to(device)
+                        with torch.no_grad():
+                            output = model(data)
+                        head_a, _ = parse_model_output(output)
+                        probs = to_probs(head_a)
+                        class_id_pred = int(probs.argmax().item())
+                        confidence = float(probs.max().item())
+                        class_name_pred = spec["class_names"].get(class_id_pred, str(class_id_pred))
+                        confirmed = window.update(class_id_pred, confidence)
 
                     frame_bgr = backend._frame_bgr
                     if frame_bgr is not None:
@@ -441,20 +398,23 @@ def run_experiment(
                         "class_id_pred": class_id_pred,
                         "class_name_pred": class_name_pred,
                         "confidence": round(confidence, 4),
+                        "confirmed": confirmed,
+                        "min_visibility": round(min_vis, 4),
+                        "mean_visibility": round(mean_vis, 4),
+                        "landmarks_low_vis": low_vis_count,
                     })
 
+                    _render_ui(
+                        backend, feix_img, class_name_target, condition,
+                        take, takes, phase_idx, total_phases,
+                        state="capturing",
+                        captured_frames=frame_count,
+                        total_capture_frames=total_capture_frames,
+                        status_text=f"Pred: {class_name_pred} ({confidence:.2f})",
+                    )
                     frame_count += 1
 
-                # --- RECONNECT ---
-                if reconnect_requested:
-                    print("\n[experiment] HaMeR desconectado. Pega la nueva URL de Cloudflare:")
-                    new_url = input("  Nueva URL: ").strip()
-                    if new_url:
-                        backend.url = new_url.rstrip("/")
-                        print(f"[experiment] URL actualizada: {backend.url}")
-                    continue  # retry la fase
-
-                # --- CONFIRM ---
+                # --- CONFIRM state: SPACE=save, R=retry, Q=quit ---
                 while running:
                     backend.get_landmarks()
                     key = _render_ui(
@@ -467,29 +427,42 @@ def run_experiment(
                         running = False
                         break
                     if key == ord("r"):
-                        break
+                        break  # retry: redo capture loop
                     if key == ord(" "):
+                        # Commit frames and rows
                         for fname, img in pending_frames:
                             cv2.imwrite(str(frames_dir / fname), img)
                         for row in pending_rows:
                             writer.writerow(row)
                         csv_file.flush()
-                        break
+                        break  # done with this take
 
                 if not running:
                     break
                 if key == ord(" "):
-                    break
+                    break  # exit retry loop, move to next take
+
+                _render_ui(
+                    backend, feix_img, class_name_target, condition,
+                    take, takes, phase_idx, total_phases,
+                    state="capturing",
+                    captured_frames=frame_count,
+                    total_capture_frames=total_capture_frames,
+                    status_text=f"Pred: {class_name_pred} ({confidence:.2f})",
+                )
+
+                frame_count += 1
 
             csv_file.flush()
 
         phase_idx += 1
 
+    # --- Done ---
     csv_file.close()
     backend.release()
     cv2.destroyAllWindows()
-    print(f"[experiment] Done. CSV: {csv_path}")
-    print(f"[experiment] Frames: {frames_dir}")
+    print(f"[experiment] Done. CSV saved to {csv_path}")
+    print(f"[experiment] Frames saved to {frames_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -497,41 +470,37 @@ def run_experiment(
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Domain gap experiment con HaMeR: air vs object")
-    parser.add_argument("--url", type=str, required=True, help="URL de cloudflared del servidor Colab")
+    parser = argparse.ArgumentParser(description="Domain gap experiment: air vs object")
     parser.add_argument(
         "--feix-images",
         type=Path,
         default=Path("/home/yareeez/Downloads/ilovepdf_images-extracted(1)"),
-        help="Directorio con imagenes de referencia Feix",
+        help="Directory with Feix reference images (e.g. 1_Large_Diameter.jpg)",
     )
-    parser.add_argument("--takes", type=int, default=TAKES)
-    parser.add_argument("--capture-seconds", type=float, default=CAPTURE_SECONDS)
-    parser.add_argument("--output-dir", type=Path, default=ROOT / "experiment_hamer")
-    parser.add_argument("--camera", type=str, default="0")
-    parser.add_argument("--no-mirror", action="store_true")
-    parser.add_argument("--classes", nargs="+", default=None, metavar="CLASS",
-                        help="Grabar solo estas clases (nombres exactos, ej: 'Light Tool' 'Medium Wrap')")
+    parser.add_argument("--takes", type=int, default=TAKES, help="Takes per class per condition")
+    parser.add_argument("--capture-seconds", type=float, default=CAPTURE_SECONDS, help="Seconds per capture")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "experiment", help="Output directory")
+    parser.add_argument("--camera", type=str, default="0", help="Camera index (0,1,...) or stream URL")
+    parser.add_argument("--no-mirror", action="store_true", help="Disable display and left-hand mirroring")
     args = parser.parse_args()
 
     feix_dir = args.feix_images if args.feix_images.exists() else None
     if feix_dir is None:
-        print(f"[experiment] Feix dir not found: {args.feix_images} — running without reference images")
+        print(f"[experiment] Feix images dir not found: {args.feix_images} — running without reference images")
 
+    # Resolve camera source: integer index or URL string
     try:
         camera_source = int(args.camera)
     except ValueError:
         camera_source = args.camera
 
     run_experiment(
-        url=args.url,
         feix_dir=feix_dir,
         takes=args.takes,
         capture_seconds=args.capture_seconds,
         output_dir=args.output_dir,
         camera_source=camera_source,
         mirror=not args.no_mirror,
-        only_classes=args.classes,
     )
 
 

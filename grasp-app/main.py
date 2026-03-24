@@ -12,19 +12,19 @@ import argparse
 import os
 from pathlib import Path
 
+import numpy as np
 import torch
-from grasp_gcn import get_network, ToGraph, GraspToken, VotingWindow
+from grasp_gcn import get_network, ToGraph, GraspToken
 
-from inference_runtime import OpenHandLatch, parse_model_output, to_probs
+from inference_runtime import parse_model_output, to_probs
 from model_variant import resolve_model_spec
 from perception.mediapipe_backend import MediaPipeBackend
 
 # TODO: import robot adapter from grasp-robot
 # from grasp_robot import YAMLRobotAdapter
 
-N_VOTES = 5
-NUM_FEATURES = 4  # [x, y, z, theta_flex]
 NETWORK_TYPE = "GCN_CAM_8_8_16_16_32"
+EMA_ALPHA = 0.5  # 0=max smoothing, 1=no smoothing
 
 
 def _resolve_camera_source() -> int | str:
@@ -61,6 +61,7 @@ def main():
     spec = resolve_model_spec()
     model_path = Path(spec["model_path"])
     num_classes = spec["num_classes"]
+    num_node_features = spec["num_node_features"]
     class_names = spec["class_names"]
     model_lines = [
         f"Model: {spec['variant']}",
@@ -72,7 +73,7 @@ def main():
     try:
         model = get_network(
             NETWORK_TYPE,
-            NUM_FEATURES,
+            num_node_features,
             num_classes,
             use_cmc_angle=True,
         ).to(device)
@@ -83,14 +84,8 @@ def main():
         model = None
         print(f"[main] Perception-only mode (model unavailable): {exc}")
 
-    to_graph = ToGraph(
-        features="xyz",
-        make_undirected=True,
-        add_joint_angles=True,
-        add_cmc_angle=True,
-    )
-    window = VotingWindow(n=N_VOTES)
-    open_hand_latch = OpenHandLatch()
+    to_graph = ToGraph(**spec["tograph_kwargs"])
+    smoothed_probs = None  # EMA state
     backend = MediaPipeBackend(camera_index=camera_source)
     # adapter = YAMLRobotAdapter("../grasp-robot/grasp_configs/shadow_hand.yaml")
 
@@ -99,31 +94,27 @@ def main():
         landmarks = backend.get_landmarks()
         status_text = backend.camera_status() or "Perception: waiting for hand"
         token = None
+        if landmarks is None:
+            to_graph.reset_velocity()
+            smoothed_probs = None  # reset EMA when hand disappears
         if landmarks is not None:
             if model is None:
                 status_text = "Inference: no model loaded"
-            elif open_hand_latch.update(landmarks):
-                window.reset()
-                token = GraspToken(
-                    class_id=None,
-                    class_name="Open Hand",
-                    confidence=1.0,
-                    confirmed=True,
-                    observed_handedness=landmarks.get("handedness"),
-                )
-                status_text = "Inference: open hand override"
             else:
                 data = to_graph(landmarks).to(device)
                 with torch.no_grad():
                     output = model(data)
                 head_a, head_b = parse_model_output(output)
 
-                probs = to_probs(head_a)
-                class_id = probs.argmax().item()
-                confidence = probs.max().item()
+                probs = to_probs(head_a).cpu().numpy()
+                if smoothed_probs is None:
+                    smoothed_probs = probs
+                else:
+                    smoothed_probs = EMA_ALPHA * probs + (1 - EMA_ALPHA) * smoothed_probs
+                class_id = int(smoothed_probs.argmax())
+                confidence = float(smoothed_probs.max())
                 class_name = class_names.get(class_id, str(class_id))
 
-                confirmed = window.update(class_id, confidence)
                 synergy_coeffs = []
                 if head_b is not None:
                     if isinstance(head_b, torch.Tensor):
@@ -136,14 +127,11 @@ def main():
                     class_name=class_name,
                     confidence=confidence,
                     synergy_coeffs=synergy_coeffs,
-                    confirmed=confirmed,
+                    confirmed=True,
                     observed_handedness=landmarks.get("handedness"),
                 )
                 # adapter.execute(token)
-                if not confirmed:
-                    status_text = "Inference: waiting for stable vote"
-                else:
-                    status_text = "Inference: confirmed"
+                status_text = "Inference: live"
         elif model is None:
             status_text = "Inference: no model loaded"
 
