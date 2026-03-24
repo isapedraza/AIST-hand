@@ -8,6 +8,65 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+
+# ── Global swing helpers ──────────────────────────────────────────────────────
+# Derived from MANO FK (Romero et al., 2017):
+#   b_world[i] = R_global[parent[i]] @ b_rest[i]
+# => R_global[parent[i]] = swing_rotation(b_rest[i], b_world[i])
+# => global_swing[i] = rot_to_aa(R_global[parent[i]])
+
+def _swing(a, b):
+    """Zero-twist rotation R such that R @ a = b (up to scale)."""
+    a = a / (np.linalg.norm(a) + 1e-8)
+    b = b / (np.linalg.norm(b) + 1e-8)
+    axis = np.cross(a, b)
+    sin_t = np.linalg.norm(axis)
+    cos_t = float(np.clip(np.dot(a, b), -1.0, 1.0))
+    if sin_t < 1e-8:
+        if cos_t > 0:
+            return np.eye(3)
+        perp = np.array([1., 0., 0.]) if abs(a[0]) < 0.9 else np.array([0., 1., 0.])
+        ax = np.cross(a, perp); ax /= np.linalg.norm(ax)
+        return 2.0 * np.outer(ax, ax) - np.eye(3)
+    axis /= sin_t
+    K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+    return np.eye(3) + sin_t * K + (1.0 - cos_t) * (K @ K)
+
+def _rot_to_aa(R):
+    """Rotation matrix -> axis-angle (3,)."""
+    angle = np.arccos(np.clip((np.trace(R) - 1.0) / 2.0, -1.0, 1.0))
+    if abs(angle) < 1e-8:
+        return np.zeros(3)
+    axis = np.array([R[2,1]-R[1,2], R[0,2]-R[2,0], R[1,0]-R[0,1]]) / (2.0 * np.sin(angle))
+    return angle * axis
+
+# OpenPose index -> MANO joint index (-1 = tip/no MANO joint)
+_OP_TO_MANO = [0,13,14,15,-1, 1,2,3,-1, 4,5,6,-1, 10,11,12,-1, 7,8,9,-1]
+# MANO kintree parents (root = -1)
+_MANO_PARENTS = [-1, 0,1,2, 0,4,5, 0,7,8, 0,10,11, 0,13,14]
+
+# MANO rest-pose joint positions, wrist at origin (from MANO_RIGHT.pkl, betas=0).
+# Only directions matter -- _swing normalizes bone vectors internally.
+# Source: J_raw = mano['J']; J_REST = J_raw - J_raw[0]
+_J_REST = np.array([
+    [ 0.        ,  0.        ,  0.        ],
+    [-0.08809725, -0.00520036,  0.02068599],
+    [-0.12077615, -0.001191  ,  0.02290306],
+    [-0.14293206, -0.00248942,  0.02278894],
+    [-0.09466044, -0.00147896, -0.00335754],
+    [-0.12584311,  0.00038237, -0.00895205],
+    [-0.14874775, -0.00086974, -0.01289656],
+    [-0.06878697, -0.00994033, -0.04320934],
+    [-0.08580138, -0.0098785 , -0.05570812],
+    [-0.10166828, -0.01056966, -0.06604002],
+    [-0.08173555, -0.00395742, -0.02667319],
+    [-0.11004983, -0.00189041, -0.03177173],
+    [-0.13357034, -0.00357853, -0.03940555],
+    [-0.02408971, -0.01552233,  0.02581285],
+    [-0.04372295, -0.01463105,  0.0495124 ],
+    [-0.06594069, -0.02006402,  0.06403652],
+], dtype=np.float64)
+
 # For each of the 21 MediaPipe nodes, the start index into the 45-element MANO
 # pose param vector (axis-angle, 15 non-root finger joints x 3).
 # Derived from mano_to_openpose = [0,13,14,15,16,1,2,3,17,4,5,6,18,10,11,12,19,7,8,9,20].
@@ -57,7 +116,8 @@ class ToGraph:
                  add_cmc_angle: bool = False,
                  add_bone_vectors: bool = False,
                  add_velocity: bool = False,
-                 add_mano_pose: bool = False):
+                 add_mano_pose: bool = False,
+                 add_global_swing: bool = False):
         assert features in ('xy', 'xyz')
         self.features = features
         self.make_undirected = make_undirected
@@ -68,6 +128,7 @@ class ToGraph:
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
         self.add_mano_pose = add_mano_pose
+        self.add_global_swing = add_global_swing
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
         self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
@@ -75,7 +136,8 @@ class ToGraph:
                   + (1 if add_joint_angles else 0)
                   + (3 if add_bone_vectors else 0)
                   + (3 if add_velocity else 0)
-                  + (3 if add_mano_pose else 0))  # total features per node
+                  + (3 if add_mano_pose else 0)
+                  + (3 if add_global_swing else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -233,6 +295,26 @@ class ToGraph:
             for i in range(21):
                 start = _MANO_POSE_SLICE[i]
                 params = pose[start:start + 3] if start >= 0 else np.zeros(3, dtype=np.float32)
+                rows[i] = np.append(rows[i], params)
+
+        # Global swing: R_global[parent[i]] = swing(b_rest[i], b_world[i])  for i=1..15
+        # From MANO FK (Romero et al., 2017): b_world[i] = R_global[parent[i]] @ b_rest[i]
+        # Computed on-the-fly from XYZ. Same node mapping as mano_pose (_MANO_POSE_SLICE).
+        if self.add_global_swing:
+            positions = np.vstack(rows)[:, :3]  # [21, 3]
+            j_world = np.zeros((16, 3))
+            for op_i, mano_i in enumerate(_OP_TO_MANO):
+                if mano_i >= 0:
+                    j_world[mano_i] = positions[op_i]
+            swing_feat = np.zeros(45, dtype=np.float32)
+            for i in range(1, 16):
+                p = _MANO_PARENTS[i]
+                b_rest  = _J_REST[i] - _J_REST[p]
+                b_world = j_world[i]       - j_world[p]
+                swing_feat[(i - 1) * 3: i * 3] = _rot_to_aa(_swing(b_rest, b_world))
+            for i in range(21):
+                start = _MANO_POSE_SLICE[i]
+                params = swing_feat[start:start + 3] if start >= 0 else np.zeros(3, dtype=np.float32)
                 rows[i] = np.append(rows[i], params)
 
         # Nodo features y máscara
