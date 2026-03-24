@@ -84,9 +84,8 @@ print("📦 Loading datasets...")
 
 datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
 datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
-datasetTest  = GraspsClass(root='data/', split='test',  collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
 
-print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
+print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")
 print(f"✅ Num classes: {datasetTrain.num_classes}")
 
@@ -95,7 +94,6 @@ print(f"✅ Features per node: {datasetTrain.num_features} (xyz + joint angle)")
 # DataLoaders
 train_loader = DataLoader(datasetTrain, batch_size=BATCH_SIZE, shuffle=True,  num_workers=NUM_WORKERS)
 val_loader   = DataLoader(datasetVal,   batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
-test_loader  = DataLoader(datasetTest,  batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 
 # ==================== Device =====================================
 device_ = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -225,6 +223,16 @@ def train(model_, train_loader_, val_loader_, writer):
 
 # ==================== Run Training ===============================
 trained_model = train(model_, train_loader, val_loader, writer)
+
+# Free train/val memory before loading test set
+del datasetTrain, datasetVal, train_loader, val_loader
+import gc; gc.collect()
+
+# ==================== Load Test Set (lazy) =======================
+print("📦 Loading test dataset...")
+datasetTest = GraspsClass(root='data/', split='test', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
+test_loader = DataLoader(datasetTest, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
+print(f"Test: {len(datasetTest)}")
 
 # ==================== Final Evaluation ===========================
 test_loss, test_acc = evaluate(trained_model, test_loader)
