@@ -22,31 +22,37 @@ print('--------------------------------')
 print('🚀 Import libraries: OK')
 
 # ====================== Run config (set via env vars from notebook) ==========
-# GG_RUN_NAME:      e.g. "run008_c28_xyz_bone"
-# GG_COLLAPSE:      "none" | "feix" | "taxonomy_v1"
-# GG_CHECKPOINT:    filename for saved model, e.g. "best_model_run008_c28_xyz_bone.pth"
-# GG_BONE_VECTORS:  "true" | "false"
-# GG_VELOCITY:      "true" | "false"
-# GG_MANO_POSE:     "true" | "false"
-# GG_GLOBAL_SWING:  "true" | "false"
-# GG_MANO_PKL:      path to MANO_RIGHT.pkl (required when GG_GLOBAL_SWING=true)
+# GG_RUN_NAME:       e.g. "run008_c28_xyz_bone"
+# GG_COLLAPSE:       "none" | "feix" | "taxonomy_v1"
+# GG_CHECKPOINT:     filename for saved model, e.g. "best_model_run008_c28_xyz_bone.pth"
+# GG_BONE_VECTORS:   "true" | "false"
+# GG_VELOCITY:       "true" | "false"
+# GG_MANO_POSE:      "true" | "false"
+# GG_GLOBAL_SWING:   "true" | "false"
+# GG_MANO_PKL:       path to MANO_RIGHT.pkl (required when GG_GLOBAL_SWING=true)
+# GG_AHG_ANGLES:     "true" | "false"  -- 10 wrist-relative angles per node (Aiman & Ahmad 2024)
+# GG_AHG_DISTANCES:  "true" | "false"  -- 10 distances to critical joints per node
 
-RUN_NAME      = os.getenv("GG_RUN_NAME",     "run_unnamed")
-_collapse     = os.getenv("GG_COLLAPSE",     "none").strip().lower()
+RUN_NAME      = os.getenv("GG_RUN_NAME",      "run_unnamed")
+_collapse     = os.getenv("GG_COLLAPSE",      "none").strip().lower()
 COLLAPSE      = False if _collapse == "none" else _collapse
-CHECKPOINT    = os.getenv("GG_CHECKPOINT",  f"best_model_{RUN_NAME}.pth")
-BONE_VECTORS  = os.getenv("GG_BONE_VECTORS","false").strip().lower() == "true"
-VELOCITY      = os.getenv("GG_VELOCITY",    "false").strip().lower() == "true"
-MANO_POSE     = os.getenv("GG_MANO_POSE",   "false").strip().lower() == "true"
-GLOBAL_SWING  = os.getenv("GG_GLOBAL_SWING","false").strip().lower() == "true"
+CHECKPOINT    = os.getenv("GG_CHECKPOINT",   f"best_model_{RUN_NAME}.pth")
+BONE_VECTORS  = os.getenv("GG_BONE_VECTORS", "false").strip().lower() == "true"
+VELOCITY      = os.getenv("GG_VELOCITY",     "false").strip().lower() == "true"
+MANO_POSE     = os.getenv("GG_MANO_POSE",    "false").strip().lower() == "true"
+GLOBAL_SWING  = os.getenv("GG_GLOBAL_SWING", "false").strip().lower() == "true"
+AHG_ANGLES    = os.getenv("GG_AHG_ANGLES",   "false").strip().lower() == "true"
+AHG_DISTANCES = os.getenv("GG_AHG_DISTANCES","false").strip().lower() == "true"
 
-print(f"Run:          {RUN_NAME}")
-print(f"Collapse:     {COLLAPSE}")
-print(f"Checkpoint:   {CHECKPOINT}")
-print(f"Bone vectors: {BONE_VECTORS}")
-print(f"Velocity:     {VELOCITY}")
-print(f"MANO pose:    {MANO_POSE}")
-print(f"Global swing: {GLOBAL_SWING}")
+print(f"Run:           {RUN_NAME}")
+print(f"Collapse:      {COLLAPSE}")
+print(f"Checkpoint:    {CHECKPOINT}")
+print(f"Bone vectors:  {BONE_VECTORS}")
+print(f"Velocity:      {VELOCITY}")
+print(f"MANO pose:     {MANO_POSE}")
+print(f"Global swing:  {GLOBAL_SWING}")
+print(f"AHG angles:    {AHG_ANGLES}")
+print(f"AHG distances: {AHG_DISTANCES}")
 
 # ====================== Hyperparameters =========================
 
@@ -76,9 +82,9 @@ writer = SummaryWriter(log_dir=f'experiments/runs/{RUN_NAME}')
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
 
-datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING)
-datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING)
-datasetTest  = GraspsClass(root='data/', split='test',  collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING)
+datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
+datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
+datasetTest  = GraspsClass(root='data/', split='test',  collapse=COLLAPSE, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES)
 
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}, Test: {len(datasetTest)}")
 print(f"✅ Num features per node: {datasetTrain.num_features}")

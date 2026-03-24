@@ -86,6 +86,14 @@ _MANO_POSE_SLICE = [
     -1,          # 20 PINKY_TIP    (tip)
 ]
 
+# ── AHG features (Aiman & Ahmad, Wiley 2024) ─────────────────────────────────
+# 10 critical joints: 5 fingertips + 5 finger bases (MediaPipe indexing).
+# For each node j, 10 angles and/or 10 distances are computed relative to these.
+_CRITICAL_JOINTS = [
+    4, 8, 12, 16, 20,   # fingertips:   THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP
+    1, 5,  9, 13, 17,   # finger bases: THUMB_CMC, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP
+]
+
 class ToGraph:
     """
     Convierte un sample de MediaPipe a PyG Data:
@@ -117,7 +125,9 @@ class ToGraph:
                  add_bone_vectors: bool = False,
                  add_velocity: bool = False,
                  add_mano_pose: bool = False,
-                 add_global_swing: bool = False):
+                 add_global_swing: bool = False,
+                 add_ahg_angles: bool = False,
+                 add_ahg_distances: bool = False):
         assert features in ('xy', 'xyz')
         self.features = features
         self.make_undirected = make_undirected
@@ -129,6 +139,8 @@ class ToGraph:
         self.add_velocity = add_velocity
         self.add_mano_pose = add_mano_pose
         self.add_global_swing = add_global_swing
+        self.add_ahg_angles = add_ahg_angles
+        self.add_ahg_distances = add_ahg_distances
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
         self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
@@ -137,7 +149,9 @@ class ToGraph:
                   + (3 if add_bone_vectors else 0)
                   + (3 if add_velocity else 0)
                   + (3 if add_mano_pose else 0)
-                  + (3 if add_global_swing else 0))  # total features per node
+                  + (3 if add_global_swing else 0)
+                  + (10 if add_ahg_angles else 0)
+                  + (10 if add_ahg_distances else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -316,6 +330,37 @@ class ToGraph:
                 start = _MANO_POSE_SLICE[i]
                 params = swing_feat[start:start + 3] if start >= 0 else np.zeros(3, dtype=np.float32)
                 rows[i] = np.append(rows[i], params)
+
+        # AHG angles: for each node j, 10 angles at wrist between j and each critical joint.
+        # theta = arccos(dot(wrist->j, wrist->c) / (|wrist->j| * |wrist->c|))
+        # 3D adaptation of Aiman & Ahmad (Wiley CAV 2024), Eq. 1.
+        # Wrist node (j=0): v_i=[0,0,0] -> angle=0.0 for all critical joints.
+        if self.add_ahg_angles:
+            positions = np.vstack(rows)[:, :3]  # [21, 3]
+            wrist = positions[0]
+            for i in range(21):
+                v_i = positions[i] - wrist
+                norm_i = np.linalg.norm(v_i)
+                angles = []
+                for c in _CRITICAL_JOINTS:
+                    v_c = positions[c] - wrist
+                    norm_c = np.linalg.norm(v_c)
+                    if norm_i < 1e-8 or norm_c < 1e-8:
+                        angles.append(0.0)
+                    else:
+                        cos_a = np.clip(np.dot(v_i, v_c) / (norm_i * norm_c), -1.0, 1.0)
+                        angles.append(float(np.arccos(cos_a)))
+                rows[i] = np.append(rows[i], angles)
+
+        # AHG distances: for each node j, 10 Euclidean distances to each critical joint.
+        # d = ||pos_j - pos_c||   (3D Euclidean)
+        # Aiman & Ahmad (Wiley CAV 2024), Eq. 2 extended to 3D.
+        if self.add_ahg_distances:
+            positions = np.vstack(rows)[:, :3]  # [21, 3]
+            for i in range(21):
+                dists = [float(np.linalg.norm(positions[i] - positions[c]))
+                         for c in _CRITICAL_JOINTS]
+                rows[i] = np.append(rows[i], dists)
 
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]

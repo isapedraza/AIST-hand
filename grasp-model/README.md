@@ -2144,6 +2144,85 @@ allows the model trained on 10 fps data to generalize to any deploy frame rate.
 
 ---
 
+### Run 010 -- MANO Pose as Additional Node Features
+
+**Configuration:** `GG_BONE_VECTORS=true`, `GG_MANO_POSE=true`. F=13: `[x,y,z,theta_flex,bone(3),mano_pose(3)]`.
+
+**Results:** 70.5% test acc, Macro F1=0.638. +8.5pp over R006. Best 28-class model at the time.
+
+**Issue discovered post-training:** MANO pose params are convention-dependent. HOGraspNet uses manopth convention; HaMeR uses smplx convention. Same XYZ produces different pose params (r=0.23 cross-source). OOD in deploy.
+
+---
+
+### Run 011 -- Bone + MANO Pose, No Velocity (28 classes)
+
+**Configuration:** `GG_BONE_VECTORS=true`, `GG_MANO_POSE=true`, `GG_VELOCITY=false`. F=10: `[x,y,z,theta_flex,bone(3),mano_pose(3)]`.
+
+**Results:** 71.1% test acc, Macro F1=0.647. Best 28-class model in training. Confirms velocity was noise.
+
+**Deploy status: BROKEN.** MANO pose OOD in deploy (r=0.23 cross-source). Model unstable with HaMeR.
+
+---
+
+### Run 012 -- Bone + Global Swing, No Velocity, No MANO Pose (28 classes)
+
+**Configuration:** `GG_BONE_VECTORS=true`, `GG_GLOBAL_SWING=true`. F=10: `[x,y,z,theta_flex,bone(3),swing(3)]`.
+
+Global swing: convention-independent proxy for MANO pose. Computed from XYZ via MANO FK (Romero et al. 2017):
+`swing[i] = rot_to_aa(swing_rotation(b_rest[i], b_world[i]))`. Cross-source correlation r=0.83 vs r=0.23 for raw MANO pose.
+
+**Results:** 65.9% test acc, Macro F1=0.596. Deploy-stable with HaMeR (confirmed empirically).
+
+**Best deploy-safe model.** Artefactos en `experiments/run_012/`. Modelo: `grasp-app/models/best_model_run012_c28_xyz_bone_swing.pth`.
+
+**Problematic classes (F1 < 0.5):**
+| Class | F1 | Recall | Support |
+|---|---|---|---|
+| Stick | 0.272 | 0.218 | 3,006 |
+| Medium Wrap | 0.312 | 0.232 | 2,204 |
+| Lateral Tripod | 0.328 | 0.243 | 5,118 |
+| Precision Sphere | 0.344 | 0.316 | 5,335 |
+| Prismatic 3 Finger | 0.409 | 0.398 | 6,905 |
+| Tip Pinch | 0.489 | 0.405 | 7,154 |
+
+Low recall (not low support) is the pattern. Classes like Adduction Grip (F1=0.745, 5.8k) and Power Disk (F1=0.688, 4.9k) with similar support perform well. The bottleneck is lack of cross-joint relational features -- these problematic classes are defined by spatial relationships between distant joints (thumb-index proximity for Tip Pinch, finger convergence for Precision Sphere) that local features (bone vectors, swing) do not encode explicitly.
+
+---
+
+### Run 013 -- AHG Cross-Joint Features (planned)
+
+**Motivation:** Run 012 analysis shows that problematic classes (Tip Pinch, Lateral Tripod, Precision Sphere, Stick) are defined by inter-finger spatial relationships that local features (bone, swing) cannot capture. The model must learn these relationships implicitly through CAM message passing, which is difficult with only 14k parameters.
+
+**New features (Aiman & Ahmad, Wiley CAV 2024):**
+
+10 critical joints identified: 5 fingertips (4,8,12,16,20) + 5 finger bases (1,5,9,13,17).
+
+For each node j, two optional feature groups:
+
+`GG_AHG_ANGLES=true` -- 10 angles at wrist between node j and each critical joint:
+```
+theta_k = arccos(dot(wrist->j, wrist->c_k) / (|wrist->j| * |wrist->c_k|))  for k in 0..9
+```
+3D adaptation of Eq. 1 (Aiman & Ahmad 2024). Captures convergence/divergence of each joint relative to fingertips and bases as seen from the wrist. Encodes "how aligned is this joint with each fingertip."
+
+`GG_AHG_DISTANCES=true` -- 10 Euclidean distances from node j to each critical joint:
+```
+d_k = ||pos_j - pos_c_k||  for k in 0..9
+```
+3D adaptation of Eq. 2. Directly encodes proximity between joints -- the primary discriminator for Tip Pinch (thumb-index distance) and Stick (index tip isolated from others).
+
+Both flags are independently ablatable. Feature count with both enabled: 30/node (vs 10 in R012).
+
+**Why these help the problematic classes:**
+- Tip Pinch: `distance(THUMB_TIP, INDEX_TIP)` is directly in the feature vector.
+- Stick: `distance(INDEX_TIP, other_tips)` large vs others small -- explicit contrast.
+- Precision Sphere: angle pattern of all tips converging distinguishable from Power Sphere.
+- Lateral Tripod: wrist-relative angles of thumb/index/middle differentiate from Writing Tripod.
+
+**Reference:** Aiman, U. & Ahmad, T. (2024). Angle based hand gesture recognition using graph convolutional network. *Computer Animation and Virtual Worlds*, 35(1), e2207. https://doi.org/10.1002/cav.2207
+
+---
+
 ## Pending / Future Work
 
 ### Model

@@ -214,6 +214,8 @@ class GraspsClass(InMemoryDataset):
                  add_velocity=False,
                  add_mano_pose=False,
                  add_global_swing=False,
+                 add_ahg_angles=False,
+                 add_ahg_distances=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -225,6 +227,8 @@ class GraspsClass(InMemoryDataset):
         self.add_velocity = add_velocity
         self.add_mano_pose = add_mano_pose
         self.add_global_swing = add_global_swing
+        self.add_ahg_angles = add_ahg_angles
+        self.add_ahg_distances = add_ahg_distances
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -263,7 +267,9 @@ class GraspsClass(InMemoryDataset):
         vel_tag   = '_vel'   if self.add_velocity      else ''
         pose_tag  = '_pose'  if self.add_mano_pose     else ''
         swing_tag = '_swing' if self.add_global_swing  else ''
-        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}{pose_tag}{swing_tag}.pt']
+        ahga_tag  = '_ahga'  if self.add_ahg_angles    else ''
+        ahgd_tag  = '_ahgd'  if self.add_ahg_distances else ''
+        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
@@ -285,6 +291,8 @@ class GraspsClass(InMemoryDataset):
             add_velocity=self.add_velocity,
             add_mano_pose=self.add_mano_pose,
             add_global_swing=self.add_global_swing,
+            add_ahg_angles=self.add_ahg_angles,
+            add_ahg_distances=self.add_ahg_distances,
         )
 
         csv_path = self.raw_paths[0]
