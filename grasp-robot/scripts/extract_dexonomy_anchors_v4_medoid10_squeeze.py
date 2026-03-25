@@ -55,18 +55,6 @@ OUT_YAML   = ROOT / "grasp-robot" / "grasp_configs" / "shadow_hand_canonical.yam
 MAX_FILES_PER_CLASS = 150   # ~3 300 poses per class (each file has ~22 poses)
 N_SMALLEST          = 10    # number of smallest-scale grasps to use per class
 
-# HOGraspNet class IDs where squeeze causes finger self-collision without an object.
-# apertura is clamped to APERTURA_MAX_LIMITED for these classes.
-APERTURA_MAX_LIMITED = 0.85
-APERTURA_MAX_DEFAULT = 1.0
-CLASSES_LIMITED_APERTURA = {
-    5,   # Palmar
-    14,  # Sphere 3-Finger
-    20,  # Palmar Pinch
-    24,  # Precision Disk
-    25,  # Precision Sphere
-}
-
 # ---------------------------------------------------------------------------
 # Feix ID (Dexonomy folder prefix) -> HOGraspNet class ID
 # Classes not present in HOGraspNet 28 map to None.
@@ -280,20 +268,16 @@ def main() -> None:
         open_24  = dex29_to_mjc24(pose_open_29)
         close_24 = dex29_to_mjc24(pose_close_29)
 
-        apertura_max = (APERTURA_MAX_LIMITED if hog_id in CLASSES_LIMITED_APERTURA
-                        else APERTURA_MAX_DEFAULT)
         doc[hog_id] = {
             "class_name":    class_name,
             "feix_id":       feix_id,
             "scale_min":     round(float(poses["scales"].min()), 4),
             "scale_max":     round(float(poses["scales"].max()), 4),
-            "apertura_max":  apertura_max,
             "pose_open":     _fmt(open_24),
             "pose_close":    _fmt(close_24),
         }
-        limited = " [apertura_max=0.85]" if hog_id in CLASSES_LIMITED_APERTURA else ""
         print(f"  [{hog_id:2d}] {class_name:<26s}  "
-              f"scale=[{poses['scales'].min():.3f}, {poses['scales'].max():.3f}]{limited}")
+              f"scale=[{poses['scales'].min():.3f}, {poses['scales'].max():.3f}]")
 
     if missing_classes:
         print(f"\nNo Dexonomy coverage for HOGraspNet classes: {sorted(missing_classes)}")

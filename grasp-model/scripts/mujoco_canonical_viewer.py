@@ -28,7 +28,7 @@ import yaml
 ROOT       = Path(__file__).resolve().parents[2]
 SHADOW_DIR = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND = SHADOW_DIR / "right_hand.xml"
-CANONICAL  = ROOT / "grasp-robot" / "grasp_configs" / "shadow_hand_canonical.yaml"
+CANONICAL  = ROOT / "grasp-robot" / "grasp_configs" / "shadow_hand_canonical_v5_grasp.yaml"
 
 HAND_QPOS_DIM = 24
 POSE_ALPHA    = 0.15
@@ -47,16 +47,17 @@ def load_canonical() -> list[dict]:
         if not str(key).isdigit():
             continue
         classes.append({
-            "hog_id":     int(key),
-            "name":       val["class_name"],
-            "pose_open":  np.array(val["pose_open"],  dtype=np.float64),
-            "pose_close": np.array(val["pose_close"], dtype=np.float64),
+            "hog_id":      int(key),
+            "name":        val["class_name"],
+            "pose_open":   np.array(val["pose_open"],  dtype=np.float64),
+            "pose_close":  np.array(val["pose_close"], dtype=np.float64),
+            "apertura_max": float(val.get("apertura_max", 1.0)),
         })
     return classes
 
 
 def qpos_for(entry: dict, apertura: float) -> np.ndarray:
-    a = float(np.clip(apertura, 0.0, 1.0))
+    a = float(np.clip(apertura, 0.0, entry["apertura_max"]))
     return (1.0 - a) * entry["pose_open"] + a * entry["pose_close"]
 
 

@@ -2,14 +2,13 @@
 Extract two canonical pose anchors per grasp class from the Dexonomy dataset.
 
 For each of the 28 HOGraspNet grasp classes (where Dexonomy has coverage),
-we take the N_SMALLEST grasps with the smallest scene_scale and compute:
+we find the single grasp with the smallest scene_scale (smallest object) and use:
 
-  pose_open  = medoid of pregrasp_qpos of those N grasps
-  pose_close = medoid of squeeze_qpos  of those N grasps
+  pose_open  = pregrasp_qpos of that grasp  (hand approaching smallest object)
+  pose_close = squeeze_qpos  of that grasp  (max force on smallest object)
 
-Small objects force maximum closure for each grasp type. Using N grasps instead of 1
-avoids depending on a single potentially bad grasp, while keeping all poses from
-similarly-sized objects.
+Using the smallest object ensures the hand reaches maximum closure for that grasp type,
+and both anchors come from the same scene (consistent trajectory).
   qpos = (1 - apertura) * pose_open + apertura * pose_close
 
 Output: grasp-robot/grasp_configs/shadow_hand_canonical.yaml
@@ -53,19 +52,6 @@ GRASP_DIR  = Path("/media/yareeez/94649A33649A1856/dexonomy/Dexonomy_GRASP_shado
 OUT_YAML   = ROOT / "grasp-robot" / "grasp_configs" / "shadow_hand_canonical.yaml"
 
 MAX_FILES_PER_CLASS = 150   # ~3 300 poses per class (each file has ~22 poses)
-N_SMALLEST          = 10    # number of smallest-scale grasps to use per class
-
-# HOGraspNet class IDs where squeeze causes finger self-collision without an object.
-# apertura is clamped to APERTURA_MAX_LIMITED for these classes.
-APERTURA_MAX_LIMITED = 0.85
-APERTURA_MAX_DEFAULT = 1.0
-CLASSES_LIMITED_APERTURA = {
-    5,   # Palmar
-    14,  # Sphere 3-Finger
-    20,  # Palmar Pinch
-    24,  # Precision Disk
-    25,  # Precision Sphere
-}
 
 # ---------------------------------------------------------------------------
 # Feix ID (Dexonomy folder prefix) -> HOGraspNet class ID
@@ -171,7 +157,7 @@ def extract_poses() -> dict[int, np.ndarray]:
     print(f"Leyendo de {GRASP_DIR}")
     print(f"  {len(class_dirs)} carpetas de clase encontradas\n")
 
-    # {feix_id: {"pregrasp": [N,29], "squeeze": [N,29], "scales": [N]}}
+    # {feix_id: {"pregrasp": [29], "squeeze": [29], "scale": float}}
     class_poses: dict[int, dict] = {}
 
     for class_dir in class_dirs:
@@ -184,9 +170,9 @@ def extract_poses() -> dict[int, np.ndarray]:
 
         npy_files = list(class_dir.rglob("*.npy"))[:MAX_FILES_PER_CLASS]
 
-        all_pregrasp: list[np.ndarray] = []
-        all_squeeze:  list[np.ndarray] = []
-        all_scales:   list[float]      = []
+        best_scale   = np.inf
+        best_pregrasp = None
+        best_squeeze  = None
 
         for npy_path in npy_files:
             try:
@@ -196,40 +182,26 @@ def extract_poses() -> dict[int, np.ndarray]:
                 scale    = data["scene_scale"].astype(np.float64)
                 if pregrasp.ndim != 2 or pregrasp.shape[1] != 29:
                     continue
-                for i in range(len(scale)):
-                    all_pregrasp.append(pregrasp[i])
-                    all_squeeze.append(squeeze[i])
-                    all_scales.append(float(scale[i]))
+                # row with smallest scale in this file
+                idx = int(np.argmin(scale))
+                if scale[idx] < best_scale:
+                    best_scale    = scale[idx]
+                    best_pregrasp = pregrasp[idx]
+                    best_squeeze  = squeeze[idx]
             except Exception:
                 continue
 
-        if not all_scales:
-            continue
-
-        # keep only N_SMALLEST grasps by scene_scale
-        scales_arr = np.array(all_scales)
-        idx_sorted = np.argsort(scales_arr)[:N_SMALLEST]
-        pre_small  = np.stack([all_pregrasp[i] for i in idx_sorted])
-        sq_small   = np.stack([all_squeeze[i]  for i in idx_sorted])
-
-        class_poses[feix_id] = {
-            "pregrasp": pre_small,
-            "squeeze":  sq_small,
-            "scales":   scales_arr[idx_sorted],
-        }
-        hog_id = FEIX_TO_HOG[feix_id]
-        print(f"  [{hog_id:2d}] {HOG_CLASS_NAMES.get(hog_id, '?'):<26s}  "
-              f"scale=[{scales_arr[idx_sorted].min():.3f}, {scales_arr[idx_sorted].max():.3f}]",
-              flush=True)
+        if best_pregrasp is not None:
+            class_poses[feix_id] = {
+                "pregrasp": best_pregrasp,
+                "squeeze":  best_squeeze,
+                "scale":    best_scale,
+            }
+            hog_id = FEIX_TO_HOG[feix_id]
+            print(f"  [{hog_id:2d}] {HOG_CLASS_NAMES.get(hog_id, '?'):<26s}  "
+                  f"scale={best_scale:.3f}", flush=True)
 
     return class_poses
-
-
-def medoid(poses: np.ndarray) -> np.ndarray:
-    """Real pose closest to the coordinate-wise median."""
-    median = np.median(poses, axis=0)
-    dists  = np.linalg.norm(poses - median, axis=1)
-    return poses[np.argmin(dists)]
 
 
 def _fmt(arr: np.ndarray) -> list[float]:
@@ -255,8 +227,8 @@ def main() -> None:
                 "[apertura in 0..1, 0=most open, 1=most closed]"
             ),
             "anchor_method": (
-                f"pose_open = medoid of pregrasp_qpos of {N_SMALLEST} smallest-scale grasps; "
-                f"pose_close = medoid of squeeze_qpos of {N_SMALLEST} smallest-scale grasps"
+                "pose_open = pregrasp_qpos of the grasp with smallest scene_scale; "
+                "pose_close = squeeze_qpos of the same grasp (same scene, consistent trajectory)"
             ),
         }
     }
@@ -274,26 +246,20 @@ def main() -> None:
             continue
 
         poses = poses_by_feix[feix_id]
-        pose_open_29  = medoid(poses["pregrasp"])
-        pose_close_29 = medoid(poses["squeeze"])
+        pose_open_29  = poses["pregrasp"]
+        pose_close_29 = poses["squeeze"]
 
         open_24  = dex29_to_mjc24(pose_open_29)
         close_24 = dex29_to_mjc24(pose_close_29)
 
-        apertura_max = (APERTURA_MAX_LIMITED if hog_id in CLASSES_LIMITED_APERTURA
-                        else APERTURA_MAX_DEFAULT)
         doc[hog_id] = {
-            "class_name":    class_name,
-            "feix_id":       feix_id,
-            "scale_min":     round(float(poses["scales"].min()), 4),
-            "scale_max":     round(float(poses["scales"].max()), 4),
-            "apertura_max":  apertura_max,
-            "pose_open":     _fmt(open_24),
-            "pose_close":    _fmt(close_24),
+            "class_name":  class_name,
+            "feix_id":     feix_id,
+            "scene_scale": round(float(poses["scale"]), 4),
+            "pose_open":   _fmt(open_24),
+            "pose_close":  _fmt(close_24),
         }
-        limited = " [apertura_max=0.85]" if hog_id in CLASSES_LIMITED_APERTURA else ""
-        print(f"  [{hog_id:2d}] {class_name:<26s}  "
-              f"scale=[{poses['scales'].min():.3f}, {poses['scales'].max():.3f}]{limited}")
+        print(f"  [{hog_id:2d}] {class_name:<26s}  scale={poses['scale']:.3f}")
 
     if missing_classes:
         print(f"\nNo Dexonomy coverage for HOGraspNet classes: {sorted(missing_classes)}")

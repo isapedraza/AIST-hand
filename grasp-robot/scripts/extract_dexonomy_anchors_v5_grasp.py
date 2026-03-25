@@ -50,22 +50,12 @@ import yaml
 # ---------------------------------------------------------------------------
 ROOT       = Path(__file__).resolve().parents[2]
 GRASP_DIR  = Path("/media/yareeez/94649A33649A1856/dexonomy/Dexonomy_GRASP_shadow/succ_collect")
-OUT_YAML   = ROOT / "grasp-robot" / "grasp_configs" / "shadow_hand_canonical.yaml"
+OUT_YAML   = ROOT / "grasp-robot" / "grasp_configs" / "shadow_hand_canonical_v5_grasp.yaml"
 
 MAX_FILES_PER_CLASS = 150   # ~3 300 poses per class (each file has ~22 poses)
 N_SMALLEST          = 10    # number of smallest-scale grasps to use per class
 
-# HOGraspNet class IDs where squeeze causes finger self-collision without an object.
-# apertura is clamped to APERTURA_MAX_LIMITED for these classes.
-APERTURA_MAX_LIMITED = 0.85
 APERTURA_MAX_DEFAULT = 1.0
-CLASSES_LIMITED_APERTURA = {
-    5,   # Palmar
-    14,  # Sphere 3-Finger
-    20,  # Palmar Pinch
-    24,  # Precision Disk
-    25,  # Precision Sphere
-}
 
 # ---------------------------------------------------------------------------
 # Feix ID (Dexonomy folder prefix) -> HOGraspNet class ID
@@ -192,7 +182,7 @@ def extract_poses() -> dict[int, np.ndarray]:
             try:
                 data     = np.load(npy_path, allow_pickle=True).item()
                 pregrasp = data["pregrasp_qpos"].astype(np.float64)
-                squeeze  = data["squeeze_qpos"].astype(np.float64)
+                squeeze  = data["grasp_qpos"].astype(np.float64)
                 scale    = data["scene_scale"].astype(np.float64)
                 if pregrasp.ndim != 2 or pregrasp.shape[1] != 29:
                     continue
@@ -280,20 +270,17 @@ def main() -> None:
         open_24  = dex29_to_mjc24(pose_open_29)
         close_24 = dex29_to_mjc24(pose_close_29)
 
-        apertura_max = (APERTURA_MAX_LIMITED if hog_id in CLASSES_LIMITED_APERTURA
-                        else APERTURA_MAX_DEFAULT)
         doc[hog_id] = {
             "class_name":    class_name,
             "feix_id":       feix_id,
             "scale_min":     round(float(poses["scales"].min()), 4),
             "scale_max":     round(float(poses["scales"].max()), 4),
-            "apertura_max":  apertura_max,
+            "apertura_max":  APERTURA_MAX_DEFAULT,
             "pose_open":     _fmt(open_24),
             "pose_close":    _fmt(close_24),
         }
-        limited = " [apertura_max=0.85]" if hog_id in CLASSES_LIMITED_APERTURA else ""
         print(f"  [{hog_id:2d}] {class_name:<26s}  "
-              f"scale=[{poses['scales'].min():.3f}, {poses['scales'].max():.3f}]{limited}")
+              f"scale=[{poses['scales'].min():.3f}, {poses['scales'].max():.3f}]")
 
     if missing_classes:
         print(f"\nNo Dexonomy coverage for HOGraspNet classes: {sorted(missing_classes)}")
