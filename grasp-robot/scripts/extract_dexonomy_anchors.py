@@ -12,24 +12,23 @@ These become the two anchors for apertura ∈ [0, 1] interpolation:
 
 Output: grasp-robot/grasp_configs/shadow_hand_canonical.yaml
 
---- Dexonomy joint ordering (29 DOF, IsaacGym Shadow Hand) ---
-0:  WRJ1   1:  WRJ0
-2:  FFJ4   3:  FFJ3   4:  FFJ2   5:  FFJ1   6:  FFJ0
-7:  MFJ4   8:  MFJ3   9:  MFJ2   10: MFJ1   11: MFJ0
-12: RFJ4   13: RFJ3   14: RFJ2   15: RFJ1   16: RFJ0
-17: LFJ5   18: LFJ4   19: LFJ3   20: LFJ2   21: LFJ1   22: LFJ0
-23: THJ5   24: THJ4   25: THJ3   26: THJ2   27: THJ1   28: THJ0
+--- Dexonomy qpos layout (29 values, confirmed from DexLearn/base_dex.py) ---
+[0:3]  hand root translation (x, y, z)  -- ignored
+[3:7]  hand root quaternion (w, x, y, z) -- ignored
+[7:29] 22 finger joints in MuJoCo order (same as Menagerie, no wrist):
+  7:FFJ4  8:FFJ3  9:FFJ2  10:FFJ1
+  11:MFJ4 12:MFJ3 13:MFJ2 14:MFJ1
+  15:RFJ4 16:RFJ3 17:RFJ2 18:RFJ1
+  19:LFJ5 20:LFJ4 21:LFJ3 22:LFJ2 23:LFJ1
+  24:THJ5 25:THJ4 26:THJ3 27:THJ2 28:THJ1
 
 --- MuJoCo Menagerie joint ordering (24 DOF) ---
-0: rh_WRJ2  1: rh_WRJ1
-2: rh_FFJ4  3: rh_FFJ3  4: rh_FFJ2  5: rh_FFJ1
-6: rh_MFJ4  7: rh_MFJ3  8: rh_MFJ2  9: rh_MFJ1
-10: rh_RFJ4  11: rh_RFJ3  12: rh_RFJ2  13: rh_RFJ1
-14: rh_LFJ5  15: rh_LFJ4  16: rh_LFJ3  17: rh_LFJ2  18: rh_LFJ1
-19: rh_THJ5  20: rh_THJ4  21: rh_THJ3  22: rh_THJ2  23: rh_THJ1
-
-J0 joints in Dexonomy (FFJ0, MFJ0, RFJ0, LFJ0, THJ0) are coupled to their
-J1 counterparts in MuJoCo via equality constraints and are dropped in the mapping.
+0:rh_WRJ2  1:rh_WRJ1  (set to 0, no wrist in Dexonomy)
+2:rh_FFJ4  3:rh_FFJ3  4:rh_FFJ2  5:rh_FFJ1
+6:rh_MFJ4  7:rh_MFJ3  8:rh_MFJ2  9:rh_MFJ1
+10:rh_RFJ4 11:rh_RFJ3 12:rh_RFJ2 13:rh_RFJ1
+14:rh_LFJ5 15:rh_LFJ4 16:rh_LFJ3 17:rh_LFJ2 18:rh_LFJ1
+19:rh_THJ5 20:rh_THJ4 21:rh_THJ3 22:rh_THJ2 23:rh_THJ1
 
 Run from AIST-hand/:
     python grasp-robot/scripts/extract_dexonomy_anchors.py
@@ -119,55 +118,35 @@ MUJOCO_JOINT_NAMES = [
     "rh_THJ5", "rh_THJ4", "rh_THJ3", "rh_THJ2", "rh_THJ1",
 ]
 
-# Dexonomy index -> MuJoCo index  (J0 coupled joints are dropped)
-DEX_TO_MJC: dict[int, int] = {
-    0: 1,   # WRJ1  -> rh_WRJ1
-    1: 0,   # WRJ0  -> rh_WRJ2
-    2: 2,   # FFJ4  -> rh_FFJ4
-    3: 3,   # FFJ3  -> rh_FFJ3
-    4: 4,   # FFJ2  -> rh_FFJ2
-    5: 5,   # FFJ1  -> rh_FFJ1
-    # 6: FFJ0 -> coupled, skip
-    7: 6,   # MFJ4  -> rh_MFJ4
-    8: 7,   # MFJ3  -> rh_MFJ3
-    9: 8,   # MFJ2  -> rh_MFJ2
-    10: 9,  # MFJ1  -> rh_MFJ1
-    # 11: MFJ0 -> coupled, skip
-    12: 10, # RFJ4  -> rh_RFJ4
-    13: 11, # RFJ3  -> rh_RFJ3
-    14: 12, # RFJ2  -> rh_RFJ2
-    15: 13, # RFJ1  -> rh_RFJ1
-    # 16: RFJ0 -> coupled, skip
-    17: 14, # LFJ5  -> rh_LFJ5
-    18: 15, # LFJ4  -> rh_LFJ4
-    19: 16, # LFJ3  -> rh_LFJ3
-    20: 17, # LFJ2  -> rh_LFJ2
-    21: 18, # LFJ1  -> rh_LFJ1
-    # 22: LFJ0 -> coupled, skip
-    23: 19, # THJ5  -> rh_THJ5
-    24: 20, # THJ4  -> rh_THJ4
-    25: 21, # THJ3  -> rh_THJ3
-    26: 22, # THJ2  -> rh_THJ2
-    27: 23, # THJ1  -> rh_THJ1
-    # 28: THJ0 -> coupled, skip
-}
+# qpos layout (confirmed from DexLearn/base_dex.py):
+#   [0:3]  = hand root translation (ignore)
+#   [3:7]  = hand root quaternion  (ignore)
+#   [7:29] = 22 finger joints, same order as MuJoCo Menagerie (no wrist)
+#
+# MuJoCo Menagerie has 24 joints: WRJ2, WRJ1 first, then the same 22.
+# WRJ2 and WRJ1 are set to 0 (Dexonomy hand floats freely, no wrist joints).
+DEX_FINGER_SLICE = slice(7, 29)   # qpos[7:29] -> 22 joints
+MJC_WR_OFFSET    = 2              # Menagerie joints 0,1 = WRJ2,WRJ1 (set to 0)
 
 
 def dex29_to_mjc24(qpos29: np.ndarray) -> np.ndarray:
-    """Convert [29] Dexonomy qpos to [24] MuJoCo Menagerie qpos."""
+    """Convert [29] Dexonomy qpos to [24] MuJoCo Menagerie qpos.
+    qpos29[0:7] = free joint (pos+quat), ignored.
+    qpos29[7:29] = 22 finger joints, same order as Menagerie joints 2-23.
+    Menagerie joints 0-1 (WRJ2, WRJ1) = 0.
+    """
     out = np.zeros(24, dtype=np.float64)
-    for dex_i, mjc_i in DEX_TO_MJC.items():
-        out[mjc_i] = qpos29[dex_i]
+    out[MJC_WR_OFFSET:] = qpos29[DEX_FINGER_SLICE]
     return out
 
 
 def flexion_score(qpos29: np.ndarray) -> float:
     """
     Proxy for total hand closure: sum of main flexion joints.
-    Uses FFJ3/J2/J1, MFJ3/J2/J1, RFJ3/J2/J1, LFJ3/J2/J1 (indices 3-5, 8-10, 13-15, 19-21)
-    plus thumb flexion THJ1 (index 27).
+    FFJ3/J2/J1 = dex[8,9,10], MFJ3/J2/J1 = dex[12,13,14],
+    RFJ3/J2/J1 = dex[16,17,18], LFJ3/J2/J1 = dex[21,22,23], THJ1 = dex[28].
     """
-    flex_indices = [3, 4, 5, 8, 9, 10, 13, 14, 15, 19, 20, 21, 27]
+    flex_indices = [8, 9, 10, 12, 13, 14, 16, 17, 18, 21, 22, 23, 28]
     return float(np.sum(qpos29[flex_indices]))
 
 
@@ -184,9 +163,16 @@ def extract_poses() -> dict[int, list[np.ndarray]]:
     feix_pattern = re.compile(r"succ_collect/(\d+)_")
 
     total = 0
+    members_seen = 0
     print(f"Streaming {GRASP_TAR} ...")
+    print("  (abriendo archivo comprimido, puede tardar unos segundos...)", flush=True)
     with tarfile.open(GRASP_TAR, "r:gz") as tf:
         for member in tf:
+            members_seen += 1
+            if members_seen % 10000 == 0:
+                collected = sum(v >= MAX_FILES_PER_CLASS for v in class_counts.values())
+                print(f"  {members_seen:7d} archivos leidos | {len(class_poses)} clases | {collected}/{len([v for v in FEIX_TO_HOG.values() if v is not None])} completas", flush=True)
+
             if not member.name.endswith(".npy"):
                 continue
 
@@ -243,8 +229,8 @@ def compute_anchors(all_qpos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     pose_close = median of poses at P90 of flexion score
     """
     scores = np.array([flexion_score(q) for q in all_qpos])
-    p10 = np.percentile(scores, 10)
-    p90 = np.percentile(scores, 90)
+    p10 = np.percentile(scores, 25)
+    p90 = np.percentile(scores, 75)
     open_mask  = scores <= p10
     close_mask = scores >= p90
     return (
