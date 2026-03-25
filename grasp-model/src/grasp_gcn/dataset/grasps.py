@@ -210,12 +210,15 @@ class GraspsClass(InMemoryDataset):
     """
 
     def __init__(self, root, split='train', collapse=False,
+                 add_joint_angles=True,
+                 add_cmc_angle=True,
                  add_bone_vectors=False,
                  add_velocity=False,
                  add_mano_pose=False,
                  add_global_swing=False,
                  add_ahg_angles=False,
                  add_ahg_distances=False,
+                 csv_filename=None,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -223,12 +226,15 @@ class GraspsClass(InMemoryDataset):
             "collapse must be False, True, 'feix', or 'taxonomy_v1'"
         self.split = split
         self.collapse = collapse
+        self.add_joint_angles = add_joint_angles
+        self.add_cmc_angle = add_cmc_angle
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
         self.add_mano_pose = add_mano_pose
         self.add_global_swing = add_global_swing
         self.add_ahg_angles = add_ahg_angles
         self.add_ahg_distances = add_ahg_distances
+        self._csv_filename = csv_filename  # override default CSV selection
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -252,6 +258,8 @@ class GraspsClass(InMemoryDataset):
     # ------------------------------------------------------------------
     @property
     def raw_file_names(self):
+        if self._csv_filename:
+            return [self._csv_filename]
         # mano_pose and velocity both require hograspnet_mano.csv (has frame_id + MANO cols)
         return ['hograspnet_mano.csv'] if (self.add_velocity or self.add_mano_pose) else ['hograspnet.csv']
 
@@ -263,13 +271,20 @@ class GraspsClass(InMemoryDataset):
             cls_tag = 'c17'
         else:
             cls_tag = 'c28'
+        flex_tag  = ''       if self.add_joint_angles  else '_noflex'
+        nocmc_tag = ''       if self.add_cmc_angle     else '_nocmc'
         bone_tag  = '_bone'  if self.add_bone_vectors  else ''
         vel_tag   = '_vel'   if self.add_velocity      else ''
         pose_tag  = '_pose'  if self.add_mano_pose     else ''
         swing_tag = '_swing' if self.add_global_swing  else ''
         ahga_tag  = '_ahga'  if self.add_ahg_angles    else ''
         ahgd_tag  = '_ahgd'  if self.add_ahg_distances else ''
-        return [f'hograspnet_{self.split}_{cls_tag}_cmc{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
+        # If using a custom CSV, embed its stem in the cache filename to avoid collisions
+        if self._csv_filename:
+            from pathlib import Path
+            csv_stem = Path(self._csv_filename).stem  # e.g. 'hograspnet_r014'
+            return [f'{csv_stem}_{self.split}_{cls_tag}_cmc{flex_tag}{nocmc_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
+        return [f'hograspnet_{self.split}_{cls_tag}_cmc{flex_tag}{nocmc_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
@@ -285,8 +300,8 @@ class GraspsClass(InMemoryDataset):
         tograph = ToGraph(
             features='xyz',
             make_undirected=True,
-            add_joint_angles=True,
-            add_cmc_angle=True,
+            add_joint_angles=self.add_joint_angles,
+            add_cmc_angle=self.add_cmc_angle,
             add_bone_vectors=self.add_bone_vectors,
             add_velocity=self.add_velocity,
             add_mano_pose=self.add_mano_pose,

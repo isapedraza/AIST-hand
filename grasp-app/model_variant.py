@@ -5,6 +5,9 @@ from pathlib import Path
 
 from grasp_gcn.dataset.grasps import GRASP_CLASS_NAMES, TAXONOMY_V1_CLASS_NAMES
 
+# R014: 29 classes (28 Feix grasps + Rest)
+GRASP_CLASS_NAMES_R014 = {**GRASP_CLASS_NAMES, 28: "Rest"}
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,6 +26,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 4,
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -35,6 +39,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 17,
         "num_node_features": 4,
         "class_names": TAXONOMY_V1_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -47,6 +52,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 7,
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -60,6 +66,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + vel(3)
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -73,6 +80,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + pose(3)
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -86,6 +94,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 13,  # xyz(3) + flex(1) + bone(3) + vel(3) + pose(3)
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -100,6 +109,7 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + swing(3)
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,
@@ -113,6 +123,24 @@ _REGISTRY: dict[str, dict] = {
         "num_classes": 28,
         "num_node_features": 30,  # xyz(3) + flex(1) + bone(3) + swing(3) + ahg_angles(10) + ahg_distances(10)
         "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": True,
+        "tograph_kwargs": {
+            "features": "xyz",
+            "add_joint_angles": True,
+            "add_cmc_angle": True,
+            "add_bone_vectors": True,
+            "add_global_swing": True,
+            "add_ahg_angles": True,
+            "add_ahg_distances": True,
+        },
+    },
+    # R014: same features as R013 but with 29 classes (adds Rest = open palm)
+    "c29_bone_swing_ahg": {
+        "model_path": "best_model_run014_c29_xyz_bone_swing_ahg.pth",
+        "num_classes": 29,
+        "num_node_features": 30,
+        "class_names": GRASP_CLASS_NAMES_R014,
+        "use_cmc_angle": True,
         "tograph_kwargs": {
             "features": "xyz",
             "add_joint_angles": True,

@@ -41,7 +41,7 @@ def main():
     num_classes = spec["num_classes"]
     class_names = spec["class_names"]
 
-    model = get_network("GCN_CAM_8_8_16_16_32", spec["num_node_features"], num_classes, use_cmc_angle=True).to(device)
+    model = get_network("GCN_CAM_8_8_16_16_32", spec["num_node_features"], num_classes, use_cmc_angle=spec.get("use_cmc_angle", True)).to(device)
     model.load_state_dict(torch.load(spec["model_path"], map_location=device, weights_only=True))
     model.eval()
     print(f"Modelo cargado: {spec['variant']} | {num_classes} clases | {spec['num_node_features']} features/nodo")

@@ -75,7 +75,7 @@ def main():
             NETWORK_TYPE,
             num_node_features,
             num_classes,
-            use_cmc_angle=True,
+            use_cmc_angle=spec.get("use_cmc_angle", True),
         ).to(device)
         model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
         model.eval()

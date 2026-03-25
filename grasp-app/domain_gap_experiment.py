@@ -274,7 +274,7 @@ def run_experiment(
     # --- Load model ---
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     spec = resolve_model_spec()
-    model = get_network(NETWORK_TYPE, spec["num_node_features"], spec["num_classes"], use_cmc_angle=True).to(device)
+    model = get_network(NETWORK_TYPE, spec["num_node_features"], spec["num_classes"], use_cmc_angle=spec.get("use_cmc_angle", True)).to(device)
     model.load_state_dict(torch.load(spec["model_path"], map_location=device, weights_only=True))
     model.eval()
     print(f"[experiment] Model loaded: {spec['variant']} | {spec['num_node_features']} features | {spec['num_classes']} classes")
