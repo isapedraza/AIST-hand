@@ -167,13 +167,27 @@ def img_path(extract_dir: Path, sequence_id: str, cam: str, frame_id: int) -> Pa
 def download_and_extract(url: str, subject: str) -> Path:
     TMP_EXTRACT.mkdir(parents=True, exist_ok=True)
     zip_path = TMP_EXTRACT / f'{subject}.zip'
-    print(f'  Downloading {subject}...')
-    subprocess.run(['wget', '-q', '--show-progress', '-O', str(zip_path), url], check=True)
-    print(f'  Extracting {subject}...')
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        zf.extractall(TMP_EXTRACT)
-    zip_path.unlink()
-    return TMP_EXTRACT
+    for attempt in range(1, 4):
+        print(f'  Downloading {subject} (attempt {attempt})...')
+        subprocess.run(['wget', '-q', '--show-progress', '-O', str(zip_path), url], check=True)
+        size_mb = zip_path.stat().st_size / 1024 / 1024
+        if size_mb < 10:
+            print(f'  Download too small ({size_mb:.1f} MB) -- Dropbox error, retrying...')
+            zip_path.unlink(missing_ok=True)
+            time.sleep(5)
+            continue
+        try:
+            print(f'  Extracting {subject}...')
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                zf.extractall(TMP_EXTRACT)
+            zip_path.unlink()
+            return TMP_EXTRACT
+        except zipfile.BadZipFile:
+            print(f'  Bad zip file -- retrying...')
+            zip_path.unlink(missing_ok=True)
+            time.sleep(5)
+    print(f'  Skipping {subject} -- download failed after 3 attempts (Dropbox error).')
+    return None
 
 
 def cleanup():
@@ -190,13 +204,44 @@ def main():
     total_frames = len(df_all)
     print(f'Total frames: {total_frames:,}')
 
-    # Resume
+    # Resume: load successfully processed frames
     done_keys = set()
     if CSV_OUT.exists():
         done_df = pd.read_csv(CSV_OUT, usecols=['sequence_id', 'cam', 'frame_id'])
         for _, r in done_df.iterrows():
             done_keys.add((r['sequence_id'], r['cam'], int(r['frame_id'])))
         print(f'Resuming -- already done: {len(done_keys):,}')
+
+    # Also skip frames that previously failed (no_hand, missing, etc.)
+    # They are almost always unrecoverable -- no need to re-download zips for them
+    if LOG_FAILED.exists():
+        import re
+        with open(LOG_FAILED) as f:
+            for line in f:
+                # format: reason|/path/to/cam_frameid.jpg
+                m = re.search(r'/([^/]+)/([^/]+)\.jpg$', line.strip())
+                if not m:
+                    continue
+                # extract cam and frame_id from filename: sub3_83 -> cam=sub3, frame_id=83
+                filename = m.group(2)  # e.g. sub3_83
+                parts = filename.rsplit('_', 1)
+                if len(parts) != 2:
+                    continue
+                cam = parts[0]
+                try:
+                    frame_id = int(parts[1])
+                except ValueError:
+                    continue
+                # extract sequence_id from path: .../seq_base/trial_X/rgb/cam/...
+                path_parts = line.strip().split('|')[-1].split('/')
+                try:
+                    rgb_idx = path_parts.index('rgb')
+                    trial   = path_parts[rgb_idx - 1]
+                    seq_base = path_parts[rgb_idx - 2]
+                    done_keys.add((f'{seq_base}/{trial}', cam, frame_id))
+                except (ValueError, IndexError):
+                    continue
+        print(f'After skipping failed frames: {len(done_keys):,} total skipped')
 
     already_done = len(done_keys)
     write_header = not CSV_OUT.exists()
@@ -235,6 +280,8 @@ def main():
                 extract_dir = SOURCE_DATA
             else:
                 extract_dir = download_and_extract(url, subject)
+                if extract_dir is None:
+                    continue
 
             n_ok = n_fail = 0
             t_start = time.time()
