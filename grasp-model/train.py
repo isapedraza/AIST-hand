@@ -62,7 +62,7 @@ print(f"AHG distances: {AHG_DISTANCES}")
 # ====================== Hyperparameters =========================
 
 lr = 1e-3
-network_type = "GCN_CAM_8_8_16_16_32"
+network_type = os.getenv("GG_NETWORK_TYPE", "GCN_CAM_8_8_16_16_32")
 weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256

@@ -131,6 +131,60 @@ def masked_readout(x, batch, mask=None):
     mx    = global_max_pool(x_masked, batch)   # [B, C]
     return torch.cat([mean, mx], dim=1)        # [B, 2C]
 
+class GCN_CAM_32_32_64_64_128(nn.Module):
+    """
+    GCN_CAM_8_8_16_16_32 scaled x4: hidden dims 32-32-64-64-128.
+
+    Same architecture as GCN_CAM_8_8_16_16_32 (shared CAM, 5 CAMLayers,
+    mean+max readout, ELU) but with wider layers (~70k params vs ~15k).
+    Intended for capacity ablation on top of the abl04 feature set.
+    """
+
+    N_JOINTS = 21
+
+    def __init__(self, numFeatures: int, numClasses: int,
+                 use_cmc_angle: bool = False):
+        super().__init__()
+        self.numClasses    = numClasses
+        self.use_cmc_angle = use_cmc_angle
+
+        self.cam = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS))
+        nn.init.uniform_(self.cam, -1.0, 1.0)
+
+        self.layer1 = CAMLayer(numFeatures, 32,  self.N_JOINTS)
+        self.layer2 = CAMLayer(32,          32,  self.N_JOINTS)
+        self.layer3 = CAMLayer(32,          64,  self.N_JOINTS)
+        self.layer4 = CAMLayer(64,          64,  self.N_JOINTS)
+        self.layer5 = CAMLayer(64,          128, self.N_JOINTS)
+
+        readout_dim = 256 + (1 if use_cmc_angle else 0)
+        self.fc1 = nn.Linear(readout_dim, 128)
+        self.fc2 = nn.Linear(128, numClasses)
+
+    def forward(self, data):
+        x     = data.x
+        batch = getattr(data, 'batch',
+                        torch.zeros(x.size(0), dtype=torch.long,
+                                    device=x.device))
+        mask  = getattr(data, 'mask', None)
+
+        x = self.layer1(x, self.cam, mask)
+        x = self.layer2(x, self.cam, mask)
+        x = self.layer3(x, self.cam, mask)
+        x = self.layer4(x, self.cam, mask)
+        x = self.layer5(x, self.cam, mask)
+
+        h = masked_readout(x, batch, mask)                     # [B, 256]
+
+        if self.use_cmc_angle:
+            theta = data.theta_cmc.view(-1, 1)
+            h = torch.cat([h, theta], dim=1)
+
+        h   = F.elu(self.fc1(h))
+        out = self.fc2(h)
+        return F.log_softmax(out, dim=1)
+
+
 class GCN_8_8_16_16_32(nn.Module):
     def __init__(self, numFeatures, numClasses, use_cmc_angle: bool = False):
         super().__init__()
