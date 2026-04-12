@@ -16,3 +16,9 @@ experiments/**
 *.pth
 events.out.tfevents.*
 !examples/**
+
+# Local heavy artifacts (do not commit)
+grasp-app/experiment/
+grasp-app/experiment_hamer/**/frames/
+grasp-app/plots_step4/
+third_party/
