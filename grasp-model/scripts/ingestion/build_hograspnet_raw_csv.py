@@ -5,11 +5,12 @@ Genera un único CSV RAW desde los zips de anotaciones de HOGraspNet.
 
 Formato de salida (alineado a hograspnet_hamer_s1 pero sin MANO_pose):
   subject_id  : int (1-99)
-  sequence_id : str (ej. "231023_S01_obj_01_grasp_22/trial_0")
+  date_id     : int (ej. 231023)
+  object_id   : int (obj_XX)
+  grasp_type  : int (ID FEIX original del dataset, grasp_XX)
+  trial_id    : int (trial_X)
   cam         : str (mas|sub1|sub2|sub3)
   frame_id    : int
-  grasp_type  : int (índice local 0-27, orden HOGraspNet config.py)
-  contact_sum : float (suma de los 778 valores del campo contact)
   WRIST_x ... PINKY_TIP_z : float (63 columnas XYZ RAW, sin normalización)
 
 Notas:
@@ -30,15 +31,6 @@ import re
 import zipfile
 from pathlib import Path
 
-import numpy as np
-
-# ── Orden canónico HOGraspNet (de config.py del dataloader oficial) ───────────
-FEIX_INDICES = [
-    1, 2, 17, 18, 22, 30, 3, 4, 5, 19, 31, 10, 11, 26, 28,
-    16, 29, 23, 20, 25, 9, 24, 33, 7, 12, 13, 27, 14,
-]
-FEIX_TO_LOCAL = {feix: local for local, feix in enumerate(FEIX_INDICES)}
-
 # ── Joints (orden MediaPipe / HOGraspNet) ─────────────────────────────────────
 JOINTS = [
     "WRIST",
@@ -50,36 +42,85 @@ JOINTS = [
 ]
 
 HEADER = (
-    ["subject_id", "sequence_id", "cam", "frame_id", "grasp_type", "contact_sum"]
+    ["subject_id", "date_id", "object_id", "grasp_type", "trial_id", "cam", "frame_id"]
     + [f"{joint}_{axis}" for joint in JOINTS for axis in ("x", "y", "z")]
 )
+
+
+CAM_ORDER = {"mas": 0, "sub1": 1, "sub2": 2, "sub3": 3}
+SEQ_PATTERN = re.compile(r"^(\d+)_S(\d+)_obj_(\d+)_grasp_(\d+)$")
+TRIAL_PATTERN = re.compile(r"^trial_(\d+)$")
+FRAME_PATTERN = re.compile(r"_(\d+)\.json$")
+
+
+def _parse_int_suffix(text: str, pattern: str, default: int = 10**9) -> int:
+    m = re.search(pattern, text)
+    return int(m.group(1)) if m else default
+
+
+def _parse_path_metadata(jname: str):
+    """
+    Parse HOGraspNet annotation path:
+      <date>_S<subject>_obj_<object>_grasp_<grasp>/trial_<id>/annotation/<cam>/<cam>_<frame>.json
+    """
+    parts = jname.split("/")
+    if len(parts) < 5:
+        return None
+
+    seq, trial, cam, fname = parts[0], parts[1], parts[3], parts[-1]
+    mseq = SEQ_PATTERN.match(seq)
+    mtrial = TRIAL_PATTERN.match(trial)
+    mframe = FRAME_PATTERN.search(fname)
+    if not (mseq and mtrial and mframe):
+        return None
+
+    date_id, subject_id, object_id, grasp_id = map(int, mseq.groups())
+    trial_id = int(mtrial.group(1))
+    frame_id = int(mframe.group(1))
+    return {
+        "subject_id": subject_id,
+        "date_id": date_id,
+        "object_id": object_id,
+        "grasp_type": grasp_id,
+        "trial_id": trial_id,
+        "cam": cam,
+        "frame_id": frame_id,
+    }
+
+
+def _json_sort_key(jname: str):
+    """
+    Deterministic frame order within each subject:
+      subject_id -> date_id -> object_id -> grasp_type -> trial_id -> cam -> frame_id
+    """
+    meta = _parse_path_metadata(jname)
+    if meta is None:
+        return (10**9, 10**9, 10**9, 10**9, 10**9, 99, 10**9, jname)
+
+    return (
+        meta["subject_id"],
+        meta["date_id"],
+        meta["object_id"],
+        meta["grasp_type"],
+        meta["trial_id"],
+        CAM_ORDER.get(meta["cam"], 99),
+        meta["frame_id"],
+        jname,
+    )
 
 
 def iter_rows_from_zip(zip_path: Path, subject_id: int):
     """Yield rows parsed from a single HOGraspNet subject zip."""
     with zipfile.ZipFile(zip_path, "r") as zf:
-        json_names = sorted(n for n in zf.namelist() if n.endswith(".json"))
+        json_names = sorted(
+            (n for n in zf.namelist() if n.endswith(".json")),
+            key=_json_sort_key,
+        )
 
         for jname in json_names:
-            # Expected:
-            # date_S01_obj_01_grasp_22/trial_0/annotation/sub3/sub3_83.json
-            parts = jname.split("/")
-            if len(parts) < 5:
+            meta = _parse_path_metadata(jname)
+            if meta is None:
                 continue
-
-            seq_id = parts[0] + "/" + parts[1]
-            cam = parts[3]
-
-            frame_match = re.search(r"_(\d+)\.json$", parts[-1])
-            frame_id = int(frame_match.group(1)) if frame_match else -1
-
-            grasp_match = re.search(r"grasp_(\d+)", parts[0])
-            if not grasp_match:
-                continue
-            feix_id = int(grasp_match.group(1))
-            if feix_id not in FEIX_TO_LOCAL:
-                continue
-            local_class = FEIX_TO_LOCAL[feix_id]
 
             try:
                 raw = zf.read(jname)
@@ -88,17 +129,25 @@ def iter_rows_from_zip(zip_path: Path, subject_id: int):
                 continue
 
             try:
-                pts = np.array(anno["hand"]["3D_pose_per_cam"], dtype=np.float32)
-            except (KeyError, ValueError):
+                pts = anno["hand"]["3D_pose_per_cam"]
+            except KeyError:
                 continue
-            if pts.shape != (21, 3):
+            if not isinstance(pts, list) or len(pts) != 21:
+                continue
+            if any((not isinstance(p, (list, tuple)) or len(p) != 3) for p in pts):
                 continue
 
-            contact = anno.get("contact", [])
-            contact_sum = float(np.sum(contact)) if contact else 0.0
-
-            row = [subject_id, seq_id, cam, frame_id, local_class, round(contact_sum, 6)]
-            row.extend(pts.flatten().tolist())
+            # Keep original FEIX id in CSV; remapping to 0..27 is handled in the training dataloader.
+            row = [
+                meta["subject_id"],
+                meta["date_id"],
+                meta["object_id"],
+                meta["grasp_type"],
+                meta["trial_id"],
+                meta["cam"],
+                meta["frame_id"],
+            ]
+            row.extend([coord for joint in pts for coord in joint])
             yield row
 
 
@@ -126,8 +175,15 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     zip_pattern = re.compile(r"GraspNet_S(\d+)_\d+_Labeling_data\.zip")
-    all_zips = sorted(zips_dir.glob("GraspNet_S*_Labeling_data.zip"))
-    if not all_zips:
+    zip_entries = []
+    for zip_path in zips_dir.glob("GraspNet_S*_Labeling_data.zip"):
+        match = zip_pattern.match(zip_path.name)
+        if not match:
+            continue
+        zip_entries.append((int(match.group(1)), zip_path))
+
+    zip_entries.sort(key=lambda x: (x[0], x[1].name))
+    if not zip_entries:
         raise FileNotFoundError(f"No se encontraron zips en {zips_dir}")
 
     total = 0
@@ -135,11 +191,7 @@ def main():
         writer = csv.writer(f_out)
         writer.writerow(HEADER)
 
-        for zip_path in all_zips:
-            match = zip_pattern.match(zip_path.name)
-            if not match:
-                continue
-            subject_id = int(match.group(1))
+        for subject_id, zip_path in zip_entries:
             print(f"  S{subject_id:02d} — {zip_path.name} ...", end=" ", flush=True)
 
             n_rows = 0

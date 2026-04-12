@@ -183,6 +183,16 @@ GRASP_CLASS_NAMES = {
     27: "Tripod",
 }
 
+# Official HOGraspNet class order (scripts/config.py -> grasp_types).
+# local class id (0..27) is the index in this list.
+HOGRASPNET_FEIX_ORDER = [
+    1, 2, 17, 18, 22, 30, 3, 4, 5, 19, 31, 10, 11, 26, 28,
+    16, 29, 23, 20, 25, 9, 24, 33, 7, 12, 13, 27, 14,
+]
+FEIX_TO_LOCAL = {feix: local for local, feix in enumerate(HOGRASPNET_FEIX_ORDER)}
+LOCAL_CLASS_SET = set(range(len(HOGRASPNET_FEIX_ORDER)))
+FEIX_CLASS_SET = set(HOGRASPNET_FEIX_ORDER)
+
 
 class GraspsClass(InMemoryDataset):
     """
@@ -313,6 +323,7 @@ class GraspsClass(InMemoryDataset):
         csv_path = self.raw_paths[0]
         log.info(f"Reading {csv_path}")
         df = pd.read_csv(csv_path, usecols=self._usecols())
+        df['grasp_type'] = self._remap_grasp_type_to_local(df['grasp_type'])
 
         subjects = SPLIT_SUBJECTS[self.split]
         df = df[df['subject_id'].isin(subjects)].reset_index(drop=True)
@@ -375,6 +386,54 @@ class GraspsClass(InMemoryDataset):
         data, slices = self.collate(data_list)
         os.makedirs(os.path.dirname(self.processed_paths[0]), exist_ok=True)
         torch.save((data, slices), self.processed_paths[0])
+
+    # ------------------------------------------------------------------
+    def _remap_grasp_type_to_local(self, series: pd.Series) -> pd.Series:
+        """
+        Normalize labels to local 0..27 for training.
+
+        Supported CSV label spaces:
+          - local (legacy): grasp_type already in [0..27]
+          - FEIX (raw): grasp_type stores original FEIX ids from grasp_XX
+        """
+        grasp = series.astype(np.int64)
+        unique = set(int(v) for v in grasp.unique())
+
+        in_local = unique.issubset(LOCAL_CLASS_SET)
+        in_feix = unique.issubset(FEIX_CLASS_SET)
+        has_zero = 0 in unique
+        has_gt27 = any(v > 27 for v in unique)
+
+        if has_gt27 and in_feix:
+            label_space = 'feix'
+        elif has_zero and in_local:
+            label_space = 'local'
+        elif in_local and not in_feix:
+            label_space = 'local'
+        elif in_feix and not in_local:
+            label_space = 'feix'
+        else:
+            # Ambiguous subset (possible in tiny/debug CSVs).
+            # Keep backward compatibility: default to local unless filename hints raw/feix.
+            csv_hint = (self._csv_filename or '').lower()
+            label_space = 'feix' if ('raw' in csv_hint or 'feix' in csv_hint) else 'local'
+            log.warning(
+                "Ambiguous grasp_type label space in CSV; inferred '%s' (hint='%s').",
+                label_space,
+                self._csv_filename or ''
+            )
+
+        if label_space == 'local':
+            return grasp.astype(np.int64)
+
+        mapped = grasp.map(FEIX_TO_LOCAL)
+        if mapped.isna().any():
+            bad = sorted(set(int(v) for v in grasp[mapped.isna()].tolist()))
+            raise ValueError(
+                f"Found FEIX grasp ids not present in HOGraspNet mapping: {bad[:20]}"
+            )
+        log.info("Remapped FEIX grasp_type -> local 0..27 for training.")
+        return mapped.astype(np.int64)
 
     # ------------------------------------------------------------------
     def _sample_from_row(self, row):
