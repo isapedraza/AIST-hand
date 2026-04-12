@@ -23,7 +23,6 @@ from perception.mediapipe_backend import MediaPipeBackend
 # TODO: import robot adapter from grasp-robot
 # from grasp_robot import YAMLRobotAdapter
 
-NETWORK_TYPE = "GCN_CAM_8_8_16_16_32"
 EMA_ALPHA = 0.5  # 0=max smoothing, 1=no smoothing
 
 
@@ -72,7 +71,7 @@ def main():
     model = None
     try:
         model = get_network(
-            NETWORK_TYPE,
+            spec.get("network_type", "GCN_CAM_8_8_16_16_32"),
             num_node_features,
             num_classes,
             use_cmc_angle=spec.get("use_cmc_angle", True),

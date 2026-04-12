@@ -23,6 +23,7 @@ DEFAULT_VARIANT = "c28"
 _REGISTRY: dict[str, dict] = {
     "c28": {
         "model_path": "best_model_run006_c28_xyz.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 4,
         "class_names": GRASP_CLASS_NAMES,
@@ -36,6 +37,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "taxonomy_v1": {
         "model_path": "best_model_run007_c17_xyz.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 17,
         "num_node_features": 4,
         "class_names": TAXONOMY_V1_CLASS_NAMES,
@@ -49,6 +51,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "c28_bone": {
         "model_path": "best_model_run008_c28_xyz_bone.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 7,
         "class_names": GRASP_CLASS_NAMES,
@@ -63,6 +66,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "c28_bone_vel": {
         "model_path": "best_model_run009_c28_xyz_bone_vel.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + vel(3)
         "class_names": GRASP_CLASS_NAMES,
@@ -77,6 +81,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "c28_bone_pose": {
         "model_path": "best_model_run011_c28_xyz_bone_pose.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + pose(3)
         "class_names": GRASP_CLASS_NAMES,
@@ -91,6 +96,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "c28_bone_vel_pose": {
         "model_path": "best_model_run010_c28_xyz_bone_vel_pose.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 13,  # xyz(3) + flex(1) + bone(3) + vel(3) + pose(3)
         "class_names": GRASP_CLASS_NAMES,
@@ -106,6 +112,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "c28_bone_swing": {
         "model_path": "best_model_run012_c28_xyz_bone_swing.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 10,  # xyz(3) + flex(1) + bone(3) + swing(3)
         "class_names": GRASP_CLASS_NAMES,
@@ -120,6 +127,7 @@ _REGISTRY: dict[str, dict] = {
     },
     "c28_bone_swing_ahg": {
         "model_path": "best_model_run013_c28_xyz_bone_swing_ahg.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 28,
         "num_node_features": 30,  # xyz(3) + flex(1) + bone(3) + swing(3) + ahg_angles(10) + ahg_distances(10)
         "class_names": GRASP_CLASS_NAMES,
@@ -137,6 +145,7 @@ _REGISTRY: dict[str, dict] = {
     # R014: same features as R013 but with 29 classes (adds Rest = open palm)
     "c29_bone_swing_ahg": {
         "model_path": "best_model_run014_c29_xyz_bone_swing_ahg.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
         "num_classes": 29,
         "num_node_features": 30,
         "class_names": GRASP_CLASS_NAMES_R014,
@@ -147,6 +156,38 @@ _REGISTRY: dict[str, dict] = {
             "add_cmc_angle": True,
             "add_bone_vectors": True,
             "add_global_swing": True,
+            "add_ahg_angles": True,
+            "add_ahg_distances": True,
+        },
+    },
+    "c28_ahg_flex": {
+        "model_path": "best_model_run_abl04_xyz_ahg_flex.pth",
+        "network_type": "GCN_CAM_8_8_16_16_32",
+        "num_classes": 28,
+        "num_node_features": 14,  # xyz(3) + flex(1) + ahg_angles(5) + ahg_distances(5)
+        "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": False,
+        "tograph_kwargs": {
+            "features": "xyz",
+            "add_joint_angles": True,
+            "add_cmc_angle": False,
+            "add_bone_vectors": False,
+            "add_ahg_angles": True,
+            "add_ahg_distances": True,
+        },
+    },
+    "c28_ahg_flex_camgat": {
+        "model_path": "best_model_run_camgat01_xyz_ahg_flex.pth",
+        "network_type": "GCN_CAMGAT_8_8_16_16_32",
+        "num_classes": 28,
+        "num_node_features": 14,  # xyz(3) + flex(1) + ahg_angles(5) + ahg_distances(5)
+        "class_names": GRASP_CLASS_NAMES,
+        "use_cmc_angle": False,
+        "tograph_kwargs": {
+            "features": "xyz",
+            "add_joint_angles": True,
+            "add_cmc_angle": False,
+            "add_bone_vectors": False,
             "add_ahg_angles": True,
             "add_ahg_distances": True,
         },

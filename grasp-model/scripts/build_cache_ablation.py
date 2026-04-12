@@ -55,6 +55,13 @@ RUNS = {
         add_bone_vectors = False,
         add_global_swing = True,
     ),
+    "abl08": dict(
+        label            = "abl08: xyz + AHG + flex + bone",
+        add_joint_angles = True,
+        add_cmc_angle    = False,
+        add_bone_vectors = True,
+        add_global_swing = False,
+    ),
 }
 
 # Parse optional CLI argument
