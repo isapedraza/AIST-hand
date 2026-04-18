@@ -1106,6 +1106,145 @@ El Encoder B solo se usa durante entrenamiento. En inferencia solo se ejecutan E
 
 ---
 
+## Entry 20 -- 2026-04-14: Step4 MCP First Layer implemented (Dong Eq.19-24) with Eq.23 translation constrained by Eq.15
+
+**Context**: Tras cerrar Palm Base (Eq.13/16/17), el siguiente bloque era MCP de primera capa (`i={1,5,9,13,17}`) para extraer `beta_i` y `gamma_i`. Surgio la duda clave de si la traslacion de Eq.23 debia usar `d_i^0` observado (con `z` medido) o el `d_i^0` parametrizado por Eq.15.
+
+**Decision**:
+- Se implemento el paso `4.1` en `dong_step4_to_wrist_local.py` con trazabilidad completa de Eq.19->Eq.24.
+- Para **orientacion** MCP:
+  - Eq.20/21/22 se calculan con puntos `d_i^0` y `d_{i+1}^0` observados en 3D (post Eq.16), construyendo `X_i^0`, `Y_i^0`, `Z_i^0` y `R_i^0`.
+- Para **traslacion** de Eq.23:
+  - se usa `d_i^0` de Eq.15, es decir `d_i^0=[l0,i cos(theta_i), l0,i sin(theta_i), 0]`.
+  - Por tanto, el componente `z` de la traslacion en `T_i^0` se fija a `0` conforme al supuesto de palma en el plano `xy` del marco de muneca `{0}`.
+- Se imprimen ambos vectores por raiz para auditoria:
+  - `d_i^0(obs)` (medido por Eq.16) y `d_i^0(Eq.15)` (usado en Eq.23).
+- Se agregaron checks MCP:
+  - `det(R_i^0)`, `||R_i^{0T}R_i^0-I||`, y diferencia `||d_i^0(Eq.15)-d_i^0(obs)||`.
+
+**Alternatives considered**:
+- Usar `d_i^0` observado (con `z`) en Eq.23: descartado por inconsistencia con la parametrizacion de Eq.15 y con el supuesto explicito de primera capa en el plano de la palma.
+- Forzar Eq.20 tambien a plano (`z=0`): descartado; el paper define Eq.20 desde landmarks transformados y su ejemplo numerico (Eq.25, dedo indice) muestra componente `z` no nula en `X_5^0`.
+
+**Expected impact**:
+- Reproduccion mas fiel del procedimiento de Dong para primera capa MCP.
+- Menor ambiguedad metodologica en la construccion de `T_i^0`.
+- Extraccion angular alineada al objetivo:
+  - `beta_i` y `gamma_i` se obtienen de `R_i^0` (Eq.24), manteniendo consistencia con el modelo.
+
+**References**:
+- Dong and Payandeh (2025): Eq.15, Eq.19, Eq.20, Eq.21, Eq.22, Eq.23, Eq.24, Eq.25.
+- Implementacion local: `grasp-app/hand_preprocessing/dong_step4_to_wrist_local.py`.
+
+**Status**: Implemented
+
+---
+
+## Entry 19 -- 2026-04-13: Step4 Palm Base implemented (Dong Eq.13/16/17)
+
+**Context**: Con `world -> wrist-local` ya estable, faltaba implementar explícitamente en Step4 la extracción de parámetros base de palma según Dong (sección 4.1), antes de MCP/PIP/DIP.
+
+**Decision**:
+- Se implementó el bloque Palm Base en `dong_step4_to_wrist_local.py` con trazabilidad a ecuaciones:
+  - Eq.13: cálculo de longitudes base `l0,i` para `i={1,5,9,13,17}`.
+  - Eq.16: transformación a local `d_i^0 = (T0w)^-1 d_i^w`.
+  - Eq.17: cálculo de ángulos `theta_i = atan2(d0i_y, d0i_x)`.
+- Se añadieron validaciones numéricas para esta etapa:
+  - conservación de distancia `|||d0i|| - l0,i|`.
+  - diagnóstico de planaridad `|d0i_z|` por raíz y máximo.
+- Nota operativa: se reordenó la salida de consola a formato `Paso/Entrada/Salida` para facilitar auditoría manual del procedimiento.
+
+**Alternatives considered**:
+- Saltar Palm Base e ir directo a MCP: descartado por romper el orden metodológico de Dong.
+- Mantener salida compacta sin desglose por ecuación: descartado por baja trazabilidad en depuración.
+
+**Expected impact**:
+- Cierre formal de la fase Palm Base en Step4 bajo Dong.
+- Entrada consistente para la siguiente implementación de MCP (Eq.19-24).
+- Menor ambigüedad al validar capturas frame-a-frame.
+
+**References**:
+- Dong and Payandeh (2025): Eq. 13, Eq. 16, Eq. 17 (Palm Base).
+- Implementación local: `grasp-app/hand_preprocessing/dong_step4_to_wrist_local.py`.
+
+**Status**: Implemented
+
+---
+
+## Entry 18 -- 2026-04-12: Next phase checkpoint -- continue with Dong angle extraction from Step 4
+
+**Context**: Se cerró la fase de preparación de dataset RAW y estimación de parámetros base. El siguiente bloque de trabajo retoma la extracción angular bajo el marco de Dong desde el punto alcanzado en Step 4.
+
+**Decision**:
+- El próximo paso del proyecto será continuar con el cálculo de ángulos de Dong partiendo del estado actual de Step 4.
+- Esta línea de trabajo se retoma en la siguiente sesión (mañana).
+
+**Alternatives considered**:
+- Ninguna en esta entrada; se mantiene el rumbo ya acordado.
+
+**Expected impact**:
+- Reanudar de forma ordenada la fase de variables posturales angulares.
+
+**References**:
+- Entry 15 y Entry 16 (base metodológica y estado del pipeline Step 4).
+
+**Status**: In progress
+
+---
+
+## Entry 17 -- 2026-04-12: RAW dataset truth-first schema + robust estimation of thumb base ratio (0-1)
+
+**Context**: Para estimar longitudes anatómicas (en particular el link `0-1`) sin sesgo de normalización previa, se decidió reconstruir el dataset desde anotaciones RAW de HOGraspNet. El objetivo explícito fue preservar la verdad del dataset y separar claramente: (a) ingesta fiel de anotaciones, y (b) remapeos/cálculos derivados para entrenamiento.
+
+**Decision**:
+- Se redefinió `build_hograspnet_raw_csv.py` como ingesta `truth-first`:
+  - Sin normalización geométrica, sin escalado, sin mirror.
+  - Sin `contact_sum` en el CSV final.
+  - `grasp_type` se guarda como FEIX original (`grasp_XX`) parseado del path.
+  - Se parsean metadatos explícitos desde ruta de anotación:
+    - `subject_id, date_id, object_id, grasp_type, trial_id, cam, frame_id`.
+  - XYZ se escribe tal como viene en `hand["3D_pose_per_cam"]`.
+- Se fijó orden de filas en cascada para legibilidad y trazabilidad temporal por cámara:
+  - `subject_id -> date_id -> object_id -> grasp_type -> trial_id -> cam -> frame_id`.
+- Se mantuvo el remapeo FEIX→local (`0..27`) en el dataloader de entrenamiento (`grasps.py`), no en la ingesta RAW.
+- Se añadió `compute_l01_ratio.py` para estimar `0-1` de forma robusta:
+  - Ratio por frame:
+    - `r_i = ||p1-p0|| / (||p9-p0|| + ||p10-p9|| + ||p11-p10|| + ||p12-p11||)`.
+  - Agregación robusta en 3 niveles:
+    - L1: mediana por bloque `(subject,date,obj,grasp,trial,cam)`.
+    - L2: mediana por sujeto.
+    - L3: mediana global sobre sujetos.
+
+**Alternatives considered**:
+- Mantener `sequence_id` compacta como única clave: útil pero menos práctica para filtros complejos y construcción de tripletes humano-robot.
+- Ratio naive `||p1-p0|| / ||p12-p0||`: descartado como ratio final por alta variabilidad postural.
+- Media global directa sobre 1.5M frames: descartada por sensibilidad a outliers y sesgo por sujetos/secuencias largas.
+
+**Expected impact**:
+- Dataset RAW reproducible, auditable y alineado con la verdad de anotación de HOGraspNet.
+- Menor riesgo de leakage metodológico entre “datos observados” y “parámetros derivados”.
+- Cálculo defendible de `0-1` para mano canónica, robusto entre sujetos y sesiones.
+
+**Results**:
+- CSV RAW generado:
+  - `1,489,111` filas de datos (`1,489,112` con header).
+  - `70` columnas (`7` metadatos + `63` XYZ).
+  - Orden global verificado sobre todo el archivo: `order_ok=True`.
+- Estimación robusta final:
+  - `ratio_01 = 0.212922061679809` (`21.292206%`).
+  - Para `hand_length = 182 mm`:
+    - `L01 = 38.751815226 mm`
+    - `L01 = 0.038751815226 m`.
+
+**References**:
+- HOGraspNet official layout and dataloader conventions (`scripts/HOG_dataloader.py`), especially `(subject, trial, cam, frame)` organization.
+- Dong and Payandeh (2025): wrist-frame and kinematic extraction context (upstream of canonical scaling).
+- Internal validation run on full RAW CSV (2026-04-12).
+
+**Status**: Implemented and validated
+
+---
+
 ## Entry 16 -- 2026-04-11: Dong Step4 pipeline reset -- remove pre-angle scaling, keep world->local first
 
 **Context**: Durante la integración de `dong_step4_to_wrist_local.py`, se probó un flujo `world -> local -> scaled` con longitudes canónicas antes de cualquier extracción de ángulos. En gestos con contacto (p. ej. “like”), la reconstrucción escalada separó visualmente el pulgar de otros dedos. Esto generó conflicto metodológico para el objetivo principal: obtener variables posturales (ángulos) a partir de landmarks observados.
@@ -1135,4 +1274,374 @@ El Encoder B solo se usa durante entrenamiento. En inferencia solo se ejecutan E
 
 **Status**: Implemented
 
+---
+
+## Entry 21 -- 2026-04-14: Step4 second/third layer integrated + 15 finger lengths moved to fixed calibration block
+
+**Context**: Despues de cerrar palma base (Eq.13/16/17) y MCP first layer (Eq.19-24), faltaba alinear la implementacion de second/third layer (Eq.29-36) con la definicion de parametros fijos del paper. Ademas, la salida de consola se volvio ruidosa para uso operativo.
+
+**Decision**:
+- Se implemento second/third layer (PIP/DIP) en Step4:
+  - calculo de `beta_j` y `beta_{j+1}` (Eq.29 y Eq.31),
+  - `R_j^{j-1}`, `R_{j+1}^j` (Eq.33-34),
+  - `T_j^{j-1}`, `T_{j+1}^j` (Eq.35-36).
+- Se movieron las **15 longitudes de dedos** a bloque de parametros fijos (calibration/freeze) en el mismo bloque 2:
+  - links: `(1,2..3,4), (5,6..7,8), (9,10..11,12), (13,14..15,16), (17,18..19,20)`.
+  - congelado por mediana sobre `N` capturas (`--palm-freeze-frames`, default `1`).
+- En bloque 3, Eq.35 usa esas longitudes congeladas como `model lengths`.
+- Se simplifico la salida de consola:
+  - se eliminaron checks de consistencia,
+  - se elimino `obs/model` en longitudes de second/third layer (solo modelo fijo),
+  - `5.1` MCP quedo en formato de resultados (solo angulos), consistente con `5.2`.
+
+**Alternatives considered**:
+- Mantener longitudes de dedos dinamicas por frame en bloque 3: descartado por inconsistencia con el bloque de parametros fijos reportado en el paper.
+- Mantener salida `obs/model` y checks en flujo principal: descartado por ruido operativo y confusion durante auditoria manual.
+
+**Expected impact**:
+- Step4 queda estructurado en 3 bloques claros:
+  - transformacion dinamica `world -> wrist local`,
+  - parametros fijos anatomicos (palma + 15 links),
+  - parametros dinamicos articulares por frame.
+- Menor ambiguedad de lectura para validacion manual y para preparar salida a latente.
+
+**References**:
+- Dong and Payandeh (2025): Eq.13, Eq.15, Eq.16, Eq.17, Eq.19-24, Eq.29-36.
+- Implementacion local: `grasp-app/hand_preprocessing/dong_step4_to_wrist_local.py`.
+
+**Status**: Implemented
+
+---
+
+## Entry 22 -- 2026-04-14: Scope split for Dong completion -- skip Unity handedness transform for latent pipeline
+
+**Context**: Tras completar Step4 hasta Eq.36, quedo la duda sobre si implementar inmediatamente la conversion de marcos right-handed -> left-handed (Eq.46-56), la cual en el paper se usa para integracion con Unity.
+
+**Decision**:
+- Para el objetivo actual (features de postura para espacio latente), **no se implementa por ahora Eq.46-56**.
+- Se mantiene la pipeline cinematica en sistema right-handed (sensor/modelo) y el siguiente cierre funcional sera:
+  - conversion de matrices de rotacion a cuaterniones (Eq.57-64) sobre las rotaciones ya resueltas.
+- La conversion a left-handed queda como modulo opcional de exportacion/compatibilidad para Unity.
+
+**Alternatives considered**:
+- Implementar ya Eq.46-56 en el flujo principal: descartado por no aportar valor directo al entrenamiento del latente y por introducir complejidad de convencion de ejes antes de cerrar la salida angular/cuaternion.
+
+**Expected impact**:
+- Menor complejidad inmediata y menor riesgo de mezclar convenciones de coordenadas en el dataset de features.
+- Camino claro:
+  - cerrar salida en cuaterniones para latente,
+  - dejar adapter Unity como etapa separada cuando se necesite visualizacion/control en left-handed.
+
+**References**:
+- Dong and Payandeh (2025): Eq.46-56 (right-handed to left-handed for Unity), Eq.57-64 (quaternions from rotation matrices).
+- Entries 20 y 21 (estado de Step4 hasta Eq.36).
+
+**Status**: Implemented
+
+---
+
+## Entry 23 -- 2026-04-14: Latent features in quaternion space -- do not force signed abduction as parallel correction
+
+**Context**: Surgio la duda de si forzar signo en abduccion/aduccion (`gamma` firmado) para mejorar diferenciacion de agarres, aun cuando la representacion final para el autoencoder sera en cuaterniones.
+
+**Decision**:
+- Se mantiene Dong en su formulacion actual para angulos escalares (incluyendo `gamma` por `arccos` sin signo).
+- La salida para el latente se tomara desde matrices de rotacion hacia cuaterniones (`R -> q`), sin correccion manual de signo en abduccion.
+- No se agregara `gamma` firmado como parche de la ruta principal, ya que resultaria redundante frente a la orientacion completa codificada en `q`.
+- Se deja como nota tecnica que la consistencia de cuaterniones se controlara por convencion de signo (`q` y `-q` representan la misma rotacion).
+
+**Alternatives considered**:
+- Forzar `gamma` firmado en la ruta principal antes de convertir a cuaternion: descartado por redundancia y riesgo de mezclar representaciones no equivalentes entre angulos escalares y rotacion matricial.
+
+**Expected impact**:
+- Pipeline mas limpio y coherente para entrenamiento del latente.
+- Menor riesgo de introducir sesgos por convenciones de signo ad-hoc.
+- Mayor trazabilidad: la orientacion final usada por el modelo proviene directamente de `R`.
+
+**References**:
+- Dong and Payandeh (2025): matriz de rotacion por articulacion (Eq.19-36) y conversion a cuaterniones (Eq.57-64).
+- Entry 22 (alcance de implementacion posterior a Eq.36).
+
+**Status**: Implemented
+
+---
+
+## Entry 24 -- 2026-04-14: Scope lock before next session -- finish fingertip chain (last layer); handedness handling closed
+
+**Context**: Cierre de sesion para evitar dispersion de trabajo. Se requiere dejar explicitado que el siguiente bloque tecnico es la ultima capa de la cadena de puntas y que el manejo de cambio de mano ya se considera resuelto en el alcance actual.
+
+**Decision**:
+- Se congela el alcance inmediato a un unico pendiente de implementacion: **completar la cadena de puntas (ultima layer)** del pipeline Dong.
+- El cambio de mano queda marcado como **resuelto** para el alcance actual.
+
+**Expected impact**:
+- Prioridad clara para retomar sin reabrir discusiones laterales.
+- Menor riesgo de introducir cambios no prioritarios antes de cerrar la ultima layer.
+
+**Status**: Implemented
+
+---
+
+## Entry 25 -- 2026-04-14: Step4 closure for latent pipeline -- last layer + quaternions + camera modes + single-joint trace
+
+**Context**: Tras cerrar Eq.19-36, faltaba completar la cadena cinematica hasta fingertip, convertir rotaciones a cuaterniones para features del espacio latente y estabilizar el comportamiento de captura en camara (mirror/handedness) sin contaminacion por swaps manuales.
+
+**Decision**:
+- Se implementa la **last layer** de Dong (Eq.45) para cada cadena de dedo:
+  - `R_tip^dip = I`
+  - `d_tip^dip = [l_dip,tip, 0, 0]`
+  - `T_tip^dip` homogena correspondiente.
+- Se implementa la conversion **R -> q** (Eq.57-64) para todas las joints del modelo:
+  - MCP (`R_i^0`), PIP (`R_j^{j-1}`), DIP (`R_{j+1}^j`), TIP (`R_{j+2}^{j+1}`).
+  - Salida final normalizada por joint en formato `(w,x,y,z)`.
+- Se fija politica de captura para evitar ambiguedad:
+  - `webcam`: frame espejado (selfie), handedness raw de MediaPipe, canonicalizacion a derecha por reflexion de landmarks solo cuando detecta Left.
+  - `egocentric`: mismo pipeline pero sin espejar frame.
+  - No se hace swap manual de etiquetas (`Left/Right`).
+- Se agregan campos explicitos de trazabilidad de fuente:
+  - `hand_detected`, `hand_canonical`, `landmark_reflected`, `frame_mirrored`.
+- Se agrega modo de auditoria de una sola joint:
+  - `--trace-joint N` para imprimir entrada -> transformacion -> salida de esa joint.
+  - `--trace-joint-only` para ocultar el listado completo cuando se quiera depurar una sola joint.
+- Se limpia salida regular de `[5.4]`:
+  - ahora imprime solo cuaternion final por joint (sin procedimiento intermedio).
+  - el procedimiento completo queda reservado a `--trace-joint`.
+
+**Alternatives considered**:
+- Aplicar Eq.46-56 (right-handed -> left-handed Unity) dentro del flujo principal: descartado por alcance actual (features latentes), se mantiene como adapter opcional posterior.
+- Corregir handedness con swap de labels: descartado por riesgo de contaminar la semantica raw de MediaPipe.
+
+**Expected impact**:
+- Pipeline Step4 cerrado para extraccion de orientacion articular en cuaterniones.
+- Menor confusion operativa entre modo espejo de camara y semantica de mano detectada.
+- Salida de consola mas util:
+  - compacta para uso normal,
+  - detallada y auditable cuando se depura una joint puntual.
+- Este cierre no congela la interfaz operativa actual:
+  - la version presente funciona como herramienta de captura bajo demanda,
+  - la siguiente mejora prevista es pasar a modo continuo con dos etapas:
+    - un tiempo explicito de calibracion inicial para congelar parametros fijos,
+    - despues calculo `frame-by-frame` en tiempo real durante el resto de la ejecucion.
+
+**References**:
+- Dong and Payandeh (2025): Eq.45, Eq.57-64.
+- Entries 20, 21, 22, 23 y 24 (contexto de cierre de alcance en Step4).
+
+**Status**: Implemented and validated
+
+---
+
+## Entry 26 -- 2026-04-14: Replace current graph angle features with Dong quaternions
+
+**Context**: El pipeline GNN actual usa features angulares heuristicas:
+- `flex`: un escalar por nodo calculado como el angulo entre el vector padre->joint y el vector joint->child.
+- `theta_cmc`: un escalar global del grafo para la orientacion del pulgar respecto al plano de la palma.
+
+Estas magnitudes no representan una cinematica articular completa. En particular:
+- `flex` no separa flexion, abduccion ni orientacion local completa.
+- `theta_cmc` queda aislado como escalar global y tampoco preserva una orientacion articular completa.
+
+En paralelo, Step4 con Dong ya produce una representacion local por joint basada en matrices de rotacion y sus cuaterniones asociados.
+
+**Decision**:
+- La direccion de trabajo pasa a ser **reemplazar los angulos actuales usados como features del grafo por los cuaterniones locales de Dong**.
+- La representacion objetivo deja de ser:
+  - `flex` por nodo,
+  - `theta_cmc` global,
+  y pasa a ser:
+  - `q_i` local por nodo/joint, derivado de `R_i^parent`.
+- Para el grafo actual de 21 nodos:
+  - `WRIST (0)` se tratara aparte como raiz.
+  - los nodos `1..20` se alinean naturalmente con `q1..q20`.
+- Este cambio se trata como una **reparametrizacion cinemática del espacio postural**, no como un ajuste menor de una feature escalar.
+
+**Technical note to investigate**:
+- Los cuaterniones presentan ambiguedad de signo:
+  - `q` y `-q` representan la misma rotacion.
+- En robotica esto no es problema, pero para ML puede introducir discontinuidades artificiales si una misma orientacion aparece a veces como `q` y a veces como `-q`.
+- Queda explicitamente pendiente investigar y fijar una convencion numerica estable para entrenamiento/inferencia, por ejemplo una regla canonica tipo `w >= 0`, u otra que preserve continuidad temporal cuando convenga.
+
+**Alternatives considered**:
+- Mantener `flex` y solo agregar Dong como complemento: descartado como direccion principal, porque conserva la mezcla de una heuristica angular pobre con una representacion cinemática completa.
+- Mantener `theta_cmc` como escalar global aislado: descartado como representacion principal una vez que ya se dispone de orientaciones locales completas por joint.
+
+**Expected impact**:
+- Sustitucion de features angulares heuristicas por una representacion articular local completa.
+- Mayor coherencia entre la cinematica de la mano y las features que consume el grafo.
+- Mejor base para comparar entrenamiento actual vs pipeline cinemático Dong.
+
+**References**:
+- `grasp-model/src/grasp_gcn/transforms/tograph.py`: `flex` actual y `theta_cmc` actual.
+- Dong and Payandeh (2025): Eq.19-45, Eq.57-64.
+- Entry 25 (Step4 ya cerrado hasta cuaterniones).
+
+**Status**: Proposed
+
+---
+
+## Entry 27 -- 2026-04-14: Step4 continuous runtime mode -- timed calibration + per-joint live output
+
+**Context**: Step4 ya estaba cerrado para captura puntual (snapshot), pero hacia falta operarlo como flujo continuo para uso en agarre en vivo: primero calibrar parametros fijos y luego calcular por frame sin romper la logica Dong ya validada.
+
+**Decision**:
+- Se agrega modo continuo en `dong_step4_to_wrist_local.py`:
+  - `--continuous`
+  - `--calib-seconds` para ventana de calibracion inicial
+  - `--continuous-print-every` para controlar frecuencia de salida en consola.
+- Se mantiene la misma matematica del pipeline; solo se reorganiza ejecucion:
+  - durante calibracion: se acumulan muestras para palma y longitudes de dedos,
+  - al terminar calibracion: se congelan parametros fijos,
+  - despues: se ejecuta calculo completo por frame.
+- Se implementa salida compacta en vivo por joint (sin dump completo de procedimiento):
+  - MCP roots: `beta`, `gamma`, `q`
+  - PIP/DIP: `beta`, `q`
+  - TIP: `q`
+- Se conserva `SPACE` para snapshot detallado completo cuando se requiera auditoria profunda.
+
+**Expected impact**:
+- Step4 deja de ser solo captura puntual y pasa a modo operativo en tiempo real.
+- Menor ruido de consola en continuo, pero con visibilidad suficiente por articulacion para depuracion.
+- Base lista para conectar features dinamicas de agarre sobre streaming frame-by-frame.
+
+**References**:
+- Implementacion local: `grasp-app/hand_preprocessing/dong_step4_to_wrist_local.py`.
+- Entry 25 (cierre de last layer + quaternions en snapshot).
+
+**Status**: Implemented and validated
+
+---
+
+## Entry 28 -- 2026-04-15: Coupled latent space for the hand -- decoupling by finger is not justified
+
+**Context**: While designing the latent space architecture for cross-embodiment hand teleoperation, the question arose whether to decouple the latent space by finger (or finger group), following the segment-wise decoupling strategy of Yan and Lee (2026), "Learning a Unified Latent Space for Cross-Embodiment Robot Control" (arXiv:2601.15419). Since the system targets multiple robot hands with different morphologies (Shadow Hand: 5 fingers/24 DOF, Allegro: 4 fingers/16 DOF, future grippers), decoupling seemed like a candidate for handling missing or different fingers across embodiments.
+
+**Decision**: The latent space is **coupled** (single space, hand as a unit). Decoupling by finger is not justified for the hand domain.
+
+### Why Yan and Lee decouple (body segments)
+
+Yan and Lee's decoupling is motivated by three concrete properties of the whole-body domain:
+
+1. **Partial embodiments**: TIAGO has no legs, H1 has limited trunk, ATLAS has everything. A coupled latent space would force the encoder to represent legs for a robot that has none, producing ambiguous mappings. Each robot participates only in the subspaces it has.
+
+2. **Heterogeneous similarity metrics per segment**: Arms need end-effector position accuracy (for manipulation). Legs need rotational fidelity (for visual resemblance while walking). A single space cannot optimize for both criteria simultaneously.
+
+3. **Functional independence**: In whole-body motion, limbs are largely independent -- you can walk (legs) while reaching (right arm) while pointing (left arm). The information in each segment is orthogonal.
+
+### Why these three conditions do not hold for the hand
+
+1. **No partial embodiments in the relevant sense**: The human hand always has 5 fingers. Target robot hands have 4-5 fingers with different DOF counts, but the difference is kinematic (different joint configurations for the same finger), not structural (missing an entire limb). Allegro without a pinky is not analogous to TIAGO without legs -- the Allegro still executes 5-finger grasps by compensating with the remaining 4 fingers. This is handled by robot-specific embedding layers, not by latent space decoupling.
+
+2. **Uniform similarity metric**: All fingers serve the same functional role in grasping -- coordinated closure around an object. There is no analog to the arms-need-EE-position vs legs-need-rotation distinction. A single similarity metric (postural distance) applies uniformly to the entire hand.
+
+3. **Fingers are functionally dependent, not independent**: This is the fundamental difference. Santello et al. (1998) showed that 2 PCs explain >80% of variance in human hand postures. The first synergy is "all fingers open/close together." Feix grasp classes are defined by inter-finger coordination patterns (VF count, opposition type), not by individual finger states. Decoupling by finger would destroy exactly the signal that defines grasping.
+
+### What decoupling would lose
+
+- **Coordination patterns**: "Tip Pinch" is defined by the relationship between thumb and index -- not by thumb state alone and index state alone in separate subspaces.
+- **Santello synergies**: The dominant modes of postural variation are whole-hand co-activation patterns. Decoupling by finger fragments these patterns across subspaces.
+- **Feix taxonomy structure**: Every Feix class is a global hand configuration. The taxonomy does not decompose by finger.
+
+### How multi-robot support works without decoupling
+
+Following Yan and Lee's robot-specific embedding layer design (their E_r, D_r), each target robot hand has its own lightweight embedding layers that map between the shared latent space and its specific joint space:
+
+```
+z_latent (grasp intent) --> Embedding_Shadow (24 DOF) --> qpos Shadow Hand
+                        --> Embedding_Allegro (16 DOF) --> qpos Allegro
+                        --> Embedding_Gripper (6 DOF)  --> qpos Gripper
+```
+
+The latent space encodes postural intent (what type of grasp, with what configuration). Each robot's embedding layer translates that intent into its own kinematics. New robot = new embedding layer, latent space unchanged. This is the same mechanism as Yan and Lee but without subspace decoupling.
+
+This is consistent with Entry 4 (two-space architecture) and Entry 6 (asymmetric design): the semantic bridge between human and robot is the Feix taxonomy, not geometric correspondence. The embedding layer is the robot-specific adapter.
+
+### Only plausible decoupling: thumb vs digits 2-5
+
+If decoupling were ever considered, the only biomechanically motivated split would be thumb vs the other 4 fingers, because the thumb is cinamatically distinct (TMC with 2 DOF, 3-phalanx chain vs 4-phalanx) and its opposition state is the row separator in the Feix taxonomy matrix. However, even this is not justified at this stage because thumb opposition only has meaning relative to the other fingers -- "abducted" and "adducted" are defined by the spatial relationship between thumb and palm/fingers, not by the thumb alone.
+
+This can be revisited as an ablation experiment if the coupled latent space shows poor separation between opposition-driven Feix classes.
+
+**Alternatives considered**:
+- Decouple by finger (5 subspaces, one per finger): rejected. Destroys inter-finger coordination, which is the primary signal in grasping. No partial-embodiment justification.
+- Decouple thumb vs digits 2-5 (2 subspaces): deferred. Some biomechanical motivation but thumb opposition is relational, not independent. Can be tested as ablation.
+- Decouple by phalanx level (proximal/medial/distal): no precedent, no clear justification.
+
+**Expected impact**:
+- Simpler architecture (one encoder, one decoder, one latent space per embodiment side).
+- Preserved inter-finger coordination in the latent space.
+- Multi-robot support via embedding layers without architectural changes to the core model.
+- Clean comparison point: if a future decoupled variant is tested, the coupled baseline exists.
+
+**References**:
+- Yan and Lee (2026), arXiv:2601.15419: cross-embodiment latent space with segment-wise decoupling for whole-body control; explicit limitation: "hand motion retargeting is not handled in this paper" (Sec III-E).
+- Santello, Flanders and Soechting (1998): 2 PCs explain >80% of hand posture variance -- fingers are highly coordinated.
+- Feix et al. (2016): GRASP taxonomy -- classes defined by whole-hand coordination (VF count, opposition, contact type).
+- Entry 4: two-space architecture -- semantic communication via Feix distribution.
+- Entry 6: asymmetric design -- robot-specific adapters, not shared geometry.
+- Entry 14: dual-VGAE architecture -- robot-specific encoder/decoder with shared alignment.
+
+**Status**: Proposed
+
+---
+
+## Entry 27 -- 2026-04-15: Quaternion Hemisphere Convention and Architecture Modularity
+
+**Context**: 
+The extraction of kinematic features (quaternions) to build a unified latent space (following the Yan & Lee framework) requires clean inputs. The paper relies on quaternions ($n=4$) as input for the human encoder. However, quaternions suffer from a topological "double cover" of SO(3): $q$ and $-q$ reflect exactly the same physical 3D rotation. This creates severe discontinuities (antipodal ambiguity) for neural networks that use euclidean or standard latent distances, hindering optimization and creating false jumps in the latent space.
+Additionally, the original Dong implementation was a massive internal monolith coupling math with CV2 tools, making precomputation impossible.
+
+**Decision**: 
+1. **Mathematical Convention**: We apply a strict hemisphere projection to the quaternions right as they are generated by Dong, making sure $w \ge 0$. If $w < 0$, the quaternion is inverted ($-q$). This resolves the double cover ambiguity, removing massive jumps in neural network input distributions, while remaining 100% compatible with Yan & Lee's $n=4$ architecture.
+2. **Architecture Refactor**: We decoupled the core mathematical blocks of Dong & Payandeh (2025) into a clean, reusable stateful object (`DongKinematics` in `dong_kinematics.py`). The camera debug functionalities were isolated into a separate file (`mediapipe_live.py`).
+3. **Precomputation Pipeline**: A script (`precompute_dong_features.py`) was introduced to process the raw HOGraspNet dataset and save a clean feature dataset (`hograspnet_dong.csv`). We chose to separate raw data and precomputed feature data logically to keep versioning clean.
+
+**Alternatives considered**:
+- **Continuous 6D Representation (Zhou et al. 2019)**: Rejected. Although 6D coordinates resolve the topological problem intrinsically in ML, Yan & Lee's architecture natively expects quaternions ($n=4$). Moving to 6D would mean rewriting the baseline encoder and decoding framework, invalidating the foundational architecture that proves cross-embodiment retargeting.
+- **Putting all features in the original dataset CSV**: Rejected. Harder to version, corrupts the clean raw structure, and unnecessarily widens the data frame when we only need a lightweight join logic based on primary keys.
+
+**Expected impact**:
+- Clean gradient flow when feeding the human encoder, protecting the continuous latent space structure against discontinuous rotation spikes.
+- Full reusability of the Dong math solver across precomputation and real-time teleoperation endpoints.
+- Ready to delete the obsolete `dong_step4_to_wrist_local.py` monolith.
+
+**References**:
+- Zhou et al. (2019): "On the Continuity of Rotation Representations in Neural Networks", CVPR 2019. (Proof of topological discontinuity in $S^3$ quaternions and need for mitigation).
+- Yan & Lee (2026): "Learning a Unified Latent Space for Cross-Embodiment Robot Control".
+
+**Status**: Implemented
+
+
+---
+
+## Entry 29 -- 2026-04-16: Offline Precomputation & Structural Calibration of Dong Kinematics
+
+**Context**: 
+The GraphGrasp architecture relies on mapping 3D keypoints into Dong Kinematics features (wrist frame translation, quaternions, and beta/gamma angles) to achieve a topologically stable latent space. When ingesting the 1.5M frame HOGraspNet dataset, three critical questions arose: (1) whether to compute features dynamically during training or precompute them offline, (2) how to scale the anatomical bone calibration across thousands of separated trials/cameras, and (3) whether the t=8 temporal stabilization used for live webcams should be applied to the training dataset.
+
+**Decision**:
+
+1. **Strict Offline Precomputation**:
+Kinematics are extracted offline resulting in `hograspnet_dong.csv`. The Dong algorithm relies on extensive matrix inversions and cross-products for all 21 joints, pushing 100% CPU load for ~45 minutes over 1.5M frames. Attempting this on-the-fly inside a PyTorch DataLoader would catastrophically bottleneck GPU training loops. Precomputing caches the mathematical translations so training relies purely on fast matrix multiplications.
+
+2. **Subject-Level Rigid Calibration (N=50)**:
+The dataset is processed by explicitly grouping on `subject_id` (ignoring `sequence_id`, `trial_id`, and `cam`). For each new subject, the algorithm captures the first 50 valid frames from their subset, computes the statistical median of their skeletal lengths, and freezes an immutable kinematic base. All subsequent frames for that person—across all objects and cameras—are evaluated against this fixed template. This prevents the neural network from learning false correlations caused by hands "magically shrinking" due to intra-trial perspective noise.
+
+3. **Exclusion of t=8 Temporal Smoothing**:
+The t=8 stabilizing buffer is strictly designated as an **inference-time mechanism** for real-time robotic teleoperation to combat heavy webcam noise. It is deliberately omitted from the training dataset. Imposing moving averages over the ground-truth training data would blur the sharp boundaries between grasp transitions and create a massive domain gap (training on artificially slow, smoothed physics while deploying against erratic ones). 
+
+**Alternatives considered**:
+- **On-the-fly dataloader extraction**: Rejected due to unviable I/O and CPU bottlenecking.
+- **Trial-level calibration**: Rejected. Allowing skeletal dimensions to vary per trial for the same physical person destroys intra-subject topological consistency.
+- **Applying t=8 smoothing to training**: Rejected as it would over-smooth the target loss landscape and degrade the responsiveness of the learned model.
+
+**Expected impact**:
+- Massive acceleration in GPU training iterations via the precomputed CSV.
+- The model will explicitly learn to separate static intrinsic shape (handled by the rigid subject skeleton) from dynamic angular intent.
+- 100% topological integrity (e.g. Tips fixed at w=1.0) and math-safe execution (Double-Cover w>=0 forced on all coordinates).
+
+**References**:
+- Dong & Payandeh (2025): Primary kinematics base.
+- Precomputation validation mapping: Output columns rigorously logged to match MediaPipe semantic array blocks (`verify_mapping.py`).
+
+**Status**: Implemented and Validated.
 ---

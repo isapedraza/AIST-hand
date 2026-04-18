@@ -22,3 +22,8 @@ grasp-app/experiment/
 grasp-app/experiment_hamer/**/frames/
 grasp-app/plots_step4/
 third_party/
+
+# Local-only files
+knowledge/
+mapping_log.txt
+python
