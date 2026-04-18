@@ -66,11 +66,9 @@ class GCN_CAM_8_8_16_16_32(nn.Module):
 
     N_JOINTS = 21
 
-    def __init__(self, numFeatures: int, numClasses: int,
-                 use_cmc_angle: bool = False):
+    def __init__(self, numFeatures: int, numClasses: int):
         super().__init__()
-        self.numClasses    = numClasses
-        self.use_cmc_angle = use_cmc_angle
+        self.numClasses = numClasses
 
         # Shared learnable adjacency matrix [21, 21]
         self.cam = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS))
@@ -83,9 +81,7 @@ class GCN_CAM_8_8_16_16_32(nn.Module):
         self.layer4 = CAMLayer(16,          16, self.N_JOINTS)
         self.layer5 = CAMLayer(16,          32, self.N_JOINTS)
 
-        # mean+max readout -> 64; +1 if θ_CMC -> 65
-        readout_dim = 64 + (1 if use_cmc_angle else 0)
-        self.fc1 = nn.Linear(readout_dim, 128)
+        self.fc1 = nn.Linear(64, 128)
         self.fc2 = nn.Linear(128, numClasses)
 
     def forward(self, data):
@@ -102,10 +98,6 @@ class GCN_CAM_8_8_16_16_32(nn.Module):
         x = self.layer5(x, self.cam, mask)                     # [B*21, 32]
 
         h = masked_readout(x, batch, mask)                     # [B, 64]
-
-        if self.use_cmc_angle:
-            theta = data.theta_cmc.view(-1, 1)                 # [B, 1]
-            h = torch.cat([h, theta], dim=1)                   # [B, 65]
 
         h   = F.elu(self.fc1(h))                               # [B, 128]
         out = self.fc2(h)                                      # [B, numClasses]
@@ -223,11 +215,9 @@ class GCN_CAMGAT_8_8_16_16_32(nn.Module):
 
     N_JOINTS = 21
 
-    def __init__(self, numFeatures: int, numClasses: int,
-                 use_cmc_angle: bool = False):
+    def __init__(self, numFeatures: int, numClasses: int):
         super().__init__()
-        self.numClasses    = numClasses
-        self.use_cmc_angle = use_cmc_angle
+        self.numClasses = numClasses
 
         self.cam = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS))
         nn.init.uniform_(self.cam, -1.0, 1.0)
@@ -238,8 +228,7 @@ class GCN_CAMGAT_8_8_16_16_32(nn.Module):
         self.layer4 = CAMGATLayer(16,          16, self.N_JOINTS)
         self.layer5 = CAMGATLayer(16,          32, self.N_JOINTS)
 
-        readout_dim = 64 + (1 if use_cmc_angle else 0)
-        self.fc1 = nn.Linear(readout_dim, 128)
+        self.fc1 = nn.Linear(64, 128)
         self.fc2 = nn.Linear(128, numClasses)
 
     def forward(self, data):
@@ -257,10 +246,6 @@ class GCN_CAMGAT_8_8_16_16_32(nn.Module):
 
         h = masked_readout(x, batch, mask)                 # [B, 64]
 
-        if self.use_cmc_angle:
-            theta = data.theta_cmc.view(-1, 1)
-            h = torch.cat([h, theta], dim=1)
-
         h   = F.elu(self.fc1(h))
         out = self.fc2(h)
         return F.log_softmax(out, dim=1)
@@ -277,11 +262,9 @@ class GCN_CAM_32_32_64_64_128(nn.Module):
 
     N_JOINTS = 21
 
-    def __init__(self, numFeatures: int, numClasses: int,
-                 use_cmc_angle: bool = False):
+    def __init__(self, numFeatures: int, numClasses: int):
         super().__init__()
-        self.numClasses    = numClasses
-        self.use_cmc_angle = use_cmc_angle
+        self.numClasses = numClasses
 
         self.cam = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS))
         nn.init.uniform_(self.cam, -1.0, 1.0)
@@ -292,8 +275,7 @@ class GCN_CAM_32_32_64_64_128(nn.Module):
         self.layer4 = CAMLayer(64,          64,  self.N_JOINTS)
         self.layer5 = CAMLayer(64,          128, self.N_JOINTS)
 
-        readout_dim = 256 + (1 if use_cmc_angle else 0)
-        self.fc1 = nn.Linear(readout_dim, 128)
+        self.fc1 = nn.Linear(256, 128)
         self.fc2 = nn.Linear(128, numClasses)
 
     def forward(self, data):
@@ -311,20 +293,15 @@ class GCN_CAM_32_32_64_64_128(nn.Module):
 
         h = masked_readout(x, batch, mask)                     # [B, 256]
 
-        if self.use_cmc_angle:
-            theta = data.theta_cmc.view(-1, 1)
-            h = torch.cat([h, theta], dim=1)
-
         h   = F.elu(self.fc1(h))
         out = self.fc2(h)
         return F.log_softmax(out, dim=1)
 
 
 class GCN_8_8_16_16_32(nn.Module):
-    def __init__(self, numFeatures, numClasses, use_cmc_angle: bool = False):
+    def __init__(self, numFeatures, numClasses):
         super().__init__()
         self.numClasses = numClasses
-        self.use_cmc_angle = use_cmc_angle
 
         self.conv1 = GCNConv(numFeatures, 8)
         self.conv2 = GCNConv(8, 8)
@@ -332,9 +309,7 @@ class GCN_8_8_16_16_32(nn.Module):
         self.conv4 = GCNConv(16, 16)
         self.conv5 = GCNConv(16, 32)
 
-        # mean+max → 2*32 = 64; +1 if θ_CMC is concatenated → 65
-        readout_dim = 64 + (1 if use_cmc_angle else 0)
-        self.fc1 = nn.Linear(readout_dim, 128)
+        self.fc1 = nn.Linear(64, 128)
         self.fc2 = nn.Linear(128, numClasses)
 
     def forward(self, data):
@@ -349,10 +324,6 @@ class GCN_8_8_16_16_32(nn.Module):
         x = F.elu(self.conv5(x, edge_index))   # [N, 32]
 
         h = masked_readout(x, batch, mask)      # [B, 64]
-
-        if self.use_cmc_angle:
-            theta = data.theta_cmc.view(-1, 1)  # [B, 1]
-            h = torch.cat([h, theta], dim=1)    # [B, 65]
 
         h = F.elu(self.fc1(h))                  # [B, 128]
         out = self.fc2(h)                       # [B, numClasses]

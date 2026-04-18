@@ -121,7 +121,6 @@ class ToGraph:
                  use_confidence: bool = False,
                  conf_threshold: float = 0.5,
                  add_joint_angles: bool = False,
-                 add_cmc_angle: bool = False,
                  add_bone_vectors: bool = False,
                  add_velocity: bool = False,
                  add_mano_pose: bool = False,
@@ -134,7 +133,6 @@ class ToGraph:
         self.use_confidence = use_confidence
         self.conf_threshold = conf_threshold
         self.add_joint_angles = add_joint_angles
-        self.add_cmc_angle = add_cmc_angle
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
         self.add_mano_pose = add_mano_pose
@@ -383,32 +381,6 @@ class ToGraph:
             mask=mask,
             joint_id=torch.arange(x.size(0), dtype=torch.long)
         )
-
-        # Palmar abduction angle (θ_CMC) — graph-level scalar [1]
-        # Feix et al. (2016) Section IV: thumb CMC joint position (abducted/adducted)
-        # is the row separator in the taxonomy matrix. Measured as the out-of-plane
-        # component of the first metacarpal direction relative to the palm plane.
-        #   thumb_dir   = normalize(THUMB_MCP - THUMB_CMC)          # landmark 2 - 1
-        #   palm_normal = normalize(cross(WRIST→INDEX_MCP, WRIST→PINKY_MCP))
-        #   θ_CMC       = arcsin(|dot(thumb_dir, palm_normal)|)     ∈ [0, π/2]
-        # WRIST is at the origin after geometric normalization, so WRIST→X = position of X.
-        if self.add_cmc_angle:
-            positions = np.vstack(rows)[:, :3]      # [21, 3] — always xyz
-            thumb_dir = positions[2] - positions[1]  # THUMB_MCP - THUMB_CMC
-            norm = np.linalg.norm(thumb_dir)
-            if norm > 1e-8:
-                thumb_dir /= norm
-                palm_normal = np.cross(positions[5], positions[17])  # INDEX_MCP × PINKY_MCP
-                pnorm = np.linalg.norm(palm_normal)
-                if pnorm > 1e-8:
-                    palm_normal /= pnorm
-                    dot = float(np.clip(np.abs(np.dot(thumb_dir, palm_normal)), 0.0, 1.0))
-                    theta_cmc = float(np.arcsin(dot))
-                else:
-                    theta_cmc = 0.0
-            else:
-                theta_cmc = 0.0
-            data.theta_cmc = torch.tensor([theta_cmc], dtype=torch.float32)
 
         # (Opcional) handedness como atributo de grafo (0=Right, 1=Left, -1=Unknown)
         if 'handedness' in sample:

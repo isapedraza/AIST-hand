@@ -221,7 +221,6 @@ class GraspsClass(InMemoryDataset):
 
     def __init__(self, root, split='train', collapse=False,
                  add_joint_angles=True,
-                 add_cmc_angle=True,
                  add_bone_vectors=False,
                  add_velocity=False,
                  add_mano_pose=False,
@@ -237,7 +236,6 @@ class GraspsClass(InMemoryDataset):
         self.split = split
         self.collapse = collapse
         self.add_joint_angles = add_joint_angles
-        self.add_cmc_angle = add_cmc_angle
         self.add_bone_vectors = add_bone_vectors
         self.add_velocity = add_velocity
         self.add_mano_pose = add_mano_pose
@@ -282,7 +280,6 @@ class GraspsClass(InMemoryDataset):
         else:
             cls_tag = 'c28'
         flex_tag  = ''       if self.add_joint_angles  else '_noflex'
-        nocmc_tag = ''       if self.add_cmc_angle     else '_nocmc'
         bone_tag  = '_bone'  if self.add_bone_vectors  else ''
         vel_tag   = '_vel'   if self.add_velocity      else ''
         pose_tag  = '_pose'  if self.add_mano_pose     else ''
@@ -293,8 +290,8 @@ class GraspsClass(InMemoryDataset):
         if self._csv_filename:
             from pathlib import Path
             csv_stem = Path(self._csv_filename).stem  # e.g. 'hograspnet_r014'
-            return [f'{csv_stem}_{self.split}_{cls_tag}_cmc{flex_tag}{nocmc_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
-        return [f'hograspnet_{self.split}_{cls_tag}_cmc{flex_tag}{nocmc_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
+            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
+        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
@@ -311,7 +308,6 @@ class GraspsClass(InMemoryDataset):
             features='xyz',
             make_undirected=True,
             add_joint_angles=self.add_joint_angles,
-            add_cmc_angle=self.add_cmc_angle,
             add_bone_vectors=self.add_bone_vectors,
             add_velocity=self.add_velocity,
             add_mano_pose=self.add_mano_pose,
