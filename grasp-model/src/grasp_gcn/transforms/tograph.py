@@ -129,6 +129,21 @@ class ToGraph:
                  add_ahg_distances: bool = False,
                  add_dong_quats: bool = False):
         assert features in ('xy', 'xyz', 'none')
+        if features == 'none':
+            _positional_flags = {
+                'add_joint_angles': add_joint_angles,
+                'add_bone_vectors': add_bone_vectors,
+                'add_velocity':     add_velocity,
+                'add_global_swing': add_global_swing,
+                'add_ahg_angles':   add_ahg_angles,
+                'add_ahg_distances':add_ahg_distances,
+            }
+            bad = [k for k, v in _positional_flags.items() if v]
+            if bad:
+                raise ValueError(
+                    f"features='none' incompatible with positional flags: {bad}. "
+                    "These features require XYZ coordinates."
+                )
         self.features = features
         self.make_undirected = make_undirected
         self.use_confidence = use_confidence
