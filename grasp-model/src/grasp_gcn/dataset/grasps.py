@@ -20,6 +20,7 @@ SPLIT_SUBJECTS = {
 }
 
 MANO_POSE_COLS = [f'MANO_pose_{i:02d}' for i in range(45)]
+DONG_QUAT_COLS = [f'q{i}_{ax}' for i in range(1, 21) for ax in ('w', 'x', 'y', 'z')]
 
 # Named XYZ columns in the same order as JOINT_NAMES (works for both CSVs)
 XYZ_COLS = [
@@ -227,6 +228,8 @@ class GraspsClass(InMemoryDataset):
                  add_global_swing=False,
                  add_ahg_angles=False,
                  add_ahg_distances=False,
+                 add_dong_quats=False,
+                 dong_csv_path=None,
                  csv_filename=None,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
@@ -242,6 +245,10 @@ class GraspsClass(InMemoryDataset):
         self.add_global_swing = add_global_swing
         self.add_ahg_angles = add_ahg_angles
         self.add_ahg_distances = add_ahg_distances
+        self.add_dong_quats = add_dong_quats
+        self.dong_csv_path = dong_csv_path
+        if add_dong_quats and dong_csv_path is None:
+            raise ValueError("dong_csv_path required when add_dong_quats=True")
         self._csv_filename = csv_filename  # override default CSV selection
         super().__init__(root, transform, pre_transform)
 
@@ -286,16 +293,21 @@ class GraspsClass(InMemoryDataset):
         swing_tag = '_swing' if self.add_global_swing  else ''
         ahga_tag  = '_ahga'  if self.add_ahg_angles    else ''
         ahgd_tag  = '_ahgd'  if self.add_ahg_distances else ''
+        dongq_tag = '_dongq' if self.add_dong_quats    else ''
         # If using a custom CSV, embed its stem in the cache filename to avoid collisions
         if self._csv_filename:
             from pathlib import Path
             csv_stem = Path(self._csv_filename).stem  # e.g. 'hograspnet_r014'
-            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
+            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}.pt']
+        if self.add_dong_quats:
+            return [f'hograspnet_dong_{self.split}_{cls_tag}{dongq_tag}.pt']
         return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
         """Columns to load from CSV. Skips unused columns to reduce RAM during processing."""
+        if self.add_dong_quats:
+            return ['subject_id', 'grasp_type'] + DONG_QUAT_COLS
         cols = ['subject_id', 'sequence_id', 'cam', 'grasp_type', 'contact_sum']
         if self.add_velocity:
             cols.append('frame_id')
@@ -305,7 +317,7 @@ class GraspsClass(InMemoryDataset):
     # ------------------------------------------------------------------
     def process(self):
         tograph = ToGraph(
-            features='xyz',
+            features='none' if self.add_dong_quats else 'xyz',
             make_undirected=True,
             add_joint_angles=self.add_joint_angles,
             add_bone_vectors=self.add_bone_vectors,
@@ -314,9 +326,10 @@ class GraspsClass(InMemoryDataset):
             add_global_swing=self.add_global_swing,
             add_ahg_angles=self.add_ahg_angles,
             add_ahg_distances=self.add_ahg_distances,
+            add_dong_quats=self.add_dong_quats,
         )
 
-        csv_path = self.raw_paths[0]
+        csv_path = self.dong_csv_path if self.add_dong_quats else self.raw_paths[0]
         log.info(f"Reading {csv_path}")
         df = pd.read_csv(csv_path, usecols=self._usecols())
         df['grasp_type'] = self._remap_grasp_type_to_local(df['grasp_type'])
@@ -435,17 +448,29 @@ class GraspsClass(InMemoryDataset):
     def _sample_from_row(self, row):
         """
         Build a ToGraph-compatible dict from a single CSV row.
-        Uses named columns so it works with both hograspnet.csv and
-        hograspnet_mano.csv (which has frame_id and MANO_pose_* columns).
+        Uses named columns so it works with hograspnet.csv, hograspnet_mano.csv,
+        and hograspnet_dong.csv (which has precomputed Dong quaternions).
         """
         grasp_type = int(row['grasp_type'])
-        vals = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
-
         sample = {'grasp_type': grasp_type}
-        for j, name in enumerate(JOINT_NAMES):
-            sample[name] = vals[j]
-        if self.add_mano_pose:
-            sample['mano_pose'] = row[MANO_POSE_COLS].values.astype(np.float32)
+
+        if self.add_dong_quats:
+            # WRIST (joint 0): identity quaternion — reference frame has no rotation
+            quats = np.zeros((21, 4), dtype=np.float32)
+            quats[0] = [1.0, 0.0, 0.0, 0.0]
+            for j in range(1, 21):
+                quats[j, 0] = float(row[f'q{j}_w'])
+                quats[j, 1] = float(row[f'q{j}_x'])
+                quats[j, 2] = float(row[f'q{j}_y'])
+                quats[j, 3] = float(row[f'q{j}_z'])
+            sample['dong_quats'] = quats
+        else:
+            vals = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
+            for j, name in enumerate(JOINT_NAMES):
+                sample[name] = vals[j]
+            if self.add_mano_pose:
+                sample['mano_pose'] = row[MANO_POSE_COLS].values.astype(np.float32)
+
         return sample
 
     # ------------------------------------------------------------------

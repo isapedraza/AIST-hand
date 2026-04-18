@@ -126,8 +126,9 @@ class ToGraph:
                  add_mano_pose: bool = False,
                  add_global_swing: bool = False,
                  add_ahg_angles: bool = False,
-                 add_ahg_distances: bool = False):
-        assert features in ('xy', 'xyz')
+                 add_ahg_distances: bool = False,
+                 add_dong_quats: bool = False):
+        assert features in ('xy', 'xyz', 'none')
         self.features = features
         self.make_undirected = make_undirected
         self.use_confidence = use_confidence
@@ -139,9 +140,10 @@ class ToGraph:
         self.add_global_swing = add_global_swing
         self.add_ahg_angles = add_ahg_angles
         self.add_ahg_distances = add_ahg_distances
+        self.add_dong_quats = add_dong_quats
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
-        self.F_xyz = 2 if features == 'xy' else 3   # dims used for xyz padding
+        self.F_xyz = 0 if features == 'none' else (2 if features == 'xy' else 3)
         self.F = (self.F_xyz
                   + (1 if add_joint_angles else 0)
                   + (3 if add_bone_vectors else 0)
@@ -149,7 +151,8 @@ class ToGraph:
                   + (3 if add_mano_pose else 0)
                   + (3 if add_global_swing else 0)
                   + (10 if add_ahg_angles else 0)
-                  + (10 if add_ahg_distances else 0))  # total features per node
+                  + (10 if add_ahg_distances else 0)
+                  + (4 if add_dong_quats else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -222,28 +225,31 @@ class ToGraph:
         rows = []
         mask_vals = []
 
-        for j in self.joints:
-            raw = sample.get(j, None)
-            if raw is None:
-                v = np.zeros(self.F, dtype=float)
-                valid = False
-            else:
-                arr = np.array(raw, dtype=float)
-                # Ajustar a F dims (recortar o rellenar)
-                if arr.shape[0] < self.F_xyz:
-                    arr = np.pad(arr, (0, self.F_xyz - arr.shape[0]), mode='constant', constant_values=0.0)
-                elif arr.shape[0] > self.F_xyz:
-                    arr = arr[:self.F_xyz]
-                valid = np.isfinite(arr).all()
-                v = np.nan_to_num(arr, nan=0.0)
+        if self.F_xyz > 0:
+            for j in self.joints:
+                raw = sample.get(j, None)
+                if raw is None:
+                    v = np.zeros(self.F_xyz, dtype=float)
+                    valid = False
+                else:
+                    arr = np.array(raw, dtype=float)
+                    if arr.shape[0] < self.F_xyz:
+                        arr = np.pad(arr, (0, self.F_xyz - arr.shape[0]), mode='constant', constant_values=0.0)
+                    elif arr.shape[0] > self.F_xyz:
+                        arr = arr[:self.F_xyz]
+                    valid = np.isfinite(arr).all()
+                    v = np.nan_to_num(arr, nan=0.0)
 
-            # Umbral de confianza opcional
-            if self.use_confidence:
-                conf = float(sample.get(self.joint_conf_name[j], 1.0))
-                valid = valid and (conf >= self.conf_threshold)
+                if self.use_confidence:
+                    conf = float(sample.get(self.joint_conf_name[j], 1.0))
+                    valid = valid and (conf >= self.conf_threshold)
 
-            rows.append(v)
-            mask_vals.append(1.0 if valid else 0.0)
+                rows.append(v)
+                mask_vals.append(1.0 if valid else 0.0)
+        else:
+            # features='none': no xyz base — dong_quats fills all features
+            rows = [np.zeros(0, dtype=float) for _ in self.joints]
+            mask_vals = [1.0] * 21
 
         # Joint flexion angles (optional)
         if self.add_joint_angles:
@@ -359,6 +365,17 @@ class ToGraph:
                 dists = [float(np.linalg.norm(positions[i] - positions[c]))
                          for c in _CRITICAL_JOINTS]
                 rows[i] = np.append(rows[i], dists)
+
+        # Dong quaternions: [w, x, y, z] per node from wrist-local frame.
+        # WRIST (joint 0) is the reference frame -> identity quaternion [1, 0, 0, 0].
+        # Joints 1-20 from sample['dong_quats'] [21, 4] precomputed by DongKinematics.
+        if self.add_dong_quats:
+            dong_quats = sample.get('dong_quats', None)
+            if dong_quats is None:
+                dong_quats = np.zeros((21, 4), dtype=np.float32)
+                dong_quats[:, 0] = 1.0  # identity for all if missing
+            for i in range(21):
+                rows[i] = np.append(rows[i], dong_quats[i])
 
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]
