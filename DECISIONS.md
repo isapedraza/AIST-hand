@@ -1645,3 +1645,58 @@ The t=8 stabilizing buffer is strictly designated as an **inference-time mechani
 
 **Status**: Implemented and Validated.
 ---
+
+## Entry 30 -- 2026-04-19: abl10 result and objective realignment -- Dong quaternions for latent space, not classification
+
+**Context**:
+
+abl10 trained `GCN_CAM_8_8_16_16_32` with Dong quaternions only (F=4, no XYZ, no AHG, no flex) against the 28-class HOGraspNet benchmark. Result: **62.6% test accuracy, Macro F1 = 0.561**, versus abl04 baseline (XYZ+AHG+flex, F=24): 71.07%, F1=0.657.
+
+The original plan stated "validate that Dong features improve over abl04 before investing in Dual-VGAE." That criterion was not met. However, reviewing the plan against the actual thesis objective exposed that the criterion was misaligned from the start.
+
+**Decision**:
+
+Proceed with Dong quaternions as the human encoder input for the Dual-VGAE latent space. The classification benchmark is not the right validation criterion for this architecture.
+
+**Why 62.6% is sufficient validation**:
+
+The thesis objective is not a standalone grasp classifier. It is a cross-embodiment latent space following Yan and Lee (2026): human grasp pose (Dong quaternions) maps to a latent representation z_human, which bridges to robot joint space z_robot via Feix anchors. The 62.6% accuracy with only 4 features per node (vs. random chance at 3.6%) demonstrates that Dong quaternions carry substantial discriminative information about grasp configuration. The latent space does not need to be optimized for argmax classification -- it needs semantic clustering by grasp type, which the quaternion signal is sufficient to support.
+
+**Why XYZ is not added back**:
+
+The lower accuracy of abl10 vs abl04 is expected: F=4 vs F=24. XYZ provides shape information (fingertip positions, inter-joint distances) that quaternions do not. However, adding XYZ to the latent space encoder would mix two fundamentally different representations -- rotation state (quaternions) and position (XYZ). This creates an asymmetry with the robot side, where joints are represented as scalar angles, not positions. Yan and Lee use quaternions (n=4) for human joints and scalar angles (n=1) for robot joints, with no XYZ on either side. The cross-embodiment similarity metric D_R operates on quaternions alone (plus D_ee for arm end-effectors in their system, which has no direct analog in grasping because all 5 fingertips are end-effectors with symmetric roles). XYZ would contaminate the similarity metric with scale/distance information that does not transfer to robot joint space.
+
+**Why AHG is not used**:
+
+AHG features (10 wrist-relative angles per node, 10 distances per node) are heuristic -- designed for classification discriminability, not for kinematic semantics. They have no correspondence on the robot side and would not improve the cross-embodiment alignment. Rejected on the same grounds as XYZ.
+
+**Corrected validation criterion**:
+
+The relevant validation for the Dual-VGAE is not classification accuracy but latent space quality: do semantically similar grasps cluster together? Do Feix-adjacent classes lie near each other in z_human? This is evaluated via reconstruction quality, manifold smoothness, and retargeting error -- not top-1 accuracy on a 28-class benchmark. The 62.6% result is evidence of signal; it is not the primary metric.
+
+**Alternatives considered**:
+
+- Add XYZ back (F=7: xyz+dong_quats): would improve classification accuracy but mix position and rotation in the encoder input. Incompatible with a clean D_R-based similarity metric. Rejected.
+- Use XYZ+AHG+flex (stay at abl04): best classification accuracy, but features are heuristic and have no principled robot-side correspondence. Cannot support cross-embodiment latent alignment. Rejected as the latent space input.
+- Require abl10 to beat abl04 before proceeding: criterion was wrong from the start. The thesis is about the latent space, not the argmax accuracy of a classifier. Rejected.
+
+**Expected impact**:
+
+- Human encoder input fixed: Dong quaternions only (21 joints × 4 = 84 dim, wrist-local frame, w>=0 hemisphere convention, subject-level calibration).
+- WRIST (joint 0) = identity quaternion [1,0,0,0] by definition (reference frame).
+- Similarity metric for contrastive learning: D_R(quats) over finger joints, following Yan and Lee Eq. 1.
+- Robot side: Shadow Hand qpos (scalar angles), robot-specific embedding layer following Entry 14 / Yan and Lee E_r, D_r design.
+- Next step: implement Dual-VGAE Encoder A (human graph, Dong quats) + Encoder B (robot qpos).
+
+**References**:
+
+- Yan and Lee (2026): human joints represented as quaternions (n=4), no XYZ; D_R similarity metric; robot-specific embedding layers.
+- Entry 14: Dual-VGAE architecture -- Encoder A (human) + Encoder B (robot) + manifold mapping via Feix anchors.
+- Entry 28: coupled (not decoupled) latent space for the hand -- inter-finger coordination must be preserved.
+- Entry 29: Dong quaternions precomputed in hograspnet_dong.csv, hemisphere convention w>=0.
+- abl04: 71.07% (xyz+AHG+flex, F=24) -- best classifier, wrong representation for latent space.
+- abl10: 62.6% (Dong quats, F=4) -- lower classifier accuracy, correct representation for latent space.
+
+**Status**: Decided
+
+---
