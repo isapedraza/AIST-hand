@@ -79,18 +79,18 @@ def _similarity(
     B = Bh + Br
 
     # --- D_R: select 20 comparable joints ---
-    hq = h_quats[:, HUMAN_QUAT_IDX, :]          # [Bh, 20, 4]
-    rq = r_quats[:, ROBOT_QUAT_IDX, :]          # [Br, 20, 4]
-    all_q = torch.cat([hq, rq], dim=0)          # [B, 20, 4]
+    hq = h_quats[:, HUMAN_QUAT_IDX, :]                    # [Bh, 20, 4]
+    rq = r_quats[:, ROBOT_QUAT_IDX, :].to(hq.device)     # [Br, 20, 4]
+    all_q = torch.cat([hq, rq], dim=0)                    # [B, 20, 4]
 
     # D_R(i,j) = sum_k (1 - <q_i^k, q_j^k>^2)
     dot = (all_q.unsqueeze(1) * all_q.unsqueeze(0)).sum(-1)  # [B, B, 20]
     D_R = (1 - dot ** 2).sum(-1)                             # [B, B]
 
     # --- D_ee ---
-    h_t = h_tips.view(Bh, -1)   # [Bh, 15]
-    r_t = r_tips.view(Br, -1)   # [Br, 15]
-    all_t = torch.cat([h_t, r_t], dim=0)  # [B, 15]
+    h_t = h_tips.view(Bh, -1)                    # [Bh, 15]
+    r_t = r_tips.view(Br, -1).to(h_t.device)    # [Br, 15]
+    all_t = torch.cat([h_t, r_t], dim=0)         # [B, 15]
     # D_ee(i,j) = ||tips_i - tips_j||
     diff = all_t.unsqueeze(1) - all_t.unsqueeze(0)  # [B, B, 15]
     D_ee = diff.norm(dim=-1)                         # [B, B]
