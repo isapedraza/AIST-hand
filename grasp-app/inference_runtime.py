@@ -86,10 +86,10 @@ def is_open_hand(landmarks: dict) -> bool:
     thumb_open = float(np.linalg.norm(thumb_tip - index_mcp))
 
     return (
-        min_extension > 2.35
-        and mean_extension > 2.50
-        and mean_tip_distance > 0.17
-        and thumb_open > 0.07
+        min_extension > 2.20
+        and mean_extension > 2.35
+        and mean_tip_distance > 0.15
+        and thumb_open > 0.06
     )
 
 
