@@ -66,15 +66,58 @@ class RetargetDataset(Dataset):
         else:
             self._indices = torch.arange(len(df))
 
-    def _build_temporal_pairs(self, df: pd.DataFrame):
-        """Build list of (t, t+1) index pairs within same sequence."""
+    def _build_temporal_pairs(self, df: pd.DataFrame, seq_keys: list = None):
+        """Build list of (t, t+1) index pairs within same sequence.
+
+        seq_keys: if provided, only include pairs from these sequence keys.
+        """
         df = df.reset_index(drop=True)
         pairs = []
-        for _, grp in df.groupby(_SEQ_KEYS):
+        for key, grp in df.groupby(_SEQ_KEYS):
+            if seq_keys is not None and key not in seq_keys:
+                continue
             idx = grp.sort_values("frame_id").index.tolist()
             for i in range(len(idx) - 1):
                 pairs.append((idx[i], idx[i + 1]))
         self._pairs = pairs
+
+    @classmethod
+    def train_test_split(cls, csv_path: str, test_frac: float = 0.2, seed: int = 42):
+        """
+        Return (train_dataset, test_dataset) split at sequence level.
+
+        Sequences are split 80/20 so no sequence appears in both sets.
+        Both datasets use return_temporal=True.
+        """
+        import random
+        rng = random.Random(seed)
+
+        print(f"Loading {csv_path}...")
+        df = pd.read_csv(csv_path)
+        print(f"  {len(df):,} rows")
+
+        all_seqs = list(df.groupby(_SEQ_KEYS).groups.keys())
+        rng.shuffle(all_seqs)
+        n_test = max(1, int(len(all_seqs) * test_frac))
+        test_seqs  = set(all_seqs[-n_test:])
+        train_seqs = set(all_seqs[:-n_test])
+
+        xyz   = torch.tensor(df[_XYZ_COLS].values, dtype=torch.float32).view(-1, 21, 3)
+        quats = torch.tensor(df[_QUAT_COLS].values, dtype=torch.float32).view(-1, 20, 4)
+
+        def _make(seq_set):
+            obj = object.__new__(cls)
+            obj.return_temporal = True
+            obj._edge_index = _EDGE_INDEX.clone()
+            obj._xyz   = xyz
+            obj._quats = quats
+            obj._build_temporal_pairs(df, seq_keys=seq_set)
+            return obj
+
+        train_ds = _make(train_seqs)
+        test_ds  = _make(test_seqs)
+        print(f"  Train: {len(train_ds):,} pairs | Test: {len(test_ds):,} pairs")
+        return train_ds, test_ds
 
     def __len__(self) -> int:
         if self.return_temporal:
