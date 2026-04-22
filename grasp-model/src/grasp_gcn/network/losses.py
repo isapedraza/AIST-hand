@@ -183,6 +183,6 @@ def loss_temporal(
     tip_t1_rel = (xyz_t1[:, 12, :] - wrist_t1) / hand_len   # [B, 3]
 
     v_human = tip_t1_rel - tip_t_rel    # [B, 3]
-    v_robot = ee_t1 - ee_t             # [B, 3]  already normalized
+    v_robot = (ee_t1 - ee_t).to(v_human.device)  # [B, 3]  already normalized
 
     return (v_human - v_robot).norm(dim=-1).mean()

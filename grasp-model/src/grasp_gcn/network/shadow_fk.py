@@ -138,7 +138,7 @@ class ShadowFK:
              ) for link in JOINT_CHILD_LINKS], dim=1
         )  # [B, 24, 4]  wxyz, palm-relative
 
-        return tips, quats
+        return tips.to(self.device), quats.to(self.device)
 
     @property
     def hand_length(self) -> float:
