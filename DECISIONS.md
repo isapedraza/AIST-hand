@@ -2216,3 +2216,36 @@ E_r and E_X not used at inference.
 **Status**: Implemented, pending training validation
 
 ---
+
+## Entry 40 -- 2026-04-22: Training data strategy and FK setup for L_contrastive
+
+**Context**: L_contrastive requires robot poses to form triplets with human poses. No robot demonstration dataset exists. Need FK to compute D_R and D_ee for triplet construction.
+
+**Decision**:
+- Robot poses sampled **uniformly at random** from Shadow Hand joint limits every training step
+- Poses generated on-the-fly, never stored -- matches Yan exactly
+- FK via pytorch-kinematics `build_serial_chain_from_urdf` using `/home/yareeez/dex-urdf/robots/hands/shadow_hand/shadow_hand_right.urdf`
+- URDF preferred over MJCF: standard format, matches Yan pipeline
+
+**Triplet construction**:
+- For each step: batch = B human frames (HOGraspNet) + B random robot qpos
+- Encode all → z_h and z_r in same R^32 latent space
+- Compute pairwise S = D_R + omega*D_ee in pose-space to rank similarity
+- Sample triplets (anchor, positive, negative) by similarity rank
+- L_contrastive = triplet loss on z-space vectors (alpha=0.05)
+
+**Triplet loss does NOT need exact matches**: only relative ordering matters. With large batch, statistically some robot qpos will be functionally closer to a given human pose than others. Model learns to cluster by functional similarity across embodiments.
+
+**Alternatives considered**:
+- Robot demonstration dataset: not available, not needed per Yan
+- MJCF for FK: would work (pytorch-kinematics supports it) but URDF is cleaner and matches Yan
+
+**Expected impact**: L_contrastive aligns human and robot latent spaces by functional pose similarity without paired data.
+
+**References**:
+- Yan & Lee (2026), Section IV-B (Datasets): "sample robot joint configurations uniformly at random... compute FK... immediately discarded after updating"
+- Entry 39: full system architecture
+
+**Status**: Proposed
+
+---
