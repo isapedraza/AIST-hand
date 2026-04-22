@@ -2249,3 +2249,43 @@ E_r and E_X not used at inference.
 **Status**: Proposed
 
 ---
+
+## Entry 41 -- 2026-04-22: Postural Control implementation (Segil analog)
+
+**Context**: With 3.5 hours before advisor presentation, needed a working end-to-end demo. Dual-VGAE/Yan retargeting training takes 17-33h on Colab T4 (FK on CPU bottleneck). Decision: implement postural control using abl04 + canonical poses v5 as the thesis contribution for today.
+
+**Decision**: Implement postural control analog to Segil et al. (2014) C3 controller, replacing EMG with vision-based GNN.
+
+**Architecture**:
+```
+MediaPipe XYZ [21,3] → ToGraph (xyz+AHG+flex, F=24) → abl04 GNN → softmax [28]
+                                                                         ↓
+                                                          top-2: (k1,p1), (k2,p2)
+                                                                         ↓
+                                   qpos = (p1·C[k1] + p2·C[k2]) / (p1 + p2)   ← JAT equivalent
+                                                                         ↓
+                                                           Shadow Hand qpos [24]
+```
+
+**Canonical poses**: `shadow_hand_canonical_v5_grasp.yaml` — 27/28 Feix classes defined (medoid of Dexonomy grasps). Missing: "Distal" (class 9) → fallback hand-flat.
+
+**Analog to Segil**:
+- Segil C3: EMG RMS → 2D coordinate → JAT (linear transform) → joint angles
+- This work: XYZ → GNN → 28-dim probability vector → top-2 weighted interpolation → joint angles
+- Interpolation mechanism identical; selection criterion differs (geometric distance vs semantic probability)
+- Key advantage over Segil: sensor-agnostic (only RGB camera needed), 27 classes vs 6
+
+**Files**:
+- `grasp-robot/postural_control.py`: PosturalController class, xyz → qpos pipeline
+- Next: integrate into `grasp-app/mujoco_canonical_demo.py` (replace discrete keyframe lookup with PC interpolation)
+
+**MLP baseline**: running in parallel to validate GNN contribution. abl04 GNN target: 71.07%. MLP (504→256→128→28) val_acc ~67% at epoch 23 — GNN leads by ~4 points. Test result pending.
+
+**Status**: postural_control.py implemented and verified. MuJoCo integration pending.
+
+**References**:
+- Segil et al. (2014): C3 postural controller, JAT, PC domain
+- Entry 14: Dual-VGAE (future work, after training validates latent space)
+- abl04: best current classifier, 71.07% test acc, F1=0.657
+
+---
