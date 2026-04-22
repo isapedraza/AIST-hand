@@ -223,6 +223,7 @@ def main():
                 top2        = None
                 status      = "Hand lost -- open hand"
                 open_hand_latch.reset()
+                    pc.reset()
 
         # Smooth towards target (Segil-style continuous morph)
         hand_qpos = mj_data.qpos[:HAND_QPOS_DIM]

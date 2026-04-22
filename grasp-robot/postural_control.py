@@ -124,15 +124,24 @@ def xyz_to_qpos(
 
 class PosturalController:
     """
-    Stateless postural controller: xyz → Shadow Hand qpos.
+    Postural controller with sliding-window probability smoothing.
+
+    Each frame: model outputs probs [28]. Window keeps last `window_size`
+    distributions and averages them before computing top-k → qpos.
+    Separates perception (per-frame) from control (smoothed).
 
     Usage:
-        pc = PosturalController()
+        pc = PosturalController(window_size=8)
         qpos, info = pc(xyz_21x3)
+        pc.reset()   # call when hand is lost
     """
 
-    def __init__(self, model_path=MODEL_PATH, yaml_path=YAML_PATH, device=None):
-        self.device    = device or torch.device("cpu")
+    def __init__(self, model_path=MODEL_PATH, yaml_path=YAML_PATH,
+                 device=None, window_size: int = 8):
+        self.device      = device or torch.device("cpu")
+        self.window_size = window_size
+        self._window     = []   # deque of probs np.array [28]
+
         print("Loading canonical poses...")
         self.canonical = load_canonical_poses(yaml_path)
         print("Loading abl04 model...")
@@ -144,8 +153,47 @@ class PosturalController:
         )
         print("PosturalController ready.")
 
+    def reset(self):
+        self._window.clear()
+
     def __call__(self, xyz: np.ndarray, top_k: int = 2):
-        return xyz_to_qpos(xyz, self.model, self.canonical, self.to_graph, self.device, top_k)
+        xyz = np.asarray(xyz, dtype=np.float32).reshape(21, 3)
+
+        # Build graph and get per-frame probs
+        JOINT_KEYS = [
+            'WRIST',
+            'THUMB_CMC','THUMB_MCP','THUMB_IP','THUMB_TIP',
+            'INDEX_FINGER_MCP','INDEX_FINGER_PIP','INDEX_FINGER_DIP','INDEX_FINGER_TIP',
+            'MIDDLE_FINGER_MCP','MIDDLE_FINGER_PIP','MIDDLE_FINGER_DIP','MIDDLE_FINGER_TIP',
+            'RING_FINGER_MCP','RING_FINGER_PIP','RING_FINGER_DIP','RING_FINGER_TIP',
+            'PINKY_MCP','PINKY_PIP','PINKY_DIP','PINKY_TIP',
+        ]
+        sample = {key: xyz[i].tolist() for i, key in enumerate(JOINT_KEYS)}
+        sample['handedness'] = 0
+        sample['grasp_type'] = 0
+
+        graph = self.to_graph(sample).to(self.device)
+        with torch.no_grad():
+            log_probs = self.model(graph)
+            probs = log_probs.exp().squeeze(0).cpu().numpy()   # [28]
+
+        # Sliding window: add new frame, drop oldest if full
+        self._window.append(probs)
+        if len(self._window) > self.window_size:
+            self._window.pop(0)
+
+        # Average over window
+        avg_probs = np.mean(self._window, axis=0)   # [28]
+
+        # Top-k from smoothed distribution
+        top_idx  = np.argsort(avg_probs)[::-1][:top_k]
+        top_vals = avg_probs[top_idx]
+        w        = top_vals / top_vals.sum()
+
+        qpos     = sum(w[i] * self.canonical[int(top_idx[i])] for i in range(top_k))
+        top_info = [(int(top_idx[i]), LOCAL_TO_NAME[int(top_idx[i])], float(top_vals[i]))
+                    for i in range(top_k)]
+        return qpos.astype(np.float32), top_info
 
 
 def demo(n_frames: int = 5):
