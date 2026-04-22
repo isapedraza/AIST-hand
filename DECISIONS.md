@@ -1700,3 +1700,519 @@ The relevant validation for the Dual-VGAE is not classification accuracy but lat
 **Status**: Decided
 
 ---
+
+## Entry 31 -- 2026-04-19: Architecture alignment to Yan & Lee -- unified latent space, dataset selection, and cross-embodiment similarity criterion
+
+**Context**:
+
+A deep review of Yan and Lee (2026, arXiv:2601.15419) and the major hand-object interaction datasets (HOGraspNet, DexYCB, GRAB, FreiHAND) was conducted to inform the encoder architecture, dataset choice, and similarity criterion for the cross-embodiment latent space.
+
+**Decision 1: One unified latent space, not dual**
+
+Entry 14 proposed a Dual-VGAE with two separate latent spaces (z_human, z_robot) bridged via Feix anchors. This is revised. Yan and Lee use one unified latent space where both human and robot encoders map to the same z. The architecture is:
+
+```
+Human:  x_H (21 joints, Dong quats) --> E_h (graph encoder) --> z
+Robot:  x_R (Shadow Hand qpos)       --> E_r (robot-specific embedding) --> E_X (shared MLP) --> z
+```
+
+The unified space is simpler, better supported by prior work, and directly enables robot-agnostic retargeting: new robot = new E_r/D_r, shared latent space unchanged. Entry 14's two-space design is discarded.
+
+**Decision 2: HOGraspNet is the correct dataset for E_h**
+
+Four datasets were reviewed against the objective of learning a latent space organized by grip configuration type:
+
+- **HOGraspNet** (Woo et al., ECCV 2024): 1.5M frames, 99 subjects, 30 YCB objects, 28 Feix classes labeled per frame, dynamic sequences. Organized by **grip configuration type** -- same object grasped 28 different ways. Directly matches the retargeting objective.
+- **DexYCB** (Chao et al., CVPR 2021): 582K frames, 10 subjects, 20 YCB objects, 1000 sequences. Protocol: "from hand approaching, opening fingers, contact, to holding the object stably." One grasp per sequence, no grasp taxonomy. Organized by **object shape** -- each cluster = how you grab a specific object. Useful for pose estimation, not for grip-type retargeting.
+- **GRAB** (Taheri et al., ECCV 2020): 1.6M frames, 10 subjects, 51 objects, 4 intents (use/pass/lift/off-hand). Protocol: T-pose -> approach -> intent -> T-pose. Includes in-hand manipulation and re-grasping, but not X->Y transitions between Feix classes. Organized by **functional intent x object** -- hammer-use cluster, binoculars-use cluster. Uses SMPL-X (theta_h in R^60, not 21 XYZ landmarks). Wrong organization for retargeting.
+- **FreiHAND** (Zimmermann et al., ICCV 2019): 37K frames, single images, no sequences, no grasp taxonomy. Organized by **raw geometric pose variation**. Designed for pose estimation generalization, not functional grasp analysis.
+
+None of the datasets capture X->Y transitions between grasp types within a sequence while holding the same object. This gap is universal -- it is not a limitation of HOGraspNet specifically. The gap is addressed architecturally by the VGAE KL term (see Decision 4), not by dataset selection.
+
+HOGraspNet is the only dataset that organizes data by grip configuration type, which is exactly what the robot needs to know for retargeting. It is also the only dataset with Feix labels at scale, compatible 21-landmark format (same as MediaPipe inference), and sufficient subject diversity (99 subjects) for E_h generalization.
+
+**Decision 3: Feix + D_ee as cross-embodiment similarity criterion**
+
+Two approaches were considered for mining positive/negative pairs across embodiments:
+
+- **D_ee only** (geometric): human fingertip XYZ (direct from landmarks) vs robot FK fingertip positions. Continuous, no taxonomy required. Problem: Power Sphere with small object and Tip Pinch both produce close fingertips -- D_ee cannot distinguish them. Object size confounds grip type.
+- **Feix only** (semantic): same Feix class = positive. Problem: destroys intra-class geometric variation. Large-object and small-object Power Sphere have very different joint configurations -- forcing them to identical latent points collapses the continuous structure of the manifold.
+- **Feix + D_ee hybrid** (adopted): Feix defines coarse positive/negative (same class = positive cross-embodiment, different class = negative). D_ee provides fine-grained ordering within each class (object size, aperture variation). This preserves both semantic cluster identity and continuous intra-class geometry.
+
+Robot side (Dexonomy): 26/28 HOGraspNet Feix classes have Shadow Hand qpos from Dexonomy (RSS 2025). Missing: Feix 9 (Palmar Pinch) and Feix 19 (Distal). E_h trains on all 28 classes (human data complete). E_r trains on 26 classes (robot data available). The 2 missing classes have no robot-side alignment -- these regions exist in z but Shadow Hand cannot reach them. This is a dataset limitation, not an architectural flaw. Documented as a known limitation.
+
+**Decision 4: VGAE KL term handles intermediate latent zones**
+
+Since no dataset contains X->Y transitions between grip types, the latent space has no explicit training signal for intermediate zones between Feix clusters. This is not resolved by switching datasets (the gap is universal). Instead, the VGAE KL divergence term:
+
+```
+KL(q(z|x) || N(0, I))
+```
+
+regularizes the latent space toward a smooth Gaussian prior. This forces intermediate zones to be populated with meaningful interpolations rather than garbage. The decoder learns to produce valid hand poses for intermediate latent points even without explicit transition data. This is the architectural justification for using VGAE over a standard VAE or AE -- the prior-matching pressure creates a complete, navigable manifold.
+
+**Decision 5: Yan's explicit limitation validates the thesis gap**
+
+Yan and Lee (2026) state explicitly: "Since the SMPL model does not capture hand movements, it considers the hands as part of the forearms. As a result, due to the missing hand motion in the SMPL, hand motion retargeting is not handled in this paper, limiting applications that require fine-grained teleoperation."
+
+This confirms that the thesis addresses a real, acknowledged gap in the cross-embodiment retargeting literature. The contribution is not incremental -- it extends Yan's framework to the hand domain, which requires a different human representation (Dong quaternions over 21 landmarks vs. SMPL body joints), a different dataset (HOGraspNet vs. motion capture body sequences), and a graph-based encoder to exploit the skeletal topology of the hand.
+
+**Architecture summary (updated from Entry 14)**:
+
+```
+E_h:  graph encoder, input = 21 joints x 4 Dong quats = 84-dim per frame
+      trained on HOGraspNet (28 Feix classes, 1.5M frames)
+E_r:  robot-specific MLP embedding, input = 22 Shadow Hand qpos
+      trained on Dexonomy (26/28 Feix classes)
+E_X:  shared MLP encoder (following Yan: 8 FC layers, 256 neurons, ELU, Tanh output)
+z:    unified latent space, coupled (Entry 28), continuous via VGAE KL
+D_r:  robot-specific MLP decoder, output = 22 Shadow Hand qpos
+Loss: L_contrastive (Feix + D_ee triplets) + L_rec + L_ltc + L_KL
+```
+
+**References**:
+
+- Yan and Lee (2026), arXiv:2601.15419: unified latent space architecture, E_r/D_r design, L_ltc loss, explicit hand limitation quote.
+- Taheri et al. (2020), ECCV: GRAB dataset -- protocol, SMPL-X representation, intent taxonomy.
+- Chao et al. (2021), CVPR: DexYCB dataset -- protocol quote, 21-joint annotation, single-grasp-per-sequence structure.
+- Woo et al. (2024), ECCV: HOGraspNet -- dynamic sequences, 28 Feix classes, 99 subjects.
+- Entry 14: original Dual-VGAE proposal (now revised to unified space).
+- Entry 28: coupled latent space for hand.
+- Entry 30: Dong quaternions as human encoder input.
+
+**Status**: Decided
+
+---
+
+## Entry 32 -- 2026-04-19: Similarity criterion revised to D_R + D_ee (no Feix in triplets), and loss function confirmed from Yan
+
+**Context**:
+
+Entry 31 Decision 3 adopted Feix + D_ee as the triplet similarity criterion. After a closer reading of Yan and Lee (2026) Eqs. 1-4, this decision is revised. Feix labels are not used in triplet mining.
+
+**Decision 1: Similarity criterion is D_R + omega*D_ee, following Yan Eqs. 1-3**
+
+For arm subspaces (LA, RA), Yan defines:
+
+```
+D_R(x_A, x_B) = sum_j (1 - <q_A^j, q_B^j>^2)          (Eq. 1)
+D_ee(x_A, x_B) = ||p_A^ee - p_B^ee||_2                  (Eq. 2)
+S_hand = D_R + omega * D_ee    for arm/hand subspace     (Eq. 3)
+```
+
+The hand is the analogue of Yan's arm subspace (manipulation extremity). Therefore, for our hand subspace:
+
+```
+D_R: sum over 21 hand joints of (1 - <q_A^j, q_B^j>^2)
+     using Dong quaternions (wrist-local, w>=0 convention)
+     wrist (joint 0) excluded -- identity quaternion by definition
+
+D_ee: L2 distance between 5 fingertip positions in wrist-local normalized frame
+      p_ee = {thumb_tip, index_tip, middle_tip, ring_tip, pinky_tip}
+
+S_hand = D_R + omega * D_ee
+```
+
+omega is a tunable weight (Yan does not fix it; to be determined empirically).
+
+D_R captures rotational configuration (how the fingers are oriented). D_ee captures where the fingertips end up in task space. Both are necessary cross-embodiment: D_R is joint-space (embodiment-specific), D_ee is task-space (comparable across human and robot via FK).
+
+**Decision 2: Feix not used in triplet criterion**
+
+Feix labels are NOT used to define positives/negatives in triplet mining. The similarity is purely geometric (D_R + D_ee). Feix cluster structure emerges in z as a consequence of geometry, not as an explicit constraint.
+
+Rationale:
+- Feix boundaries are arbitrary divisions of a continuous manifold -- imposing them as hard triplet labels collapses intra-class variation
+- D_R + D_ee is continuous, differentiable, and directly comparable cross-embodiment (human Dong quats vs robot FK output)
+- Yan uses no grasp taxonomy and achieves cross-embodiment retargeting -- the same approach applies here
+- AHG features (angles and distances from Aiman and Ahmad 2024) are equivalent to D_R + D_ee information and are already used as E_h node features (abl04); they are not needed as a separate similarity criterion
+
+**Decision 3: Loss function confirmed from Yan Eqs. 6-9**
+
+Retargeting network total loss (Yan Eq. 9):
+
+```
+L_total = lambda_c * L_contrastive + lambda_rec * L_rec + lambda_ltc * L_ltc + lambda_temp * L_temporal
+          lambda_c=10,              lambda_rec=5,         lambda_ltc=1,         lambda_temp=0.1
+```
+
+Individual losses:
+
+```
+L_contrastive = sum over triplets max(||z^a - z^+||_2 - ||z^a - z^-||_2 + alpha, 0)
+                alpha = 0.05 (Yan Eq. 5)
+
+L_rec = ||x_A - x_hat_A||_2                                                   (Yan Eq. 6)
+        for robot poses only -- human x_H has no paired robot ground truth
+
+L_ltc = ||E_h(x_H) - E_X(D_X(E_h(x_H)))||_2                                  (Yan Eq. 7)
+        latent consistency: decode human embedding to robot, re-encode, check round-trip
+
+L_temporal = ||v_H^hand - v_ee^robot||_2                                       (Yan Eq. 8)
+             velocity of human fingertips vs robot EE between consecutive frames
+             applicable because HOGraspNet contains dynamic sequences
+```
+
+c-VAE control policy loss (separate component, Yan Eq. 10):
+
+```
+L_cvae = L_reconstruction + lambda_KL * L_KL    lambda_KL = 1e-4
+         L_KL = KL(N(mu, sigma) || N(0, I))
+```
+
+Note: L_KL is part of the c-VAE control policy (goal-conditioned motion generation), not the retargeting network. The VGAE KL term documented in Entry 31 Decision 4 serves the same regularization role but belongs to our encoder, not Yan's control policy.
+
+**Architecture summary (final)**:
+
+```
+E_h:  graph encoder, input = 21 joints x 4 Dong quats = 84-dim per frame
+E_r:  robot-specific MLP, input = 22 Shadow Hand qpos --> 1024-dim embedding
+E_X:  shared MLP (8 FC, 256 neurons, ELU, Tanh), output = 16-dim z
+D_X:  shared MLP decoder, input = z --> pose in shared space
+D_r:  robot-specific MLP, input = shared space --> 22 Shadow Hand qpos
+
+Similarity: S_hand = D_R(Dong quats) + omega * D_ee(5 fingertips, wrist-local)
+Loss:       L_total = 10*L_contrastive + 5*L_rec + 1*L_ltc + 0.1*L_temporal + L_KL
+```
+
+**References**:
+
+- Yan and Lee (2026) Eqs. 1-9: D_R, D_ee, S_k, L_contrastive, L_rec, L_ltc, L_temporal, L_total, L_cvae.
+- Entry 31: unified latent space architecture, HOGraspNet justification, VGAE KL rationale.
+- Entry 28: coupled (not decoupled) latent space.
+- Aiman and Ahmad (2024): AHG features = angles + distances, already used as E_h node features; not needed as similarity criterion.
+
+**Status**: Decided
+
+---
+## Entry 33 -- 2026-04-19: Exact component inventory of Yan & Lee (2026) Stage 1
+
+**Context**:
+
+Full paper read from /home/yareeez/AIST-hand/knowledge/yan2026/main.tex. This entry documents every component of Yan Stage 1 exactly as described in the paper.
+
+Yan has two stages. Stage 1 = unified latent space (retargeting). Stage 2 = c-VAE goal-conditioned control policy. These are separate systems.
+
+---
+
+**Component 1: E_h -- Human Encoder**
+
+Maps human pose to latent subspaces z.
+Implementation: MLP, 8 fully connected layers, 256 neurons/layer, ELU activations, Tanh output.
+Input: human joint quaternions x_H in R^(J_H x 4).
+Output: 5 latent vectors, one per body segment (LA, RA, TK, LL, RL), each 16-dim, bounded [-1, 1].
+
+---
+
+**Component 2: E_r -- Robot-Specific Embedding Layer**
+
+Projects robot-specific joint space to fixed-size shared feature space.
+Implementation: learnable MLP.
+Input: robot qpos (scalar joint angles, J_robot joints), x in R^(J_robot x 1).
+Output: 1024-dim feature vector.
+Purpose: handles dimensionality mismatch between robots with different numbers of joints.
+When adding new robot: only E_r and D_r are trained. E_h, E_X, D_X are frozen.
+
+---
+
+**Component 3: E_X -- Shared Cross-Embodiment Encoder**
+
+Shared MLP that maps the 1024-dim robot embedding to latent subspaces z.
+Implementation: MLP, 8 fully connected layers, 256 neurons/layer, ELU activations, Tanh output.
+Input: 1024-dim robot embedding from E_r.
+Output: 5 latent vectors (LA, RA, TK, LL, RL), each 16-dim, bounded [-1, 1].
+Shared across all robots and human. Frozen when adding new robots.
+
+---
+
+**Component 4: D_X -- Shared Cross-Embodiment Decoder**
+
+Shared MLP that reconstructs from latent z back to shared embedding space.
+Implementation: MLP, architecture symmetric to E_X.
+Input: latent z (16-dim per subspace).
+Output: shared embedding (1024-dim), then passed to D_r.
+Frozen when adding new robots.
+
+---
+
+**Component 5: D_r -- Robot-Specific Inverse Embedding**
+
+Projects shared 1024-dim embedding back to robot-specific joint space.
+Implementation: learnable MLP, inverse of E_r.
+Input: 1024-dim shared embedding from D_X.
+Output: robot qpos (J_robot scalar angles).
+When adding new robot: only E_r and D_r are trained.
+
+---
+
+**Decoupled latent space**
+
+Yan decouples z into 5 subspaces for 5 body segments (LA, RA, TK, LL, RL).
+Reason: robots have asymmetric morphologies (TIAGO = arms only, H1 = limited trunk). Decoupling prevents cross-segment interference.
+Each subspace is 16-dim, bounded [-1, 1].
+Each subspace has its own similarity metric:
+  - Arms (LA, RA): S = D_R + omega*D_ee, omega=1.0 (confirmed by ablation)
+  - Trunk/legs (TK, LL, RL): S = D_R only
+
+---
+
+**Loss functions (Yan Eq. 9)**
+
+```
+L_total = 10*L_contrastive + 5*L_rec + 1*L_ltc + 0.1*L_temporal
+```
+
+L_contrastive (Eq. 5): triplet loss, alpha=0.05. Triplets from ANY embodiment (human or robot). Similarity criterion = S_k per subspace.
+L_rec (Eq. 6): ||x_robot - x_hat_robot||_2. Applied to ROBOT poses only. Human has no direct reconstruction because no paired human-robot ground truth exists.
+L_ltc (Eq. 7): ||E_h(x_H) - E_X(D_X(E_h(x_H)))||_2. Latent round-trip consistency for human. Encodes human, decodes to robot space, re-encodes, checks round-trip fidelity.
+L_temporal (Eq. 8): ||v_H^hand - v_robot^ee||_2. L2 distance between human hand velocity and robot EE velocity across consecutive frames.
+
+---
+
+**Training data (Yan)**
+Human: HumanML3D dataset, 29,224 sequences, 4M poses, full body, SMPL representation (quaternions, n=4).
+Robot: NOT collected. Sampled uniformly at random from joint space via FK at each training step. Over 10^5 new robot poses per step, immediately discarded. Billions of poses per embodiment over full training. FK computed via PyTorch-Kinematics from URDF.
+Batch size: 10^5. Optimizer: Adam, lr=1e-3. Hardware: NVIDIA A4000 GPU.
+
+---
+
+**Stage 2: c-VAE Goal-Conditioned Control Policy**
+
+Separate from Stage 1. Trained exclusively on human data after Stage 1 is complete.
+Input: current latent z_t + goal EE velocity v_ee.
+Output: latent displacement d_t = z_{t+1} - z_t.
+Implementation: MLP encoder + MLP decoder, 8 linear layers each, ELU, no output activation.
+Encoder output: 32-dim Gaussian distribution (mu, sigma).
+Loss: L_cvae = L_reconstruction + lambda_KL * L_KL, lambda_KL = 1e-4.
+L_reconstruction = ||d_t - d_hat_t||_2^2.
+At inference: z_{t+1} = z_t + d_hat_t, autoregressive.
+
+---
+
+**References**:
+- Yan and Lee (2026), main.tex: all equations, hyperparameters, implementation details.
+
+**Status**: Decided
+
+---
+## Entry 34 -- 2026-04-19: Human-to-robot inference pipeline clarification
+
+**Context**:
+
+Clarification of which components are active during human-to-robot inference vs training.
+
+---
+
+**Human-to-robot inference pipeline (exact, from Yan main.tex line 168):**
+
+```
+x_H (human pose, quaternions)
+  --> E_h  [Human Encoder, MLP 8x256]
+  --> z    [16-dim latent vector]
+  --> D_X  [Shared Cross-Embodiment Decoder, MLP] --> 1024-dim shared embedding
+  --> D_r  [Robot-Specific Inverse Embedding, MLP] --> x_hat_A (robot qpos)
+```
+
+E_r and E_X are NOT in the human-to-robot inference path.
+
+---
+
+**Why D_X and D_r are two separate MLPs (not one):**
+
+D_X is shared across all robots -- it decodes from z to a 1024-dim shared embedding space.
+D_r is robot-specific -- it projects from the 1024-dim shared space to robot joint space.
+
+Separating them enables: freeze D_X when adding a new robot, train only D_r.
+If they were one MLP, you could not freeze the shared part independently.
+
+---
+
+**E_r and E_X: when they are used**
+
+During training only -- for the robot side of triplets and for L_rec (robot reconstruction).
+Also used in L_ltc: E_X(D_X(E_h(x_H))) -- round-trip consistency check for human.
+At inference for human-to-robot: not used.
+At inference for robot-to-robot: x_A --> E_r --> E_X --> z --> D_X --> D_r --> x_hat_B.
+
+**References**:
+- Yan and Lee (2026), main.tex line 168: exact human-to-robot pipeline.
+
+**Status**: Decided
+
+---
+
+## Entry 35 -- 2026-04-19: GCN/GAT encoder for E_h, MLP decoders for D_X and D_r
+
+**Context**:
+
+Yan & Lee (2026) implement all components (E_h, E_X, D_X, E_r, D_r) as MLPs. We considered whether to replace some components with graph-based networks, given that SAME (Lee et al., SIGGRAPH Asia 2023) uses a GCN/GAT autoencoder for skeleton-agnostic motion embedding.
+
+---
+
+**Decision**:
+
+- **E_h**: Replace MLP with GCN/GAT (SAME-style encoder). The input to E_h is the hand pose -- 21 joints represented as nodes in a graph, with bones as edges and Dong quaternions as node features. GCN layers propagate information between neighboring joints before compression. This exploits the structural topology of the hand: MCP influences PIP, PIP influences DIP, thumb has different connectivity than fingers. A flat MLP treats all node features as an unstructured vector and must learn these relationships implicitly.
+
+- **D_X**: Keep as MLP (Yan). Input is z (flat latent vector), output is a 1024-dim vector. No graph structure in input or output.
+
+- **D_r**: Keep as MLP/linear embedding (Yan). Input is 1024-dim vector, output is robot qpos (flat vector of scalar joint angles). No graph structure.
+
+---
+
+**Why the graph is only needed in the encoder:**
+
+The graph topology captures relationships between joints. In E_h, those relationships are computed and compressed into z -- the structural information is encoded inside the latent vector. Once z exists, D_X and D_r only need to map that vector to another vector. They do not need to reinterpret hand structure -- it is already there inside z.
+
+SAME uses a GCN decoder because its output must be per-node (a pose for each joint of an arbitrary target skeleton, with variable dimensionality). Our D_X and D_r produce flat vectors of fixed dimensionality. The condition that justifies a GCN decoder in SAME does not apply here.
+
+---
+
+**Alternatives considered**:
+
+- GCN decoder for D_X or D_r: rejected. Output dimensionality is fixed. No graph structure to exploit. SAME uses GCN decoder specifically because output topology varies per target skeleton -- that is not our case.
+- Pure MLP for E_h (Yan-style): rejected. Loses the inductive bias from hand joint topology. GCN is strictly more expressive given graph-structured input.
+
+**References**:
+- Yan and Lee (2026), main.tex line 257: E_h, E_X, D_X implemented as MLPs (our baseline).
+- Lee et al. (2023), SAME Section 4.2: GCN encoder + GCN decoder. Decoder uses GCN because output is per-node with variable target skeleton topology.
+
+**Status**: Decided
+
+---
+
+## Entry 36 -- 2026-04-19: CAM included in E_h alongside GAT
+
+**Context**:
+
+E_h uses GAT layers (Entry 35). Question: also include CAM (Constraint Adjacency Matrix, Leng et al., IEEE VR 2021)?
+
+---
+
+**What CAM actually is (from Leng et al.):**
+
+CAM is a learnable N×N matrix of weights, one entry per joint pair. It replaces the fixed skeleton topology entirely. Aggregation becomes:
+
+    f_k = sum_j (CAM_kj * h_j)  for all j in 1..N
+
+Every joint communicates with every other joint. The weights are static parameters learned by gradient descent -- the same for all samples and all frames.
+
+This is different from GAT: GAT computes attention weights dynamically from current node features, but only between neighbors in the fixed graph. CAM learns which joints are globally correlated (static), GAT learns how much each neighbor matters per pose (dynamic). They are complementary -- not redundant.
+
+---
+
+**Decision**: Use GAT + CAM in E_h.
+
+CAM and GAT address different aspects:
+- CAM: global topology (any joint to any joint), learned statically. Captures that e.g. index MCP and ring MCP are always correlated across grasps.
+- GAT: local dynamic attention (neighbors only), computed per input frame.
+
+CAM adds 21x21 = 441 parameters. Cost is negligible.
+
+abl04 already demonstrated CAM works for this exact hand graph (21 joints). Excluding CAM would be a regression relative to what is already empirically validated, with no theoretical justification for the removal.
+
+Ablation of GAT vs GAT+CAM is not planned -- the system has too many components to ablate each independently, and this choice has both theoretical grounding (Leng) and empirical support (abl04).
+
+**References**:
+- Leng et al. (2021), IEEE VR: CAM definition and aggregation equation.
+- abl04: validated CAM on 21-joint hand graph for grasp classification.
+
+**Status**: Decided
+
+---
+
+## Entry 37 -- 2026-04-19: Multi-frame CAM inside E_h, no external stabilization
+
+**Context**:
+
+Entry 36 decided GAT + CAM (single-frame, spatial only) for E_h. Question: also add a multi-frame CAM outside the model to stabilize Dong features before they enter E_h?
+
+---
+
+**Decision**: Single multi-frame CAM inside E_h. No external CAM or smoothing.
+
+E_h receives 8-frame sliding windows of Dong features (computed per-frame from raw landmarks). The multi-frame CAM inside E_h handles both spatial (joint-to-joint) and temporal (frame-to-frame) relationships in a single learned matrix. No external preprocessing step needed.
+
+Two-CAM option (external multi-frame CAM + internal single-frame CAM) rejected: redundant, adds complexity, no evidence of benefit. If a frame is lost (no landmarks detected), the sliding window retains previous frames -- handled internally.
+
+w>=0 hemisphere convention (Entry 27) ensures quaternion sign consistency across frames by definition.
+
+**References**:
+- Leng et al. (2021), IEEE VR: multi-frame CAM-GNN.
+- Entry 27: hemisphere convention for Dong quaternions.
+- Entry 36: GAT + CAM decision for E_h.
+
+**Status**: Decided
+
+---
+
+## Entry 38 -- 2026-04-19: Next session plan
+
+Review Yan human-to-robot pipeline (Entry 34) in detail. From there, define exactly what SAME replaces (the encoder E_h), then design the remaining components bottom-up.
+
+**Status**: Completed (2026-04-22)
+
+---
+
+## Entry 39 -- 2026-04-22: Full system architecture for hand retargeting (Yan + SAME)
+
+**Context**:
+
+Complete architectural design of the cross-embodiment hand retargeting system, adapting Yan & Lee (2026) to the hand domain with SAME-style encoder for E_h.
+
+---
+
+**Decision**:
+
+Five components, all implemented in `grasp-model/src/grasp_gcn/network/`:
+
+```
+E_h  (human_encoder.py):      GAT 3 layers, hidden=32, heads=4, global_max_pool, Linear, Tanh → z[32]
+E_X  (cross_embodiment.py):   MLP 3 layers (256→128→64→32), ELU, Tanh → z[32]
+D_X  (cross_embodiment.py):   MLP 3 layers (32→128→256→256), ELU, Tanh → [256]
+E_r  (robot_embedding.py):    Linear 24→256  (Shadow Hand, 24 actuable joints)
+D_r  (robot_embedding.py):    Linear 256→24  (Shadow Hand)
+```
+
+Input to E_h: 21 nodes x 4 features (Dong quaternions, wrist node = identity [1,0,0,0]).
+Latent dim z=32, shared embedding dim=256.
+All encoder/decoder outputs bounded [-1,1] via Tanh (Yan convention).
+
+**Deviations from Yan**:
+- E_h: GAT+CAM (SAME-style) instead of MLP -- exploits hand graph topology
+- Fewer layers (3 vs 8) and smaller dims -- hand domain is simpler than full-body
+- z_dim=32 instead of 16 -- 28 Feix classes require more latent capacity
+- shared_dim=256 instead of 1024 -- Shadow Hand has 24 joints, not 50+
+- 1 subspace (hand) instead of 5 (LA, RA, TK, LL, RL) -- hand is a single connected system (Entry 28)
+- CAM not yet added to E_h -- deferred until full system is validated end-to-end
+
+**Training data**:
+- Human: hograspnet_dong.csv (Dong quaternions) + hograspnet_raw.csv (XYZ for D_ee)
+- Robot: qpos sampled uniformly from Shadow Hand joint limits via FK on-the-fly (pytorch-kinematics + URDF)
+- No paired human-robot demonstrations needed (Yan approach)
+
+**Losses** (Yan, weights: λ_c=10, λ_rec=5, λ_ltc=1, λ_temp=0.1):
+- L_contrastive: triplet loss with similarity metric D_R + D_ee
+- L_rec: robot reconstruction (E_r→E_X→z→D_X→D_r→qpos)
+- L_ltc: human round-trip consistency ||E_h(x_H) - E_X(D_X(E_h(x_H)))||
+- L_temporal: fingertip velocity alignment between consecutive frames
+
+**Similarity metric for triplets** (analog of Yan Eq. 2-4):
+- D_R: sum_j(1 - <q_human^j, q_robot^j>^2) using Dong quaternions (human) and FK quaternions (robot)
+- D_ee: ||p_human_fingertip_norm - p_robot_fingertip_norm||, where positions are wrist-relative and normalized by hand_length = ||MCP_middle - wrist||
+- Both normalization steps computed on-the-fly from raw XYZ -- no CSV recomputation needed
+
+**Inference (human to robot)**:
+```
+x_H [21,4] → E_h → z[32] → D_X → [256] → D_r → qpos[24]
+```
+E_r and E_X not used at inference.
+
+**References**:
+- Yan & Lee (2026): framework, losses, similarity metric
+- Lee et al. (2023) SAME: GATEnc architecture for E_h
+- Entry 28: single subspace for hand
+- Entry 35-37: E_h design decisions
+
+**Status**: Implemented, pending training validation
+
+---
