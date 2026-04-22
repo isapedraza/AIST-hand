@@ -37,6 +37,7 @@ SHADOW_DIR    = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND    = SHADOW_DIR / "right_hand.xml"
 HAND_QPOS_DIM = 24
 POSE_ALPHA    = 0.18          # smoothing factor (same as original demo)
+CONFIDENCE_THRESHOLD = 0.45   # below this → hand flat (uncertain prediction)
 NO_HAND_RESET_FRAMES = 12
 SIM_W = 800;  SIM_H = 640
 CAM_W = 400;  CAM_H = 320
@@ -208,8 +209,13 @@ def main():
                 )  # [21,3]
 
                 qpos_new, top2 = pc(xyz, top_k=2)
-                target_qpos    = qpos_new.astype(np.float64)
-                status         = "Postural control active"
+                top1_conf = top2[0][2]
+                if top1_conf >= CONFIDENCE_THRESHOLD:
+                    target_qpos = qpos_new.astype(np.float64)
+                    status      = "Postural control active"
+                else:
+                    target_qpos = HAND_FLAT.copy()
+                    status      = f"Low confidence ({top1_conf:.2f}) -- open hand"
         else:
             frames_without_hand += 1
             if frames_without_hand >= NO_HAND_RESET_FRAMES:
