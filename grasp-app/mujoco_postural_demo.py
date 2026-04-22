@@ -93,11 +93,11 @@ def _render_composite(
 ) -> int:
     frame = backend._frame_bgr.copy() if backend._frame_bgr is not None \
             else np.zeros((CAM_H, CAM_W, 3), dtype=np.uint8)
-    if backend.mirror_display:
-        frame = cv2.flip(frame, 1)
     if backend._last_result and backend._last_result.multi_hand_landmarks:
         lm = backend._last_result.multi_hand_landmarks[0]
         backend._mp_draw.draw_landmarks(frame, lm, backend._mp_hands.HAND_CONNECTIONS)
+    if backend.mirror_display:
+        frame = cv2.flip(frame, 1)
     frame = cv2.resize(frame, (CAM_W, CAM_H), interpolation=cv2.INTER_AREA)
 
     info = np.zeros((INFO_H, CAM_W, 3), dtype=np.uint8)
