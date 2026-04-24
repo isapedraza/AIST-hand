@@ -231,6 +231,8 @@ class GraspsClass(InMemoryDataset):
                  add_dong_quats=False,
                  dong_csv_path=None,
                  csv_filename=None,
+                 add_xyz=None,
+                 normalize_xyz=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -250,6 +252,9 @@ class GraspsClass(InMemoryDataset):
         if add_dong_quats and dong_csv_path is None:
             raise ValueError("dong_csv_path required when add_dong_quats=True")
         self._csv_filename = csv_filename  # override default CSV selection
+        # add_xyz: explicit override. None = legacy auto (False if dong_quats, else True)
+        self._add_xyz = add_xyz if add_xyz is not None else (not add_dong_quats)
+        self.normalize_xyz = normalize_xyz
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -293,21 +298,24 @@ class GraspsClass(InMemoryDataset):
         swing_tag = '_swing' if self.add_global_swing  else ''
         ahga_tag  = '_ahga'  if self.add_ahg_angles    else ''
         ahgd_tag  = '_ahgd'  if self.add_ahg_distances else ''
-        dongq_tag = '_dongq' if self.add_dong_quats    else ''
+        dongq_tag  = '_dongq'   if self.add_dong_quats           else ''
+        xyz_tag    = '_xyz'     if (self.add_dong_quats and self._add_xyz) else ''
+        normxyz_tag = '_normxyz' if self.normalize_xyz            else ''
         # If using a custom CSV, embed its stem in the cache filename to avoid collisions
         if self._csv_filename:
             from pathlib import Path
             csv_stem = Path(self._csv_filename).stem  # e.g. 'hograspnet_r014'
-            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}.pt']
+            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
         if self.add_dong_quats:
-            return [f'hograspnet_dong_{self.split}_{cls_tag}{dongq_tag}.pt']
-        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}.pt']
+            return [f'hograspnet_dong_{self.split}_{cls_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
+        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{normxyz_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
         """Columns to load from CSV. Skips unused columns to reduce RAM during processing."""
         if self.add_dong_quats:
-            return ['subject_id', 'grasp_type'] + DONG_QUAT_COLS
+            xyz_part = XYZ_COLS if self._add_xyz else []
+            return ['subject_id', 'grasp_type'] + xyz_part + DONG_QUAT_COLS
         cols = ['subject_id', 'sequence_id', 'cam', 'grasp_type', 'contact_sum']
         if self.add_velocity:
             cols.append('frame_id')
@@ -317,7 +325,7 @@ class GraspsClass(InMemoryDataset):
     # ------------------------------------------------------------------
     def process(self):
         tograph = ToGraph(
-            features='none' if self.add_dong_quats else 'xyz',
+            add_xyz=self._add_xyz,
             make_undirected=True,
             add_joint_angles=self.add_joint_angles,
             add_bone_vectors=self.add_bone_vectors,
@@ -327,6 +335,7 @@ class GraspsClass(InMemoryDataset):
             add_ahg_angles=self.add_ahg_angles,
             add_ahg_distances=self.add_ahg_distances,
             add_dong_quats=self.add_dong_quats,
+            normalize_xyz=self.normalize_xyz,
         )
 
         csv_path = self.dong_csv_path if self.add_dong_quats else self.raw_paths[0]

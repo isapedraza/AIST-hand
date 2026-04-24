@@ -284,7 +284,7 @@ def main():
         renderer.close()
         raise RuntimeError(backend.startup_error())
 
-    to_graph = ToGraph(features="xyz", make_undirected=True, add_joint_angles=True, add_cmc_angle=True)
+    to_graph = ToGraph(make_undirected=True, add_joint_angles=True, add_cmc_angle=True)
     window          = VotingWindow(n=N_VOTES)
     open_hand_latch = OpenHandLatch()
     active_pose_name  = "open hand"

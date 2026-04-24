@@ -30,6 +30,7 @@ IN_DIM      = 24   # xyz + AHG + flex
 
 # Map local class id (0-27) → class name
 LOCAL_TO_NAME = GRASP_CLASS_NAMES  # {0: "Large Diameter", ...}
+NAME_TO_LOCAL = {name: local_id for local_id, name in LOCAL_TO_NAME.items()}
 
 
 def load_canonical_poses(yaml_path: Path) -> dict:
@@ -136,11 +137,29 @@ class PosturalController:
         pc.reset()   # call when hand is lost
     """
 
-    def __init__(self, model_path=MODEL_PATH, yaml_path=YAML_PATH,
-                 device=None, window_size: int = 8):
+    def __init__(
+        self,
+        model_path=MODEL_PATH,
+        yaml_path=YAML_PATH,
+        device=None,
+        window_size: int = 8,
+        blocked_class_names: set[str] | None = None,
+    ):
         self.device      = device or torch.device("cpu")
         self.window_size = window_size
         self._window     = []   # deque of probs np.array [28]
+        blocked_class_names = blocked_class_names or set()
+        self.blocked_class_ids = np.array(
+            sorted(
+                NAME_TO_LOCAL[name]
+                for name in blocked_class_names
+                if name in NAME_TO_LOCAL
+            ),
+            dtype=np.int64,
+        )
+        self.blocked_class_names = {
+            LOCAL_TO_NAME[idx] for idx in self.blocked_class_ids.tolist()
+        }
 
         print("Loading canonical poses...")
         self.canonical = load_canonical_poses(yaml_path)
@@ -185,9 +204,18 @@ class PosturalController:
         # Average over window
         avg_probs = np.mean(self._window, axis=0)   # [28]
 
-        # Top-k from smoothed distribution
-        top_idx  = np.argsort(avg_probs)[::-1][:top_k]
-        top_vals = avg_probs[top_idx]
+        # Remove blocked classes before selecting top-k.
+        effective_probs = avg_probs.copy()
+        if self.blocked_class_ids.size > 0:
+            effective_probs[self.blocked_class_ids] = 0.0
+        total = float(effective_probs.sum())
+        if total <= 0.0:
+            return np.zeros(24, dtype=np.float32), []
+        effective_probs /= total
+
+        # Top-k from filtered/smoothed distribution
+        top_idx  = np.argsort(effective_probs)[::-1][:top_k]
+        top_vals = effective_probs[top_idx]
         w        = top_vals / top_vals.sum()
 
         qpos     = sum(w[i] * self.canonical[int(top_idx[i])] for i in range(top_k))

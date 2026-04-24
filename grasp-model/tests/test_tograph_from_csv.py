@@ -8,9 +8,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CSV = ROOT / "examples" / "data" / "grasps_sample_test.csv"
 
-FEATURES = "xyz"
-
-
 JOINTS = [
     'WRIST',
     'THUMB_CMC','THUMB_MCP','THUMB_IP','THUMB_TIP',
@@ -20,7 +17,7 @@ JOINTS = [
     'PINKY_MCP','PINKY_PIP','PINKY_DIP','PINKY_TIP'
 ]
 
-AXES = ["X", "Y"] if FEATURES == "xy" else ["X", "", "Z"]
+AXES = ["X", "Y", "Z"]
 
 def main():
     df = pd.read_csv(CSV)
@@ -57,7 +54,7 @@ def main():
     sample["grasp_type"] = int(row[y_col])
 
     # 👇 sin normalize porque tu clase ya no lo usa
-    tg = ToGraph(features=FEATURES, make_undirected=True)
+    tg = ToGraph(make_undirected=True)
     data = tg(sample)
 
     print("Etiqueta:", data.y.item())

@@ -63,7 +63,7 @@ def main():
 
     df_sample = df.sample(n=min(N_SAMPLES, len(df)), random_state=42).reset_index(drop=True)
 
-    tg = ToGraph(features='xyz', make_undirected=True, add_joint_angles=True)
+    tg = ToGraph(make_undirected=True, add_joint_angles=True)
 
     angles_all = []   # [N, 21] — angle feature per node per sample
     classes    = []

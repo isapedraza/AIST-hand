@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import sys
 import argparse
+import json
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_FONTDIR", "/usr/share/fonts/truetype/liberation2")
@@ -37,8 +38,10 @@ SHADOW_DIR    = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND    = SHADOW_DIR / "right_hand.xml"
 HAND_QPOS_DIM = 24
 POSE_ALPHA    = 0.18          # smoothing factor (same as original demo)
-CONFIDENCE_THRESHOLD = 0.45   # below this → hand flat (uncertain prediction)
+CONFIDENCE_THRESHOLD = 0.0    # disabled: no confidence-based blocking
 NO_HAND_RESET_FRAMES = 12
+SWITCH_HOLD_FRAMES = 4        # require N consecutive frames before switching class
+SWITCH_MIN_MARGIN = 0.10      # top1 - top2 minimum margin to count a switch vote
 SIM_W = 800;  SIM_H = 640
 CAM_W = 400;  CAM_H = 320
 INFO_H = SIM_H - CAM_H
@@ -51,6 +54,31 @@ CAMERA_RESET = {
 }
 
 HAND_FLAT = np.zeros(HAND_QPOS_DIM, dtype=np.float64)   # open hand fallback
+ABL04_RESULTS_PATH = ROOT / "grasp-model" / "experiments" / "run_abl04" / "results.json"
+BLOCKED_F1_THRESHOLD = 0.45
+BLOCKED_CLASSES_MANUAL = {"Distal"}
+
+
+def _load_blocked_classes(
+    results_path: Path = ABL04_RESULTS_PATH,
+    blocked_f1_threshold: float = BLOCKED_F1_THRESHOLD,
+    manual_blocked: set[str] = BLOCKED_CLASSES_MANUAL,
+) -> set[str]:
+    blocked = set(manual_blocked)
+    if not results_path.exists():
+        print(f"[postural] WARNING: results file not found: {results_path}")
+        return blocked
+
+    try:
+        data = json.loads(results_path.read_text())
+        per_class = data.get("per_class", {})
+        for class_name, metrics in per_class.items():
+            f1 = metrics.get("f1", None)
+            if isinstance(f1, (float, int)) and f1 < blocked_f1_threshold:
+                blocked.add(class_name)
+    except Exception as exc:
+        print(f"[postural] WARNING: failed to parse {results_path}: {exc}")
+    return blocked
 
 
 def _build_scene() -> Path:
@@ -151,9 +179,14 @@ def _parse_args():
 def main():
     args   = _parse_args()
     device = torch.device("cpu")
+    blocked_classes = _load_blocked_classes()
 
     print("Loading PosturalController...")
-    pc = PosturalController(device=device)
+    pc = PosturalController(device=device, blocked_class_names=blocked_classes)
+    print(
+        f"[postural] Blocked classes ({len(blocked_classes)}): "
+        f"{', '.join(sorted(blocked_classes))}"
+    )
 
     scene_path   = _build_scene()
     mj_model     = mujoco.MjModel.from_xml_path(str(scene_path))
@@ -187,6 +220,10 @@ def main():
     frames_without_hand = 0
     top2               = None
     status             = "Waiting for hand..."
+    active_class_id    = None
+    active_qpos        = HAND_FLAT.copy()
+    pending_class_id   = None
+    pending_votes      = 0
 
     cv2.namedWindow(WINDOW, cv2.WINDOW_AUTOSIZE)
 
@@ -201,6 +238,10 @@ def main():
                 target_qpos = HAND_FLAT.copy()
                 top2        = None
                 status      = "Open hand detected"
+                active_class_id = None
+                active_qpos = HAND_FLAT.copy()
+                pending_class_id = None
+                pending_votes = 0
             else:
                 # Postural control: extract xyz [21,3] from landmarks dict
                 xyz = np.array(
@@ -209,13 +250,66 @@ def main():
                 )  # [21,3]
 
                 qpos_new, top2 = pc(xyz, top_k=2)
-                top1_conf = top2[0][2]
-                if top1_conf >= CONFIDENCE_THRESHOLD:
-                    target_qpos = qpos_new.astype(np.float64)
-                    status      = "Postural control active"
-                else:
+                if not top2:
                     target_qpos = HAND_FLAT.copy()
-                    status      = f"Low confidence ({top1_conf:.2f}) -- open hand"
+                    status      = "No allowed classes -- open hand"
+                    active_class_id = None
+                    active_qpos = HAND_FLAT.copy()
+                    pending_class_id = None
+                    pending_votes = 0
+                else:
+                    top1_conf = top2[0][2]
+                    if top1_conf >= CONFIDENCE_THRESHOLD:
+                        top1_id = top2[0][0]
+                        top1_name = top2[0][1]
+                        second_conf = top2[1][2] if len(top2) > 1 else 0.0
+                        margin = top1_conf - second_conf
+
+                        if active_class_id is None:
+                            active_class_id = top1_id
+                            active_qpos = qpos_new.astype(np.float64)
+                            pending_class_id = None
+                            pending_votes = 0
+                            status = f"Init class: {top1_name}"
+                        elif top1_id == active_class_id:
+                            active_qpos = qpos_new.astype(np.float64)
+                            pending_class_id = None
+                            pending_votes = 0
+                            status = "Postural control active"
+                        else:
+                            if margin < SWITCH_MIN_MARGIN:
+                                pending_class_id = None
+                                pending_votes = 0
+                                status = (
+                                    f"Hold class (margin {margin:.2f} < "
+                                    f"{SWITCH_MIN_MARGIN:.2f})"
+                                )
+                            else:
+                                if pending_class_id == top1_id:
+                                    pending_votes += 1
+                                else:
+                                    pending_class_id = top1_id
+                                    pending_votes = 1
+
+                                if pending_votes >= SWITCH_HOLD_FRAMES:
+                                    active_class_id = top1_id
+                                    active_qpos = qpos_new.astype(np.float64)
+                                    pending_class_id = None
+                                    pending_votes = 0
+                                    status = f"Switched to: {top1_name}"
+                                else:
+                                    status = (
+                                        f"Hold switch {top1_name} "
+                                        f"({pending_votes}/{SWITCH_HOLD_FRAMES})"
+                                    )
+                        target_qpos = active_qpos.copy()
+                    else:
+                        target_qpos = HAND_FLAT.copy()
+                        status      = f"Low confidence ({top1_conf:.2f}) -- open hand"
+                        active_class_id = None
+                        active_qpos = HAND_FLAT.copy()
+                        pending_class_id = None
+                        pending_votes = 0
         else:
             frames_without_hand += 1
             if frames_without_hand >= NO_HAND_RESET_FRAMES:
@@ -224,6 +318,10 @@ def main():
                 status      = "Hand lost -- open hand"
                 open_hand_latch.reset()
                 pc.reset()
+                active_class_id = None
+                active_qpos = HAND_FLAT.copy()
+                pending_class_id = None
+                pending_votes = 0
 
         # Smooth towards target (Segil-style continuous morph)
         hand_qpos = mj_data.qpos[:HAND_QPOS_DIM]

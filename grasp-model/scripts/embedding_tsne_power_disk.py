@@ -66,7 +66,6 @@ apertura   = np.linalg.norm(fingertips - wrist[:, None, :], axis=2).mean(axis=1)
 # ── Build graphs ──────────────────────────────────────────────────────────────
 print("Building graphs...")
 tograph = ToGraph(
-    features='xyz',
     add_joint_angles=True,
     add_cmc_angle=False,
     add_bone_vectors=False,

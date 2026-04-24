@@ -282,7 +282,7 @@ def run_experiment(
         print(backend.startup_error())
         return
 
-    to_graph = ToGraph(features="xyz", make_undirected=True, add_joint_angles=True, add_cmc_angle=True)
+    to_graph = ToGraph(make_undirected=True, add_joint_angles=True, add_cmc_angle=True)
 
     # --- Build phase list ---
     class_ids = list(range(num_classes))

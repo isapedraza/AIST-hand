@@ -320,7 +320,6 @@ def main():
         renderer.close()
         raise RuntimeError(startup_error)
     to_graph = ToGraph(
-        features="xyz",
         make_undirected=True,
         add_joint_angles=True,
         add_cmc_angle=True,

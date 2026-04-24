@@ -116,7 +116,7 @@ class ToGraph:
     """
 
     def __init__(self,
-                 features: str = 'xyz',
+                 add_xyz: bool = True,
                  make_undirected: bool = True,
                  use_confidence: bool = False,
                  conf_threshold: float = 0.5,
@@ -127,9 +127,9 @@ class ToGraph:
                  add_global_swing: bool = False,
                  add_ahg_angles: bool = False,
                  add_ahg_distances: bool = False,
-                 add_dong_quats: bool = False):
-        assert features in ('xy', 'xyz', 'none')
-        if features == 'none':
+                 add_dong_quats: bool = False,
+                 normalize_xyz: bool = False):
+        if not add_xyz:
             _positional_flags = {
                 'add_joint_angles': add_joint_angles,
                 'add_bone_vectors': add_bone_vectors,
@@ -141,10 +141,10 @@ class ToGraph:
             bad = [k for k, v in _positional_flags.items() if v]
             if bad:
                 raise ValueError(
-                    f"features='none' incompatible with positional flags: {bad}. "
+                    f"add_xyz=False incompatible with positional flags: {bad}. "
                     "These features require XYZ coordinates."
                 )
-        self.features = features
+        self.add_xyz = add_xyz
         self.make_undirected = make_undirected
         self.use_confidence = use_confidence
         self.conf_threshold = conf_threshold
@@ -156,9 +156,10 @@ class ToGraph:
         self.add_ahg_angles = add_ahg_angles
         self.add_ahg_distances = add_ahg_distances
         self.add_dong_quats = add_dong_quats
+        self.normalize_xyz = normalize_xyz
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
-        self.F_xyz = 0 if features == 'none' else (2 if features == 'xy' else 3)
+        self.F_xyz = 3 if add_xyz else 0
         self.F = (self.F_xyz
                   + (1 if add_joint_angles else 0)
                   + (3 if add_bone_vectors else 0)
@@ -240,18 +241,15 @@ class ToGraph:
         rows = []
         mask_vals = []
 
-        if self.F_xyz > 0:
+        if self.add_xyz:
             for j in self.joints:
                 raw = sample.get(j, None)
                 if raw is None:
-                    v = np.zeros(self.F_xyz, dtype=float)
+                    v = np.zeros(3, dtype=float)
                     valid = False
                 else:
-                    arr = np.array(raw, dtype=float)
-                    if arr.shape[0] < self.F_xyz:
-                        arr = np.pad(arr, (0, self.F_xyz - arr.shape[0]), mode='constant', constant_values=0.0)
-                    elif arr.shape[0] > self.F_xyz:
-                        arr = arr[:self.F_xyz]
+                    arr = np.array(raw, dtype=float)[:3]
+                    arr = np.pad(arr, (0, max(0, 3 - arr.shape[0])), mode='constant')
                     valid = np.isfinite(arr).all()
                     v = np.nan_to_num(arr, nan=0.0)
 
@@ -262,9 +260,17 @@ class ToGraph:
                 rows.append(v)
                 mask_vals.append(1.0 if valid else 0.0)
         else:
-            # features='none': no xyz base — dong_quats fills all features
+            # add_xyz=False: no xyz base — other features fill all node features
             rows = [np.zeros(0, dtype=float) for _ in self.joints]
             mask_vals = [1.0] * 21
+
+        # XYZ normalization: divide all node positions by hand_length = ||MCP_middle - wrist||
+        # Applied before any other feature so all position-derived features use normalized coords.
+        if self.normalize_xyz and self.F_xyz > 0:
+            positions = np.vstack(rows)          # [21, F_xyz]
+            hand_len = float(np.linalg.norm(positions[9] - positions[0]))
+            if hand_len > 1e-6:
+                rows = [r / hand_len for r in rows]
 
         # Joint flexion angles (optional)
         if self.add_joint_angles:
@@ -429,5 +435,5 @@ class ToGraph:
         self._prev_timestamp = None
 
     def __repr__(self):
-        return (f"ToGraph(features={self.features}, undirected={self.make_undirected}, "
+        return (f"ToGraph(add_xyz={self.add_xyz}, undirected={self.make_undirected}, "
                 f"use_conf={self.use_confidence}, conf_thr={self.conf_threshold})")

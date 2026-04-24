@@ -35,16 +35,20 @@ def load_split(path):
 
 
 class MLP(nn.Module):
-    def __init__(self, in_dim=504, n_classes=28):
+    def __init__(self, in_dim=504, n_classes=28, hidden=None):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, 256),
-            nn.ELU(),
-            nn.Linear(256, 128),
-            nn.ELU(),
-            nn.Linear(128, n_classes),
-            nn.LogSoftmax(dim=-1),
-        )
+        if hidden:
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, hidden),
+                nn.ELU(),
+                nn.Linear(hidden, n_classes),
+                nn.LogSoftmax(dim=-1),
+            )
+        else:
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, n_classes),
+                nn.LogSoftmax(dim=-1),
+            )
 
     def forward(self, x):
         return self.net(x)
@@ -64,7 +68,7 @@ def main():
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
 
-    model = MLP(in_dim=N_NODES * IN_DIM, n_classes=N_CLASSES).to(device)
+    model = MLP(in_dim=N_NODES * IN_DIM, n_classes=N_CLASSES, hidden=None)  # linear ~14k params.to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  MLP params: {n_params:,}")
 
