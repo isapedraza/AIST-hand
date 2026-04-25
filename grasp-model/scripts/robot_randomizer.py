@@ -553,15 +553,17 @@ class URDFRandomizer:
         Args:
             hand_config_path : path to hand YAML (allegro/leap/shadow)
             human_batch      : dict with keys:
-                                 "quats"       [B, Nh, 4]  Dong quaternions
-                                 "labels"      list[str]   len Nh  (e.g. ["thumb_mcp", ...])
-                                 "tips"        [B, Fh, 3]  normalized fingertip positions
-                                 "tip_labels"  list[str]   len Fh  (e.g. ["thumb","index",...])
+                                 "quats"       [B, Nh, 4]  Dong quaternions frame t
+                                 "labels"      list[str]   len Nh
+                                 "tips"        [B, Fh, 3]  normalized fingertip positions frame t
+                                 "tip_labels"  list[str]   len Fh
+                                 "quats_t1"    [B, Nh, 4]  Dong quaternions frame t+1 (optional)
             B                : number of robot poses to sample
 
         Returns flat dict — everything the training loop needs, nothing more:
             q_r            [B, J]     -> E_r input (raw joint angles)
-            quats_h        [B, Nh, 4] -> E_h input (full human quats, unfiltered)
+            quats_h        [B, Nh, 4] -> E_h input frame t (full, unfiltered)
+            quats_h_t1     [B, Nh, 4] -> E_h input frame t+1 (L_temporal) — only if human_batch has "quats_t1"
             quats_h_sub    [B, K, 4]  -> D_R human side (common joints only)
             quats_r_sub    [B, K, 4]  -> D_R robot side (common joints only)
             tips_h_sub     [B, Fc, 3] -> D_ee human (common fingers only, normalized)
@@ -578,7 +580,7 @@ class URDFRandomizer:
             meta_r["tips"], meta_r["tip_labels"],
         )
 
-        return {
+        out = {
             "q_r":            q_r,
             "quats_h":        human_batch["quats"],
             "quats_h_sub":    quats_h_sub,
@@ -588,6 +590,11 @@ class URDFRandomizer:
             "common_labels":  common_labels,
             "common_fingers": common_fingers,
         }
+
+        if "quats_t1" in human_batch:
+            out["quats_h_t1"] = human_batch["quats_t1"]
+
+        return out
 
     def print_summary(self, num_samples: int, q_samples: torch.Tensor, fk_out: dict[str, torch.Tensor]) -> None:
         n_links = len(self.link_names)
