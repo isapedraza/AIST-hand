@@ -1,0 +1,26 @@
+robot: leap_hand_right
+
+# Block 1: palm frame
+# joint 1 (revolute): palm_lower -> mcp_joint   (index MCP)
+# joint 5 (revolute): palm_lower -> mcp_joint_2  (middle MCP)
+# joint 9 (revolute): palm_lower -> mcp_joint_3  (ring MCP)
+wrist_link: palm_lower
+frame_index_mcp: mcp_joint
+frame_middle_mcp: mcp_joint_2
+frame_ring_mcp: mcp_joint_3
+
+# Block 3: finger chains [MCP, PIP, DIP, TIP]
+# Thumb: palm_lower -> thumb_temp_base -> thumb_pip -> thumb_dip -> thumb_tip_head
+# Index: palm_lower -> mcp_joint -> pip -> dip -> index_tip_head
+# Middle: palm_lower -> mcp_joint_2 -> pip_2 -> dip_2 -> middle_tip_head
+# Ring: palm_lower -> mcp_joint_3 -> pip_3 -> dip_3 -> ring_tip_head
+# Note: tip_head links are fixed children of fingertip links (actual fingertip position)
+fingers:
+  thumb:
+    chain: [thumb_temp_base, thumb_pip, thumb_dip, thumb_tip_head]
+  index:
+    chain: [mcp_joint, pip, dip, index_tip_head]
+  middle:
+    chain: [mcp_joint_2, pip_2, dip_2, middle_tip_head]
+  ring:
+    chain: [mcp_joint_3, pip_3, dip_3, ring_tip_head]

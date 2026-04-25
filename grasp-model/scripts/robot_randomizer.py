@@ -168,6 +168,7 @@ def _dong_run_stage2(
     finger_meta: dict = {}
     tips_list: list[torch.Tensor] = []
     tip_labels: list[str] = []
+    chain_positions: dict[str, torch.Tensor] = {}
 
     for finger_name, finger_cfg in config["fingers"].items():
         chain = finger_cfg["chain"]
@@ -175,9 +176,12 @@ def _dong_run_stage2(
         if n < 2:
             continue
 
-        mcp_l = local(chain[0])
-        pip_l = local(chain[1])
-        tip_l = local(chain[-1])
+        chain_local = [local(link) for link in chain]  # list of [B, 3]
+        chain_positions[finger_name] = torch.stack(chain_local, dim=1)  # [B, L, 3]
+
+        mcp_l = chain_local[0]
+        pip_l = chain_local[1]
+        tip_l = chain_local[-1]
         tips_list.append(tip_l)
         tip_labels.append(finger_name)
 
@@ -217,6 +221,7 @@ def _dong_run_stage2(
         "wrist_pos": wrist_pos,
         "tips": tips,
         "tip_labels": tip_labels,
+        "chain_positions": chain_positions,  # {finger: [B, L, 3]} all chain links in palm frame (unnormalized)
     }
     return quats, labels, meta
 
@@ -398,13 +403,19 @@ class URDFRandomizer:
     # STAGE 2 — DONG-STYLE KINEMATICS FROM FK POSITIONS
     # =========================================================================
     def _get_hand_length(self, config: dict) -> float:
-        """||palm -> middle_tip|| at q=0. Computed once and cached."""
+        """Path length along middle finger chain at q=0 (pose-invariant). Computed once and cached."""
         if not hasattr(self, "_hand_length"):
             q_zero = torch.zeros(1, len(self.chain_joint_names), device=self.device)
             fk_zero = self.run_fk(q_zero)
             _, _, m = _dong_run_stage2(fk_zero, config)
-            mid_idx = m["tip_labels"].index("middle")
-            self._hand_length = m["tips"][0, mid_idx].norm().item()
+            # Sum of segment lengths along middle finger chain (palm origin → each chain link)
+            # chain_positions["middle"] is [1, L, 3] in palm frame (unnormalized)
+            pts = m["chain_positions"]["middle"][0]  # [L, 3]
+            # Add palm origin (0,0,0) as first point
+            origin = torch.zeros(1, 3, device=pts.device)
+            pts_full = torch.cat([origin, pts], dim=0)  # [L+1, 3]
+            diffs = pts_full[1:] - pts_full[:-1]        # [L, 3]
+            self._hand_length = diffs.norm(dim=-1).sum().item()
         return self._hand_length
 
     def run_dong_stage2(
@@ -431,6 +442,7 @@ class URDFRandomizer:
         quats, labels, meta = _dong_run_stage2(fk_out, config)
         hand_length = self._get_hand_length(config)
         meta["tips"] = meta["tips"] / hand_length
+        meta["chain_positions"] = {f: v / hand_length for f, v in meta["chain_positions"].items()}
         meta["hand_length"] = hand_length
         return quats, labels, meta
 
@@ -455,6 +467,7 @@ class URDFRandomizer:
         quats, labels, meta = _dong_run_stage2(fk_out, config)
         hand_length = self._get_hand_length(config)
         meta["tips"] = meta["tips"] / hand_length
+        meta["chain_positions"] = {f: v / hand_length for f, v in meta["chain_positions"].items()}
         meta["hand_length"] = hand_length
         return q, quats, labels, meta
 
