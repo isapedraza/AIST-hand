@@ -2429,3 +2429,27 @@ This holds for every link in URDF: its origin is at the joint connecting it to i
 **Consequence for Stage 2**: FK positions of Shadow links are directly analogous to MediaPipe keypoints -- both are 3D positions of anatomical joint centers. The comparison is geometrically valid.
 
 **Citation**: ROS URDF documentation (https://docs.ros.org/en/humble/Tutorials/Intermediate/URDF/Building-a-Visual-Robot-Model-with-URDF-from-Scratch.html): "The origin for the child link will be positioned by the joint origin, regardless of the child link's visual origin tag. The joint origin explicitly determines the child link frame location in the kinematic chain."
+
+---
+## Entry 46 -- 2026-04-25: LEAP Hand YAML validation and chain_positions addition
+
+**Context**: LEAP hand YAML was created for Stage 3 testing (cross-robot with fewer fingers than human). Two issues required investigation: (1) q=0 producing non-identity PIP/DIP quaternions, (2) hand_length underestimation due to bent q=0 pose.
+
+**Findings**:
+
+1. **LEAP q=0 is not a flat hand** -- large rpy rotations in URDF joint frames (e.g., rpy="1.57079 1.57079 0") make the finger geometry bent at zero joint angles. This is a mechanical design property of LEAP, not a URDF error or a Stage 2 bug. Dong correctly encodes whatever geometry is present. Non-identity quaternions at q=0 are expected and correct.
+
+2. **`*_tip_head` links are the physical fingertip** -- they have no visual mesh (the mesh is on `fingertip`/`fingertip_2` links), but they mark the distal endpoint ~4.8 cm from the DIP joint in world space at q=0. The `fingertip.obj` mesh bounding box is 5.7 cm long, consistent with this offset. Using `*_tip_head` as TIP in the YAML is correct.
+
+3. **hand_length fixed with path length** -- `_get_hand_length` was computing straight-line distance from palm frame origin to tip. At LEAP q=0 (bent), this gave 13.7 cm instead of the physical ~18.3 cm. Fixed to use path length (sum of segment lengths along middle finger chain). Path length is pose-invariant because each segment length = URDF joint xyz magnitude, fixed regardless of joint angles. Shadow unaffected (q=0 flat -> straight-line = path length).
+
+4. **`palm_lower` as wrist anchor is valid** -- LEAP has no wrist joint. `palm_lower` is the base link (motor housing). It is 3 cm proximal to the MCPs. For Dong Block 1, wrist_link only needs to be a fixed proximal anchor from which to build the palm frame -- anatomical wrist location is not required.
+
+5. **LEAP hand_length = 18.3 cm** -- less than expected ~23 cm (30% larger than human per LEAP paper). Discrepancy explained by `palm_lower` being close to MCPs rather than at wrist level. The 30% larger comparison includes the full actuator housing from wrist mount to tip.
+
+**Added to Stage 2 output**:
+- `meta["chain_positions"]`: `{finger: [B, L, 3]}` -- all chain link positions in palm frame, normalized by hand_length. Equivalent to robot landmarks (analogous to 21 MediaPipe XYZ). Enables future D_ee using all keypoints, not just tips. Tips and chain_positions are now normalized in both `run_dong_stage2` and `sample_dong`.
+
+**LEAP YAML**: uses `*_tip_head` as chain endpoints (physical fingertip), `palm_lower` as wrist anchor, 4 fingers (no pinky). Stage 3 will select {thumb, index, middle, ring} as common subspace for human-LEAP D_R.
+
+**Status**: Implemented. LEAP YAML validated against URDF geometry. Shadow Stage 2 remains validated.
