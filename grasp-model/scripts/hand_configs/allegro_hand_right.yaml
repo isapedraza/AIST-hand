@@ -1,0 +1,24 @@
+robot: allegro_hand_right
+
+# Block 1: palm frame from 3 MCP flexion roots (link_1.0/5.0/9.0)
+# joint_0.0/4.0/8.0: axis Z = abduction (lateral) -> link_0.0/4.0/8.0
+# joint_1.0/5.0/9.0: axis Y = MCP flexion         -> link_1.0/5.0/9.0  (true MCP)
+wrist_link: palm
+frame_index_mcp: link_1.0
+frame_middle_mcp: link_5.0
+frame_ring_mcp: link_9.0
+
+# Block 3: finger chains [MCP, PIP, DIP, TIP]
+# joint_1.0: axis Y = MCP flex  -> link_1.0  (MCP)
+# joint_2.0: axis Y = PIP flex  -> link_2.0  (PIP)
+# joint_3.0: axis Y = DIP flex  -> link_3.0  (DIP)
+# Thumb (joint_12.0: axis -X, joint_13.0: axis Y, joint_14.0: axis Y, joint_15.0: axis Y)
+fingers:
+  thumb:
+    chain: [link_13.0, link_14.0, link_15.0, link_15.0_tip]
+  index:
+    chain: [link_1.0, link_2.0, link_3.0, link_3.0_tip]
+  middle:
+    chain: [link_5.0, link_6.0, link_7.0, link_7.0_tip]
+  ring:
+    chain: [link_9.0, link_10.0, link_11.0, link_11.0_tip]

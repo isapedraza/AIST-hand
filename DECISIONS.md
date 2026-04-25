@@ -2289,3 +2289,85 @@ MediaPipe XYZ [21,3] → ToGraph (xyz+AHG+flex, F=24) → abl04 GNN → softmax 
 - abl04: best current classifier, 71.07% test acc, F1=0.657
 
 ---
+
+## Entry 42 -- 2026-04-24: Bug fix -- Shadow FK quats were absolute, not parent-relative
+
+**Context**: Retargeting training (Entry 40) showed Lc=0.0000 from epoch 2 onward and Ltemp constant throughout. Root cause investigation via comparison with Yan & Lee (2026).
+
+**Bug**: `shadow_fk.py` computed joint quaternions as absolute rotations in palm frame:
+```python
+# WRONG (before fix)
+R_palm_inv @ ret[link].get_matrix()[:, :3, :3]   # absolute in palm frame
+```
+
+Dong kinematics (human quats) uses parent-relative convention: MCP = R_i^0 (rotation relative to wrist/parent), PIP = R_j^{j-1} (relative to MCP parent), DIP = R_{j+1}^j (relative to PIP parent). This is the standard joint-by-joint representation -- the same convention SMPL uses for whole-body, which is exactly why D_R works in Yan.
+
+The mismatch: human PIP quat at 45 deg flex with MCP straight = [cos(22.5), sin(22.5), 0, 0]. Robot PIP quat (old) = absolute in palm = accumulated rotation including MCP and all structural offsets. These produce very different numbers for the same physical pose.
+
+**Consequence**: D_R(human, robot) was always large and noisy regardless of semantic similarity. Cross-embodiment pairs never became positives in triplet mining. Both human and robot anchors found same-embodiment positives trivially. Lc collapsed to 0 after epoch 1 (when L_rec=5 forced z_r into a compact cluster, making human-robot latent gap large).
+
+**Fix**: Added `JOINT_PARENT_LINKS` table to `shadow_fk.py` and changed `forward()` to compute parent-relative quaternions:
+```python
+# CORRECT (after fix)
+R_cache[parent].transpose(-1, -2) @ R_cache[child]   # parent-relative
+```
+
+Verified: FFJ3 at 45 deg flex returns [0.924, 0.383, 0, 0] regardless of FFJ4 value -- correct parent-relative behavior. Zero pose returns identity for all finger joints (non-identity for LFJ5/THJ5 which have structural URDF offsets, also correct).
+
+**Why Yan does not have this problem**: Yan uses HumanML3D/SMPL where human joints are local/parent-relative by definition. Robot FK via PyTorch-Kinematics also yields parent-relative rotations when computed correctly. Our implementation had an error in the reference frame for non-palm-parent joints.
+
+**Files changed**: `grasp-model/src/grasp_gcn/network/shadow_fk.py`
+
+**Expected impact**: D_R cross-embodiment now meaningful. Cross-embodiment triplet positives should appear. Lc should be nonzero throughout training.
+
+**Status**: Fixed. Re-training needed to validate.
+
+## Entry 43 -- 2026-04-24: Stage 2 -- Dong-style kinematics applied to robot FK positions
+
+**Context**: After fixing the Shadow FK convention bug (Entry 42), D_R cross-embodiment was still broken because parent-relative URDF joint quaternions are not semantically comparable to Dong human quaternions. URDF joints split what is anatomically one MCP orientation into two separate DOFs (abduction + flexion), using different reference frames per robot.
+
+**Decision**: Implement Stage 2 as a generic Dong Block 1 + Block 3 algorithm applied directly to FK link positions (not FK rotation matrices). The key insight: Dong is a position-to-quaternion algorithm -- it does not care whether positions come from a sensor (MediaPipe) or from FK of a URDF. The URDF link origins are pivot points of joints, directly analogous to MediaPipe keypoints (both are 3D positions of anatomical joint centers).
+
+**What Stage 2 does**:
+1. Extract XYZ positions of relevant links from `fk_out[link][:, :3, 3]`
+2. Block 1 (Dong Eq. 5-7): build palm reference frame from wrist anchor + 3 MCP positions
+3. Block 3 MCP (Eq. 20-22): compute finger orientation in palm frame from consecutive positions
+4. Block 3 PIP/DIP (Eq. 29-34): compute flexion angles Ry(beta) in parent frame
+5. Output: `[B, N, 4]` quaternions in Dong convention (wxyz, w>=0), `N = num_fingers * layers`
+
+**Why this is correct for D_R**: Dong's MCP quaternion encodes "where does this finger point in the palm frame" -- a single 3D orientation combining abduction and flexion. This is the same representation on both human and robot sides, making D_R meaningful. Parent-relative URDF quats were non-comparable because human has 1 MCP DOF per finger while Shadow has 2 (FFJ4 + FFJ3).
+
+**Generic via YAML config**: Each robot needs a YAML mapping file specifying:
+- `wrist_link`: anchor link for Block 1
+- `frame_index_mcp`, `frame_middle_mcp`, `frame_ring_mcp`: 3 links to build palm frame
+- `fingers`: per-finger chains of link names [MCP, PIP, DIP, TIP]
+
+The algorithm (Block 1 + Block 3) is identical for all robots. Only the YAML changes.
+
+**Shadow Hand link mapping insight**: In Shadow URDF, FFJ4 (abduction) and FFJ3 (flexion) are colocated -- `ffknuckle` and `ffproximal` have identical world positions (FFJ3 has `origin xyz="0 0 0"`). The proximal phalanx starts at `ffmiddle` (45mm above). Therefore the correct chain is `[ffknuckle, ffmiddle, ffdistal, fftip]`, not `[ffknuckle, ffproximal, ...]`.
+
+**Allegro Hand link mapping**: Joint axes in URDF determine anatomical role: `axis Z` = abduction (joint_0.0/4.0/8.0), `axis Y` = flexion (joint_1.0/5.0/9.0 = MCP, joint_2.0/6.0/10.0 = PIP, joint_3.0/7.0/11.0 = DIP). Correct chain: `[link_1.0, link_2.0, link_3.0, link_3.0_tip]`.
+
+**Output sizes**:
+- Shadow (5 fingers x 3 layers): `[B, 15, 4]` -- isomorphic to human Dong
+- Allegro (4 fingers x 3 layers): `[B, 12, 4]`
+- Robots with 2 links/finger: `[B, N_fingers*2, 4]` (MCP + PIP only)
+
+**Block 2 (calibration) not needed for robots**: Human Dong requires per-subject calibration because anatomical link lengths vary between people. Robot geometry is fixed in the URDF -- link lengths are constants known from joint origins. No calibration step.
+
+**Validation**:
+- Quaternion norms = 1.000000 across 1000 samples (both Shadow and Allegro)
+- w >= 0 always enforced
+- Zero pose: index/middle/ring/pinky MCP = identity (fingers aligned with palm frame)
+- Zero pose: thumb MCP = [0.924, 0, 0, -0.383] (structural offset from URDF, correct)
+- PIP/DIP at zero pose = identity (no flexion)
+
+**Files created**:
+- `grasp-model/scripts/dong_stage2.py` -- generic Dong Block 1+3 in batched PyTorch
+- `grasp-model/scripts/hand_configs/shadow_hand_right.yaml`
+- `grasp-model/scripts/hand_configs/allegro_hand_right.yaml`
+
+**Files modified**:
+- `grasp-model/scripts/robot_randomizer.py` -- added `run_dong_stage2()` method and `--hand-config` CLI arg
+
+**Status**: Stage 2 implemented and validated for Shadow Hand and Allegro Hand. Stage 3 (subspace selection for D_R) pending.

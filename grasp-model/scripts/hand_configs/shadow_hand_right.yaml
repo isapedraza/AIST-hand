@@ -1,0 +1,26 @@
+robot: shadow_hand_right
+
+# Block 1: wrist anchor + 3 MCP positions to build palm frame
+# Dong Eq. 5-7: Y0 = norm(ring_mcp - index_mcp), Z0 = norm(norm(middle_mcp - wrist) x Y0)
+wrist_link: palm
+frame_index_mcp: ffknuckle    # d5 analog
+frame_middle_mcp: mfknuckle   # d9 analog
+frame_ring_mcp: rfknuckle     # d13 analog
+
+# Block 3: per-finger link chains [MCP, PIP, DIP, TIP]
+# Note: *knuckle and *proximal are colocated (FFJ3/MFJ3/etc are zero-translation joints).
+# Actual phalanx geometry: knuckle -> middle (proximal phalanx, ~45mm)
+#                          middle  -> distal (middle phalanx, ~25mm)
+#                          distal  -> tip    (distal phalanx, ~26mm)
+# Thumb: thbase/thproximal colocated -> use thbase -> thmiddle -> thdistal -> thtip
+fingers:
+  thumb:
+    chain: [thbase, thmiddle, thdistal, thtip]
+  index:
+    chain: [ffknuckle, ffmiddle, ffdistal, fftip]
+  middle:
+    chain: [mfknuckle, mfmiddle, mfdistal, mftip]
+  ring:
+    chain: [rfknuckle, rfmiddle, rfdistal, rftip]
+  pinky:
+    chain: [lfknuckle, lfmiddle, lfdistal, lftip]
