@@ -10,6 +10,13 @@ Output contract matches what stage3_assemble expects in human_batch:
     labels     list[str]   20 joint labels (fixed)
     tips       [B, 5, 3]   fingertip positions normalized by hand_length
     tip_labels list[str]   ["thumb","index","middle","ring","pinky"]
+
+Temporal pairs (get_batch_temporal):
+    quats_t    [B, 20, 4]  frame t
+    quats_t1   [B, 20, 4]  frame t+1 (same trial, consecutive frame_id)
+    tips_t     [B, 5, 3]
+    tips_t1    [B, 5, 3]
+    labels, tip_labels (fixed)
 """
 
 from __future__ import annotations
@@ -40,6 +47,9 @@ DONG_LABELS: list[str] = [
 
 TIP_LABELS: list[str] = ["thumb", "index", "middle", "ring", "pinky"]
 
+# Trial identity columns — frames with identical values are in the same sequence
+_TRIAL_COLS: list[str] = ["subject_id", "date_id", "object_id", "trial_id", "cam"]
+
 # CSV column groups
 _QUAT_COLS: list[str] = [
     f"q{j}_{c}" for j in range(1, 21) for c in ("w", "x", "y", "z")
@@ -53,7 +63,6 @@ _TIP_COLS: list[str] = [
     "PINKY_TIP_x",        "PINKY_TIP_y",        "PINKY_TIP_z",
 ]
 
-# Middle finger tip columns for hand_length computation
 _MIDDLE_TIP_COLS: list[str] = [
     "MIDDLE_FINGER_TIP_x", "MIDDLE_FINGER_TIP_y", "MIDDLE_FINGER_TIP_z"
 ]
@@ -88,7 +97,10 @@ class HumanDongLoader:
         # Filter by subject split
         lo, hi = _SPLIT_SUBJECTS[split]
         mask = (df["subject_id"] >= lo) & (df["subject_id"] <= hi)
-        df = df[mask].reset_index(drop=True)
+        df = df[mask].copy()
+
+        # Sort by trial identity + frame_id to ensure consecutive indices = consecutive frames
+        df = df.sort_values(_TRIAL_COLS + ["frame_id"]).reset_index(drop=True)
         print(f"[HumanDongLoader] {len(df):,} frames after split filter.")
 
         # Compute hand_length per subject (median of wrist->middle_tip distance)
@@ -111,11 +123,26 @@ class HumanDongLoader:
         self._quats = torch.from_numpy(quats_np).to(self.device)  # [N, 20, 4]
         self._tips  = torch.from_numpy(tips_np).to(self.device)   # [N, 5, 3]
         self._N = len(df)
-        print(f"[HumanDongLoader] Ready. quats={tuple(self._quats.shape)}, tips={tuple(self._tips.shape)}")
+
+        # Build next_idx: for each frame i, next_idx[i] = i+1 if same trial, else -1
+        # Two consecutive rows are in the same trial iff all _TRIAL_COLS match
+        trial_keys = df[_TRIAL_COLS].values  # [N, 5]
+        same_trial = np.all(trial_keys[:-1] == trial_keys[1:], axis=1)  # [N-1] bool
+        next_idx = np.where(same_trial, np.arange(1, self._N), -1)      # [N-1]
+        next_idx = np.append(next_idx, -1)                               # last frame: always -1
+
+        # valid_indices: frames that have a valid t+1 in the same trial
+        valid_mask = next_idx != -1
+        self._next_idx = torch.from_numpy(next_idx).to(self.device)
+        self._valid_idx = torch.from_numpy(np.where(valid_mask)[0].astype(np.int64)).to(self.device)
+
+        n_valid = self._valid_idx.shape[0]
+        print(f"[HumanDongLoader] Ready. quats={tuple(self._quats.shape)}, "
+              f"valid temporal pairs={n_valid:,} ({100*n_valid/self._N:.1f}%)")
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:
         """
-        Sample B random frames.
+        Sample B random frames (no temporal pairing).
 
         Returns:
             quats      [B, 20, 4]
@@ -130,5 +157,32 @@ class HumanDongLoader:
             "quats":      self._quats[idx],
             "labels":     self.labels,
             "tips":       self._tips[idx],
+            "tip_labels": self.tip_labels,
+        }
+
+    def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
+        """
+        Sample B consecutive frame pairs (t, t+1) from the same trial.
+
+        Returns:
+            quats_t    [B, 20, 4]  frame t
+            quats_t1   [B, 20, 4]  frame t+1
+            tips_t     [B, 5, 3]   frame t  (normalized)
+            tips_t1    [B, 5, 3]   frame t+1 (normalized)
+            labels     list[str]   (fixed, len 20)
+            tip_labels list[str]   (fixed, len 5)
+        """
+        if seed is not None:
+            torch.manual_seed(seed)
+        # Sample B positions from valid_idx (frames that have a t+1 in the same trial)
+        pos = torch.randint(0, self._valid_idx.shape[0], (B,), device=self.device)
+        idx_t  = self._valid_idx[pos]
+        idx_t1 = self._next_idx[idx_t]
+        return {
+            "quats_t":    self._quats[idx_t],
+            "quats_t1":   self._quats[idx_t1],
+            "tips_t":     self._tips[idx_t],
+            "tips_t1":    self._tips[idx_t1],
+            "labels":     self.labels,
             "tip_labels": self.tip_labels,
         }
