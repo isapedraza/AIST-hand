@@ -2371,3 +2371,61 @@ The algorithm (Block 1 + Block 3) is identical for all robots. Only the YAML cha
 - `grasp-model/scripts/robot_randomizer.py` -- added `run_dong_stage2()` method and `--hand-config` CLI arg
 
 **Status**: Stage 2 implemented and validated for Shadow Hand and Allegro Hand. Stage 3 (subspace selection for D_R) pending.
+
+## Entry 45 -- 2026-04-25: Stage 2 completion -- robot_randomizer integration, normalization, validation
+
+**Status**: IMPLEMENTED and validated.
+
+**What was done**:
+
+1. **Merged dong_stage2.py into robot_randomizer.py** -- Stage 2 geometry functions (`_dong_block1_wrist_frame`, `_dong_block3_mcp`, `_dong_block3_pip_dip`, etc.) live as module-level functions inside `robot_randomizer.py`. `dong_stage2.py` deleted. Reason: in training, Stage 1 (FK) and Stage 2 (Dong) are always called together as one atomic operation per step (Yan 2026, Section Datasets: "at each training step, over 10^5 new robot poses are sampled").
+
+2. **Added `sample_dong()` method** -- single call for training loop:
+   ```python
+   q, quats, labels, meta = rnd.sample_dong(num_samples, hand_config_path, seed)
+   ```
+   Returns sampled joint angles, Dong quaternions, labels, and meta with normalized tips.
+
+3. **Added fingertip normalization** -- `meta["tips"]` is `[B, F, 3]` in Dong palm frame, divided by `hand_length`. `hand_length` = `||palm -> mftip||` at q=0, computed once and cached in `self._hand_length`. Equivalent to Yan Eq. 2 normalization (shoulder-relative, divided by arm length).
+
+4. **Validated correctness**:
+   - q=0: all PIP/DIP = (1,0,0,0), middle tip norm = 1.0 exactly.
+   - FFJ2=pi/2: index_pip = (0.7071, 0, 0.7071, 0) = Ry(90 deg).
+   - Shadow hand_length = 19.53 cm (matches datasheet: ~45+25+26 mm finger + ~95 mm palm).
+   - D_R (human open hand vs Shadow q=0) = 0.017 mean per joint -- correctly low for matching poses.
+
+**Stage 2 output** (`run_dong_stage2` and `sample_dong`):
+- `quats`: `[B, N, 4]` wxyz quaternions (w>=0). Shadow: N=15, Allegro: N=12.
+- `labels`: list of strings (`thumb_mcp`, `index_pip`, ...).
+- `meta["tips"]`: `[B, F, 3]` fingertip XYZ / hand_length (dimensionless). Shadow: F=5, Allegro: F=4.
+- `meta["tip_labels"]`: finger names.
+- `meta["hand_length"]`: float (meters).
+- `meta["R_wrist"]`: `[B, 3, 3]` Dong palm frame.
+
+**Why tips normalized by hand_length**: Yan D_ee = `||p_A^ee - p_B^ee||_2` where positions are normalized by limb length to be scale-invariant across embodiments. For hands: hand_length = palm to middle fingertip at q=0.
+
+**Robots with fewer fingers/joints**: YAML defines exactly which links exist. Allegro has no pinky -> 12 quats, 4 tips. Stage 3 (pending) will select the common subspace for cross-robot D_R comparison.
+
+**Abduction captured implicitly**: FFJ4 (abduction) moves the MCP knuckle laterally -> `mcp_l` changes -> `block3_mcp` Xi vector changes -> MCP quat encodes abduction. No explicit abduction term needed.
+
+## Entry 44 -- 2026-04-24: URDF link origin clarification
+
+**Question**: When FK returns the transform of a link, what physical point does it correspond to?
+
+**Answer**: The origin of a child link in URDF is placed exactly at the joint that connects it to its parent. There is no distinction between "joint position" and "child link origin" -- they are the same point.
+
+```xml
+<joint name="FFJ4">
+  <parent link="palm"/>
+  <child link="ffknuckle"/>
+  <origin xyz="0.033 0 0.095"/>   <!-- ffknuckle origin placed HERE -->
+</joint>
+```
+
+`fk_out["ffknuckle"][:, :3, 3]` = world position of the origin of link ffknuckle = world position of joint FFJ4 = position of the MCP knuckle.
+
+This holds for every link in URDF: its origin is at the joint connecting it to its parent.
+
+**Consequence for Stage 2**: FK positions of Shadow links are directly analogous to MediaPipe keypoints -- both are 3D positions of anatomical joint centers. The comparison is geometrically valid.
+
+**Citation**: ROS URDF documentation (https://docs.ros.org/en/humble/Tutorials/Intermediate/URDF/Building-a-Visual-Robot-Model-with-URDF-from-Scratch.html): "The origin for the child link will be positioned by the joint origin, regardless of the child link's visual origin tag. The joint origin explicitly determines the child link frame location in the kinematic chain."
