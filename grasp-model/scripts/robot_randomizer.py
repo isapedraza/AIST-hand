@@ -231,6 +231,71 @@ def _load_hand_config(path: str | Path) -> dict:
         return yaml.safe_load(f)
 
 
+# =============================================================================
+# STAGE 3 — CROSS-EMBODIMENT SUBSPACE FILTER
+# =============================================================================
+
+def filter_to_subspace(
+    quats_h: torch.Tensor,
+    labels_h: list[str],
+    quats_r: torch.Tensor,
+    labels_r: list[str],
+    tips_h: torch.Tensor,
+    tip_labels_h: list[str],
+    tips_r: torch.Tensor,
+    tip_labels_r: list[str],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str], list[str]]:
+    """
+    Filter quaternions and fingertip positions to the common subspace.
+
+    Joint labels have the form "<finger>_<joint>" (e.g. "thumb_mcp").
+    Tip labels have the form "<finger>" (e.g. "thumb").
+    Common fingers are derived from the common joint labels.
+
+    Args:
+        quats_h       : [B, Nh, 4]  human Dong quaternions
+        labels_h      : list[str]   len Nh
+        quats_r       : [B, Nr, 4]  robot Dong quaternions
+        labels_r      : list[str]   len Nr
+        tips_h        : [B, Fh, 3]  human fingertip positions (normalized)
+        tip_labels_h  : list[str]   len Fh  (e.g. ["thumb","index","middle","ring","pinky"])
+        tips_r        : [B, Fr, 3]  robot fingertip positions (normalized)
+        tip_labels_r  : list[str]   len Fr
+
+    Returns:
+        quats_h_sub     : [B, K, 4]
+        quats_r_sub     : [B, K, 4]
+        tips_h_sub      : [B, Fc, 3]
+        tips_r_sub      : [B, Fc, 3]
+        common_labels   : list[str] len K  (joint subspace)
+        common_fingers  : list[str] len Fc (finger subspace)
+    """
+    # --- quaternion subspace ---
+    common = [l for l in labels_r if l in labels_h]
+    if not common:
+        raise ValueError(f"No common joint labels between human {labels_h} and robot {labels_r}")
+    idx_h = [labels_h.index(l) for l in common]
+    idx_r = [labels_r.index(l) for l in common]
+
+    # --- tip subspace: fingers present in both AND in common joint labels ---
+    common_fingers_from_joints = list(dict.fromkeys(l.split("_")[0] for l in common))
+    common_fingers = [f for f in common_fingers_from_joints
+                      if f in tip_labels_h and f in tip_labels_r]
+    if not common_fingers:
+        raise ValueError(f"No common fingers for tips: human={tip_labels_h} robot={tip_labels_r}")
+    tidx_h = [tip_labels_h.index(f) for f in common_fingers]
+    tidx_r = [tip_labels_r.index(f) for f in common_fingers]
+
+    return (
+        quats_h[:, idx_h, :],
+        quats_r[:, idx_r, :],
+        tips_h[:, tidx_h, :],
+        tips_r[:, tidx_r, :],
+        common,
+        common_fingers,
+    )
+
+
 @dataclass
 class JointSpec:
     name: str
@@ -472,9 +537,57 @@ class URDFRandomizer:
         return q, quats, labels, meta
 
     # =========================================================================
-    # STAGE 3 — PROJECT/FILTER TO THE COMPARABLE SUBSPACE FOR HUMAN-ROBOT USE
-    #            (PLACEHOLDER, NOT IMPLEMENTED IN THIS VERSION)
+    # STAGE 3 — CROSS-EMBODIMENT TRAINING BATCH API
     # =========================================================================
+
+    def stage3_assemble(
+        self,
+        hand_config_path: str | Path,
+        human_batch: dict,
+        B: int,
+        seed: int | None = None,
+    ) -> dict:
+        """
+        Public API between robot sampler and training loop.
+
+        Args:
+            hand_config_path : path to hand YAML (allegro/leap/shadow)
+            human_batch      : dict with keys:
+                                 "quats"       [B, Nh, 4]  Dong quaternions
+                                 "labels"      list[str]   len Nh  (e.g. ["thumb_mcp", ...])
+                                 "tips"        [B, Fh, 3]  normalized fingertip positions
+                                 "tip_labels"  list[str]   len Fh  (e.g. ["thumb","index",...])
+            B                : number of robot poses to sample
+
+        Returns flat dict — everything the training loop needs, nothing more:
+            q_r            [B, J]     -> E_r input (raw joint angles)
+            quats_h        [B, Nh, 4] -> E_h input (full human quats, unfiltered)
+            quats_h_sub    [B, K, 4]  -> D_R human side (common joints only)
+            quats_r_sub    [B, K, 4]  -> D_R robot side (common joints only)
+            tips_h_sub     [B, Fc, 3] -> D_ee human (common fingers only, normalized)
+            tips_r_sub     [B, Fc, 3] -> D_ee robot (common fingers only, normalized)
+            common_labels  list[str]  -> joint labels in subspace (len K)
+            common_fingers list[str]  -> finger names in subspace (len Fc)
+        """
+        q_r, quats_r, labels_r, meta_r = self.sample_dong(B, hand_config_path, seed=seed)
+
+        quats_h_sub, quats_r_sub, tips_h_sub, tips_r_sub, common_labels, common_fingers = filter_to_subspace(
+            human_batch["quats"], human_batch["labels"],
+            quats_r, labels_r,
+            human_batch["tips"], human_batch["tip_labels"],
+            meta_r["tips"], meta_r["tip_labels"],
+        )
+
+        return {
+            "q_r":            q_r,
+            "quats_h":        human_batch["quats"],
+            "quats_h_sub":    quats_h_sub,
+            "quats_r_sub":    quats_r_sub,
+            "tips_h_sub":     tips_h_sub,
+            "tips_r_sub":     tips_r_sub,
+            "common_labels":  common_labels,
+            "common_fingers": common_fingers,
+        }
 
     def print_summary(self, num_samples: int, q_samples: torch.Tensor, fk_out: dict[str, torch.Tensor]) -> None:
         n_links = len(self.link_names)
