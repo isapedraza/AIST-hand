@@ -19,17 +19,22 @@ from robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 
 # ---------------------------------------------------------------------------
-# Config (hardcoded for now)
+# Config
 # ---------------------------------------------------------------------------
-CSV_PATH        = Path("/home/yareeez/AIST-hand/grasp-model/data/processed/hograspnet_abl11.csv")
-URDF_PATH       = Path("/home/yareeez/dex-urdf/robots/hands/shadow_hand/shadow_hand_right.urdf")
-HAND_CONFIG     = Path("/home/yareeez/AIST-hand/grasp-model/data/hand_configs/shadow_hand_right.yaml")
-DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
-B               = 1000    # batch size (target: 1e5, start small)
-N_STEPS         = 10      # skeleton: just verify shapes
-LOG_EVERY       = 1       # print losses every N steps
-CKPT_EVERY      = 5       # save checkpoint every N steps
-CKPT_PATH       = Path("/home/yareeez/AIST-hand/grasp-model/checkpoints/stage1_latest.pt")
+# Change REPO_ROOT to your local path or Google Drive mount point in Colab.
+REPO_ROOT  = Path("/home/yareeez/AIST-hand")
+DEX_ROOT   = Path("/home/yareeez/dex-urdf")   # separate repo with URDFs
+
+CSV_PATH    = REPO_ROOT / "grasp-model/data/processed/hograspnet_abl11.csv"
+URDF_PATH   = DEX_ROOT  / "robots/hands/shadow_hand/shadow_hand_right.urdf"
+HAND_CONFIG = REPO_ROOT / "grasp-model/data/hand_configs/shadow_hand_right.yaml"
+CKPT_PATH   = REPO_ROOT / "grasp-model/checkpoints/stage1_latest.pt"
+
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
+B          = 1000    # batch size (target: 1e5, start small)
+N_STEPS    = 10      # training steps (target: thousands)
+LOG_EVERY  = 1       # print losses every N steps
+CKPT_EVERY = 5       # save checkpoint every N steps
 
 # ---------------------------------------------------------------------------
 # Setup
