@@ -97,11 +97,10 @@ for step in range(N_STEPS):
     common_fingers = batch["common_fingers"] # list[str]
 
     # === HUMAN ===
-    quats_both = torch.cat([quats_h, quats_h_t1], dim=0)          # [2B, 20, 4]
-    graph      = quat_to_graph(quats_both)                          # PyG Batch de 2B grafos
-    z_both     = E_h(graph.x, graph.edge_index, graph.batch)       # [2B, z_dim]
-    z_t        = z_both[:B]                                         # [B, z_dim] frame t
-    z_t1       = z_both[B:]                                         # [B, z_dim] frame t+1
+    graph_t  = quat_to_graph(quats_h)
+    graph_t1 = quat_to_graph(quats_h_t1)
+    z_t      = E_h(graph_t.x,  graph_t.edge_index,  graph_t.batch)   # [B, z_dim]
+    z_t1     = E_h(graph_t1.x, graph_t1.edge_index, graph_t1.batch)  # [B, z_dim]
 
     # === ROBOT ===
     h_r = E_r(q_r)          # [B, 1024]
