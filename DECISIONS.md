@@ -2503,4 +2503,4 @@ common_fingers list[str]
 
 **Expected impact**: Resolution unblocks Stage 4 training.
 
-**References**: Yan et al. 2026 used A4000 (16 GB) with MLP encoder -- no GATConv. GAT was adopted here to exploit hand kinematic graph structure (Dong quaternions per joint).
+**References**: Yan et al. 2026 used A4000 (16 GB) with MLP encoder -- no GATConv. GAT specifically was adopted here based on Lee et al. 2023 (SAME: Skeleton-Agnostic Motion Embedding). Pending: review SAME to determine whether GAT attention is essential to their method or can be replaced by simpler graph convolution (GCNConv) without losing the key insight.
