@@ -2431,6 +2431,41 @@ This holds for every link in URDF: its origin is at the joint connecting it to i
 **Citation**: ROS URDF documentation (https://docs.ros.org/en/humble/Tutorials/Intermediate/URDF/Building-a-Visual-Robot-Model-with-URDF-from-Scratch.html): "The origin for the child link will be positioned by the joint origin, regardless of the child link's visual origin tag. The joint origin explicitly determines the child link frame location in the kinematic chain."
 
 ---
+## Entry 47 -- 2026-04-25: Stage 3 complete -- CrossEmbodimentSampler, loaders, and cross_emb package
+
+**Summary**: Stage 3 (cross-embodiment training data pipeline) is complete and validated.
+
+**Files implemented**:
+- `grasp-model/scripts/human_loader.py` -- `HumanLoader`: loads `hograspnet_abl11.csv` into RAM, S1 subject split, per-subject hand_length normalization (median ||middle_tip||), temporal pairs via `next_idx` array. 1,015,342 train frames, 98.8% valid temporal pairs.
+- `grasp-model/scripts/robot_loader.py` -- `RobotLoader` (formerly `URDFRandomizer`): URDF FK + Dong-style kinematics, samples random joint configs uniformly. Robot-agnostic via hand YAML config.
+- `grasp-model/scripts/cross_embodiment_sampler.py` -- `CrossEmbodimentSampler`: single entry point for training loop. Wraps both loaders and assembles the batch. `get_batch(B)` and `get_batch_temporal(B)`.
+
+**Output contract of `get_batch(B)`**:
+```
+q_r            [B, J]      raw robot joint angles          -> E_r
+quats_h        [B, 20, 4]  human Dong quats frame t        -> E_h
+quats_h_sub    [B, K, 4]   common joints only              -> D_R human
+quats_r_sub    [B, K, 4]   common joints only              -> D_R robot
+tips_h_sub     [B, Fc, 3]  common fingers only             -> D_ee human
+tips_r_sub     [B, Fc, 3]  common fingers only             -> D_ee robot
+common_labels  list[str]
+common_fingers list[str]
+```
+
+`get_batch_temporal` adds `quats_h_t1 [B,20,4]` and `tips_h_t1 [B,Fh,3]`.
+
+**v_H^hand for dexterous hands**: Yan uses wrist velocity (SMPL has no fingers). For dexterous hands, analog is velocity per fingertip: `v = tips_t1 - tips_t` giving `[B, Fc, 3]`. One velocity vector per finger EE, not a centroid. Robot poses for L_temporal are retargeted (forward pass), not random samples.
+
+**Package reorganization**:
+- `grasp-model/src/cross_emb/` -- new package for cross-embodiment network (separated from `grasp_gcn/` classifier)
+- Moved: `human_encoder.py`, `cross_embodiment.py`, `robot_embedding.py`, `losses.py`
+- Deleted: `shadow_fk.py` (replaced by `RobotLoader`), `retarget_dataset.py` (replaced by `HumanLoader`)
+
+**Pending**:
+1. `cross_emb/graph_utils.py` -- `quats_to_batch(quats [B,20,4]) -> PyG Batch` for E_h input
+2. Fix `losses.py` -- remove hardcoded Shadow indices, use sampler subspace contract
+3. New `train_retarget.py` -- connect sampler + encoders + corrected losses
+
 ## Entry 46 -- 2026-04-25: LEAP Hand YAML validation and chain_positions addition
 
 **Context**: LEAP hand YAML was created for Stage 3 testing (cross-robot with fewer fingers than human). Two issues required investigation: (1) q=0 producing non-identity PIP/DIP quaternions, (2) hand_length underestimation due to bent q=0 pose.
