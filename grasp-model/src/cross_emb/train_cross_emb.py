@@ -129,15 +129,16 @@ for step in range(N_STEPS):
     all_tips = torch.cat([tips_h_sub.flatten(1), tips_r_sub.flatten(1)], dim=0)  # [2B, Fc*3]
     # subsample to avoid [2B, 2B] matrix OOM at large B
     B2   = z_all.shape[0]
-    idx  = torch.randperm(B2, device=DEVICE)[:N_TRIPLETS]
+    n    = min(N_TRIPLETS, B2)
+    idx  = torch.randperm(B2, device=DEVICE)[:n]
     zs   = z_all[idx]
     qs   = all_q[idx]
     ts   = all_tips[idx]
-    dot  = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)              # [N, N, K]
-    D_R  = (1 - dot ** 2).sum(-1)                                   # [N, N]
-    D_ee = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1)         # [N, N]
+    dot  = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)              # [n, n, K]
+    D_R  = (1 - dot ** 2).sum(-1)                                   # [n, n]
+    D_ee = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1)         # [n, n]
     S    = D_R + D_ee
-    eye  = torch.eye(N_TRIPLETS, dtype=torch.bool, device=DEVICE)
+    eye  = torch.eye(n, dtype=torch.bool, device=DEVICE)
     pos_idx = S.masked_fill(eye, float('inf')).argmin(dim=1)
     neg_idx = S.masked_fill(eye, float('-inf')).argmax(dim=1)
     L_cont  = torch.relu((zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + 0.05).mean()
