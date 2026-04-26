@@ -2488,3 +2488,19 @@ common_fingers list[str]
 **LEAP YAML**: uses `*_tip_head` as chain endpoints (physical fingertip), `palm_lower` as wrist anchor, 4 fingers (no pinky). Stage 3 will select {thumb, index, middle, ring} as common subspace for human-LEAP D_R.
 
 **Status**: Implemented. LEAP YAML validated against URDF geometry. Shadow Stage 2 remains validated.
+
+---
+## Entry 48 -- 2026-04-26: Stage 4 training -- OOM on T4 GPU, pending architecture decision
+
+**Context**: First run of Stage 4 training loop (train_stage1_colab.ipynb) on Colab T4 (14.56 GB VRAM) with B=100k fails OOM in E_h (GATConv). Splitting the 2B forward pass into two separate B-size passes halved memory but still OOM at B=50k. Root cause: GATConv activations (~3.6 GB for two passes) plus 8-layer MLPs called 5 times per step (E_X x2, D_X x3) accumulate ~12 GB of activations for backward.
+
+**Decision**: PENDING. Two options on the table:
+
+1. **Lower B** (e.g. B=20k) -- keeps architecture identical, sacrifices contrastive pool diversity. Quick fix.
+2. **Replace GATConv with GCNConv** -- maintains graph structure, drastically reduces memory (no attention weights), allows B closer to Yan's 100k.
+
+**Alternatives considered**: Gradient checkpointing (complex to implement for PyG), chunked mini-batch accumulation (complex), MLP flat encoder like Yan (loses graph structure entirely).
+
+**Expected impact**: Resolution unblocks Stage 4 training.
+
+**References**: Yan et al. 2026 used A4000 (16 GB) with MLP encoder -- no GATConv. GAT was adopted here to exploit hand kinematic graph structure (Dong quaternions per joint).
