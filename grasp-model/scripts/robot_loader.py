@@ -252,7 +252,7 @@ class RobotLoader:
         self.continuous_range = float(continuous_range)
 
         urdf_bytes = self.urdf_path.read_bytes()
-        self.chain = pk.build_chain_from_urdf(urdf_bytes)
+        self.chain = pk.build_chain_from_urdf(urdf_bytes).to(self.device)
         self.chain_joint_names = list(self.chain.get_joint_parameter_names())
         self.joint_specs, self.robot_name, self.link_names = self._parse_urdf_metadata(self.urdf_path)
 
