@@ -25,8 +25,11 @@ CSV_PATH        = Path("/home/yareeez/AIST-hand/grasp-model/data/processed/hogra
 URDF_PATH       = Path("/home/yareeez/dex-urdf/robots/hands/shadow_hand/shadow_hand_right.urdf")
 HAND_CONFIG     = Path("/home/yareeez/AIST-hand/grasp-model/data/hand_configs/shadow_hand_right.yaml")
 DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
-B               = 1000   # batch size (target: 1e5, start small)
-N_STEPS         = 10     # skeleton: just verify shapes
+B               = 1000    # batch size (target: 1e5, start small)
+N_STEPS         = 10      # skeleton: just verify shapes
+LOG_EVERY       = 1       # print losses every N steps
+CKPT_EVERY      = 5       # save checkpoint every N steps
+CKPT_PATH       = Path("/home/yareeez/AIST-hand/grasp-model/checkpoints/stage1_latest.pt")
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -93,20 +96,10 @@ for step in range(N_STEPS):
     z_both     = E_h(graph.x, graph.edge_index, graph.batch)       # [2B, z_dim]
     z_t        = z_both[:B]                                         # [B, z_dim] frame t
     z_t1       = z_both[B:]                                         # [B, z_dim] frame t+1
-    if step == 0:
-        print(f"z_t  {tuple(z_t.shape)}")
-        print(f"z_t1 {tuple(z_t1.shape)}")
-        print(f"z_t  min={z_t.min().item():.3f} max={z_t.max().item():.3f} (debe ser [-1, 1])")
-        print(f"z_t  NaN={z_t.isnan().any().item()} Inf={z_t.isinf().any().item()}")
-        print(f"z_t[0] = {z_t[0].detach().tolist()}")
 
     # === ROBOT ===
     h_r = E_r(q_r)          # [B, 1024]
     z_r = E_X(h_r)          # [B, 16]
-    if step == 0:
-        print(f"z_r  {tuple(z_r.shape)}")
-        print(f"z_r  min={z_r.min().item():.3f} max={z_r.max().item():.3f} (debe ser [-1, 1])")
-        print(f"z_r  NaN={z_r.isnan().any().item()} Inf={z_r.isinf().any().item()}")
 
     # === DECODE ===
     h_dec   = D_X(z_r)      # [B, 1024]     — para L_rec
@@ -116,10 +109,6 @@ for step in range(N_STEPS):
     z_h_rt     = E_X(h_ltc)            # [B, 16]    — round-trip humano
 
     q_r_hat_t1 = D_r(D_X(z_t1))       # [B, J]     — robot retargeteado en t+1
-    if step == 0:
-        print(f"q_r_hat    {tuple(q_r_hat.shape)}")
-        print(f"q_r_hat_t1 {tuple(q_r_hat_t1.shape)}")
-        print(f"z_h_rt     {tuple(z_h_rt.shape)}")
 
     # === LOSSES ===
     # L_rec: robot reconstruction ‖q_r - q_r_hat‖
@@ -166,15 +155,25 @@ for step in range(N_STEPS):
     L_temp  = (v_human - v_robot).norm(dim=-1).mean()
 
     L_total = LAMBDA_C * L_cont + LAMBDA_REC * L_rec + LAMBDA_LTC * L_ltc + LAMBDA_TMP * L_temp
-    if step == 0:
-        print(f"L_cont={L_cont.item():.4f} L_rec={L_rec.item():.4f} L_ltc={L_ltc.item():.4f} L_temp={L_temp.item():.4f}")
-        print(f"L_total={L_total.item():.4f}")
 
     # === BACKWARD ===
     optimizer.zero_grad()
     L_total.backward()
     optimizer.step()
 
-    print(f"step {step:03d} ok")
+    if step % LOG_EVERY == 0:
+        print(f"step {step:04d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f}")
 
-print("skeleton ok")
+    if step % CKPT_EVERY == 0:
+        CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        torch.save({
+            "step":      step,
+            "E_h":       E_h.state_dict(),
+            "E_r":       E_r.state_dict(),
+            "E_X":       E_X.state_dict(),
+            "D_X":       D_X.state_dict(),
+            "D_r":       D_r.state_dict(),
+            "optimizer": optimizer.state_dict(),
+        }, CKPT_PATH)
+
+print("done")
