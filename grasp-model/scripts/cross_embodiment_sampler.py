@@ -27,8 +27,8 @@ from pathlib import Path
 
 import torch
 
-from human_dong_loader import HumanDongLoader
-from robot_randomizer import URDFRandomizer
+from human_loader import HumanDongLoader
+from robot_loader import URDFRandomizer
 
 
 def filter_to_subspace(
