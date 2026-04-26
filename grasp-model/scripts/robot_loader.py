@@ -242,7 +242,7 @@ class JointSpec:
     mimic_offset: float
 
 
-class URDFRandomizer:
+class RobotLoader:
     def __init__(self, urdf_path: str | Path, device: str = "cpu", continuous_range: float = math.pi):
         self.urdf_path = Path(urdf_path).expanduser().resolve()
         if not self.urdf_path.exists():
@@ -533,7 +533,7 @@ def main() -> None:
     else:
         device = args.device
 
-    rnd = URDFRandomizer(
+    rnd = RobotLoader(
         urdf_path=args.urdf,
         device=device,
         continuous_range=args.continuous_range,

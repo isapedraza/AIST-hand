@@ -68,7 +68,7 @@ _MIDDLE_TIP_COLS: list[str] = [
 ]
 
 
-class HumanDongLoader:
+class HumanLoader:
     """
     Loads hograspnet_abl11.csv into RAM and samples random batches.
 
@@ -91,7 +91,7 @@ class HumanDongLoader:
         self.labels: list[str] = DONG_LABELS
         self.tip_labels: list[str] = TIP_LABELS
 
-        print(f"[HumanDongLoader] Loading {csv_path} (split={split}) ...")
+        print(f"[HumanLoader] Loading {csv_path} (split={split}) ...")
         df = pd.read_csv(csv_path)
 
         # Filter by subject split
@@ -101,7 +101,7 @@ class HumanDongLoader:
 
         # Sort by trial identity + frame_id to ensure consecutive indices = consecutive frames
         df = df.sort_values(_TRIAL_COLS + ["frame_id"]).reset_index(drop=True)
-        print(f"[HumanDongLoader] {len(df):,} frames after split filter.")
+        print(f"[HumanLoader] {len(df):,} frames after split filter.")
 
         # Compute hand_length per subject (median of wrist->middle_tip distance)
         # Tips are already root-relative (wrist=origin), so ||middle_tip|| = distance
@@ -137,7 +137,7 @@ class HumanDongLoader:
         self._valid_idx = torch.from_numpy(np.where(valid_mask)[0].astype(np.int64)).to(self.device)
 
         n_valid = self._valid_idx.shape[0]
-        print(f"[HumanDongLoader] Ready. quats={tuple(self._quats.shape)}, "
+        print(f"[HumanLoader] Ready. quats={tuple(self._quats.shape)}, "
               f"valid temporal pairs={n_valid:,} ({100*n_valid/self._N:.1f}%)")
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:

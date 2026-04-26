@@ -2,7 +2,7 @@
 """
 CrossEmbodimentSampler — Stage 3 assembly for cross-embodiment training.
 
-Wraps HumanDongLoader and URDFRandomizer into a single object.
+Wraps HumanLoader and RobotLoader into a single object.
 Each call to get_batch(B) / get_batch_temporal(B) returns a flat dict
 with everything the training loop needs for one step.
 
@@ -27,8 +27,8 @@ from pathlib import Path
 
 import torch
 
-from human_loader import HumanDongLoader
-from robot_loader import URDFRandomizer
+from human_loader import HumanLoader
+from robot_loader import RobotLoader
 
 
 def filter_to_subspace(
@@ -111,8 +111,8 @@ class CrossEmbodimentSampler:
         device: str = "cpu",
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
-        self.human_loader = HumanDongLoader(csv_path, split=split, device=device)
-        self.robot_rnd = URDFRandomizer(urdf_path, device=device)
+        self.human_loader = HumanLoader(csv_path, split=split, device=device)
+        self.robot_rnd = RobotLoader(urdf_path, device=device)
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:
         """Sample B random human frames + B random robot poses. No temporal pairing."""
