@@ -2504,3 +2504,52 @@ common_fingers list[str]
 **Expected impact**: Resolution unblocks Stage 4 training.
 
 **References**: Yan et al. 2026 used A4000 (16 GB) with MLP encoder -- no GATConv. GAT specifically was adopted here based on Lee et al. 2023 (SAME: Skeleton-Agnostic Motion Embedding). Pending: review SAME to determine whether GAT attention is essential to their method or can be replaced by simpler graph convolution (GCNConv) without losing the key insight.
+
+**Status**: Resolved -- see Entry 49.
+
+---
+
+## Entry 49 -- 2026-04-26: Memory diagnostics, GAT -> CAM decision, Yan multi-robot training analysis
+
+**Context**: B=20k first step completed on Colab T4 (15.64 GB total, session reports slightly higher than 14.56 GB). Memory diagnostic after step 0:
+
+- Reserved: 11.56 GB
+- Free: 4.08 GB
+- K=15 common joints (thumb/index/middle/ring/pinky × MCP/PIP/DIP)
+
+Memory breakdown estimated at B=20k:
+- MLPs (E_X×2, D_X×3, E_r, D_r): ~9.11 GB -- dominant cost, scales linearly with B
+- E_h (GATConv, heads=4, hidden=32): ~1.44 GB -- scales linearly with B
+- L_contrastive matrix [N_TRIPLETS, N_TRIPLETS, K=15, 4]: ~1.01 GB at N=2048
+
+Contrastive pool utilization: N_TRIPLETS=2048 out of B2=40k available -- only 5.1% of the batch contributes to the contrastive gradient per step.
+
+Review of SAME paper (Lee et al. 2023): GAT is NOT the core contribution. SAME's skeleton-agnostic property comes from (1) using GNN instead of MLP and (2) the embedding consistency loss. The paper itself calls the architecture "graph convolution networks (GCN)" in the abstract. GAT is an expressiveness enhancement, not the architectural differentiator. Ablation study (Table 1) does not ablate GAT vs GCN -- if GAT were essential, they would have. Prior ablation (camgat01 vs abl04): CAM alone outperformed CAM+GAT (70.46% vs 71.07% F1=0.643 vs 0.657). Evidence against GAT.
+
+**Decision**: Replace GATConv with CAMLayer in E_h. CAM [21,21] learned static adjacency -- same role as GAT (weight neighbor contributions) but static across samples, no per-sample attention weights. Already validated in this domain (abl04). Memory reduction: E_h from ~1.44 GB to ~0.18 GB at B=20k (8x less, no heads multiplier).
+
+Projected memory with CAM at B=20k: ~10.3 GB reserved, ~5.3 GB free.
+
+Safe operating points with CAM (estimated, must be verified empirically):
+
+| B | N_TRIPLETS | MLPs | E_h | Contrastive | Total |
+|---|---|---|---|---|---|
+| 20k | 4096 | 9.11 | 0.18 | 4.03 | 13.32 GB |
+| 25k | 3072 | 11.39 | 0.23 | 2.26 | 13.88 GB |
+| 25k | 2048 | 11.39 | 0.23 | 1.01 | 12.63 GB |
+
+Target: B=20k + N_TRIPLETS=4096 as first test. N_TRIPLETS matters more than B for our use case -- see below.
+
+**Why N_TRIPLETS > B for our use case**: Yan uses B=1e5 primarily for robot kinematic space coverage ("ensures diverse and unbiased exposure... results in billions of robot poses per embodiment"). With B=20k × 5000 steps = 100M Shadow Hand poses, coverage of a single 24-DOF hand space is already adequate. Yan covers 4-6 robots with diverse full-body morphologies -- their coverage requirement is much larger. For us, the contrastive gradient quality per step (N_TRIPLETS) is the binding constraint.
+
+**Yan multi-robot training -- clarification**: Yan trains Phase 1 with 4 robots simultaneously (TIAGo++, JVRC, H1, + 1 more), all in the same batch, B=1e5 shared across all embodiments. Phase 2: freeze E_h/E_X/D_X, train only E_r/D_r for new robots (ATLAS, G1, Kinova) -- takes ~15 minutes. Our architecture (E_r/D_r per robot, shared E_h/E_X/D_X) matches this design exactly.
+
+Current choice: Phase 1 with Shadow Hand only. Risk: latent space anchors to Shadow Hand morphology, Phase 2 generalization to Allegro/LEAP/Inspire may be weaker than if Phase 1 included 2-3 morphologically distinct hands. Mitigating factors: (1) all dexterous hands share 4-5 finger topology with MCP/PIP/DIP -- morphological gap is much smaller than Yan's humanoid diversity; (2) hardware constraint (T4) makes multi-hand Phase 1 impractical. Decision: proceed with Shadow Hand Phase 1, empirically test Phase 2 generalization before committing to multi-hand retraining.
+
+**Alternatives considered**: GCNConv (less expressive than CAM, no learned topology), chunked contrastive computation (avoids O(n²) peak but complex to implement), multi-hand Phase 1 training (better generalization but 2-3× memory cost at current B).
+
+**Expected impact**: CAM unblocks B=20k training and allows N_TRIPLETS=4096, improving contrastive gradient quality from 5.1% to ~10.2% of the batch per step.
+
+**References**: Yan et al. 2026 (batch size justification, multi-robot training protocol, Phase 1/2 architecture); Lee et al. 2023 SAME (GAT ablation analysis); abl04/camgat01 (empirical evidence against GAT in this domain).
+
+**Status**: In progress -- CAM implementation pending.
