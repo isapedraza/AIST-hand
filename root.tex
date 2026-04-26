@@ -1,0 +1,381 @@
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%2345678901234567890123456789012345678901234567890123456789012345678901234567890
+%        1         2         3         4         5         6         7         8
+
+\documentclass[letterpaper, 10 pt, conference]{ieeeconf}  % Comment this line out if you need a4paper
+
+%\documentclass[a4paper, 10pt, conference]{ieeeconf}      % Use this line for a4 paper
+
+\IEEEoverridecommandlockouts                              % This command is only needed if 
+                                                          % you want to use the \thanks command
+
+\overrideIEEEmargins                                      % Needed to meet printer requirements.
+
+
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{inlinelabel}
+\usepackage{tabularx}
+\usepackage{float}
+\usepackage{multirow}
+\usepackage{multicol}
+\usepackage{booktabs} % For better looking tables
+\usepackage{diagbox}
+\usepackage{array}
+\usepackage{color}
+\usepackage{hhline}
+\usepackage{caption}
+\usepackage{titlesec}
+\usepackage[hyphens]{url}
+\newcommand{\red}[1]{\textcolor{red}{#1}}
+\title{\LARGE \bf
+Grasp Category Recognition and Replication on Robotic Hands using Graph Neural Networks}
+
+\author{ Yahel Ramirez$^{2}$, Ixchel Ramírez$^{1}$ and  Isabel Pedraza$^{2}$
+\thanks{$^{1}$ National Institute of Advanced Industrial Science and Technology, Japan.}%
+\thanks{$^{2}$ Benemérita Universidad Autónoma de Puebla, Mexico}%
+}
+
+
+\begin{document}
+
+%http://www.wikicfp.com/cfp/servlet/event.showcfp?copyownerid=90704&eventid=191959
+
+\maketitle
+\thispagestyle{empty}
+\pagestyle{empty}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{abstract}
+This paper presents a graph-based framework for grasp category recognition from 3D hand landmarks and real-time grasp execution on a dexterous robotic hand. Using HOGraspNet (28 classes) and the official S1 subject split, we evaluate feature design under a fixed GCN backbone. A cumulative ablation and a directed ablation show that the best configuration is XYZ+AHG+flex, reaching 71.07\% test accuracy and 0.657 macro F1. Under a matched-capacity setting, the proposed GNN outperforms a linear MLP baseline (66.67\% accuracy, 0.607 macro F1 at 14,140 parameters), indicating better parameter efficiency for structured hand modeling. A landmark-based class separability analysis further shows that several grasp pairs remain intrinsically close in posture space, explaining part of the residual confusion under landmark-only input. Finally, we implement a simulation execution layer on the Shadow Hand in MuJoCo using class-conditioned canonical poses, top-2 probability interpolation, and temporal stabilization (smoothing and hysteresis) for robust real-time behavior. These results support graph-based perception as the main contribution and provide a practical baseline for real-time class-conditioned grasp execution.
+\end{abstract}
+
+% \begin{IEEEkeywords}
+% % few-shot imitation learning, force-based contact-rich  manipulation, object representation
+% Deep Learning in Grasping and Manipulation
+% Imitation Learning
+% Force Control
+% Representation Learning
+% \end{IEEEkeywords}
+
+\begin{keywords}
+Grasp Recognition, Graph Neural Network, Hand Pose Estimation, Grasp Taxonomy, Robotic Teleoperation, Dexterous Manipulation, Grasp Intent, Human-Robot Interaction
+\end{keywords}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\section{Introduction}
+
+\section{Related Work}
+
+
+\section{Methodology}
+
+\subsection{Dataset and Input Representation}
+
+HOGraspNet~\cite{cho_densehan2024} is used as the primary data source. The dataset comprises 1,489,111 hand-object interaction frames annotated with 28 of the 33 grasp types defined by the GRASP taxonomy~\cite{feix_grasptax2016}, captured across 99 subjects and 30 YCB objects. Its selection is motivated by two criteria: it is the only public corpus covering this taxonomy on real subjects, and its 21-landmark hand representation is compatible with the MediaPipe keypoint convention.
+
+The class distribution is highly imbalanced, with Precision Disk accounting for 9.6\% of frames and Medium Wrap for only 0.8\%, yielding an 11:1 ratio between the most and least represented classes (Table~\ref{tab:hograspnet_distribution}). This imbalance motivates the use of Macro F1 as the primary evaluation metric alongside accuracy, as accuracy alone would mask poor performance on minority classes.
+
+\begin{table}[h]
+\centering
+\caption{Class distribution in HOGraspNet (1,489,111 frames, 28 classes).}
+\label{tab:hograspnet_distribution}
+\begin{tabular}{clrr}
+\toprule
+ID & Class & Frames & \% \\
+\midrule
+24 & Precision Disk       & 143,153 & 9.6\% \\
+15 & Lateral              & 125,453 & 8.4\% \\
+8  & Light Tool           & 123,974 & 8.3\% \\
+27 & Tripod               & 101,918 & 6.8\% \\
+9  & Distal               &  89,589 & 6.0\% \\
+2  & Index Finger Ext.    &  78,132 & 5.2\% \\
+18 & Writing Tripod       &  78,121 & 5.2\% \\
+7  & Adducted Thumb       &  76,003 & 5.1\% \\
+3  & Extension Type       &  71,515 & 4.8\% \\
+20 & Palmar Pinch         &  63,539 & 4.3\% \\
+22 & Inferior Pincer      &  53,847 & 3.6\% \\
+14 & Sphere 3-Finger      &  53,129 & 3.6\% \\
+4  & Parallel Extension   &  37,010 & 2.5\% \\
+12 & Power Sphere         &  34,137 & 2.3\% \\
+5  & Palmar               &  33,738 & 2.3\% \\
+25 & Precision Sphere     &  33,718 & 2.3\% \\
+1  & Small Diameter       &  33,257 & 2.2\% \\
+23 & Prismatic 3-Finger   &  33,161 & 2.2\% \\
+0  & Large Diameter       &  32,037 & 2.2\% \\
+21 & Tip Pinch            &  27,907 & 1.9\% \\
+11 & Power Disk           &  25,583 & 1.7\% \\
+26 & Quadpod              &  22,346 & 1.5\% \\
+17 & Adduction Grip       &  21,723 & 1.5\% \\
+13 & Sphere 4-Finger      &  21,378 & 1.4\% \\
+16 & Stick                &  21,188 & 1.4\% \\
+19 & Lateral Tripod       &  20,696 & 1.4\% \\
+10 & Ring                 &  20,258 & 1.4\% \\
+6  & Medium Wrap          &  12,601 & 0.8\% \\
+\midrule
+\multicolumn{2}{l}{\textbf{Total}} & \textbf{1,489,111} & \textbf{100.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each frame is geometrically normalized prior to training. First, a translation centers the hand at the origin by subtracting the wrist position ($\mathbf{kp}_0$, \textsc{wrist}) from all keypoints:
+
+\begin{equation}
+\mathbf{kp}_i' = \mathbf{kp}_i - \mathbf{kp}_0, \quad i = 0, \ldots, 20
+\end{equation}
+
+This yields a \textit{root-relative} representation, standard in 3D pose estimation~\cite{chao_dexycbbe2021, chatzis_comprehe2020}, ensuring that coordinate differences reflect finger articulation rather than global hand displacement in the scene.
+
+Second, a uniform scale normalizes the \textsc{wrist}--\textsc{index\_mcp} distance ($\mathbf{kp}_0$--$\mathbf{kp}_5$) to 10~cm:
+
+\begin{equation}
+\mathbf{kp}_i'' = \mathbf{kp}_i' \cdot \frac{0.1}{\|\mathbf{kp}_5'\|}
+\end{equation}
+
+The choice of $\mathbf{kp}_0$--$\mathbf{kp}_5$ as the reference distance follows Santos et al.~\cite{santos_shadowde2025}, who adopt the same reference in a kinematic retargeting system for the Shadow Dexterous Hand. This normalization enforces invariance to hand size: without it, the same posture performed by hands of different sizes would yield numerically distinct representations. On monocular cameras, it additionally resolves depth-scale ambiguity by fixing the scale of the reference segment, giving the $z$ coordinate a consistent interpretation across subjects and sessions. Crucially, the same normalization is applied identically at inference time with MediaPipe, eliminating the domain gap between training annotations and real-time deployment.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{imgs/step4_capture_001.png}
+\caption{World vs wrist-local landmarks after normalization.}
+\label{fig:world_wrist_local_norm}
+\end{figure}
+
+The dataset is partitioned following the official S1 protocol of HOGraspNet, which splits by subject identity rather than by frame:
+
+\begin{table}[h]
+\centering
+\caption{S1 split of HOGraspNet by subject identity.}
+\label{tab:split_s1}
+\begin{tabular}{lccr}
+\toprule
+\textbf{Split} & \textbf{Subjects} & \textbf{Frames} & \textbf{\%} \\
+\midrule
+Train & S11--S73 (63 subjects) & 1,015,342 & 68.2\% \\
+Val   & S01--S10 (10 subjects) & 146,509 &  9.8\% \\
+Test  & S74--S99 (26 subjects) & 327,260 & 22.0\% \\
+\midrule
+\multicolumn{2}{l}{\textbf{Total}} & \textbf{1,489,111} & \textbf{100.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This protocol ensures that evaluation measures generalization to unseen hand morphologies, as the dataset spans subjects aged 10 to 74 with considerable morphological variability. A frame-level random split would not satisfy this requirement, since each capture sequence produces dozens of near-identical consecutive frames from the same subject, introducing data leakage between training and evaluation. The subject-level split eliminates this leakage entirely.
+
+\subsection{System Overview}
+
+The proposed framework consists of two decoupled stages: a perception stage that maps raw sensor input to a discrete grasp representation, and an execution stage that drives a dexterous robotic hand based on that representation. The sole interface between the two stages is a \textit{GraspToken}, an immutable data structure carrying the predicted grasp class, its confidence score, and a timestamp. Beyond this interface, neither stage has knowledge of the other's internals. The full pipeline is illustrated in Figure~\ref{fig:system_overview}.
+
+The process begins at the sensor. Any source capable of delivering the 3D positions of 21 anatomical hand landmarks, including an RGB camera paired with a pose estimator, a depth sensor, or an instrumented glove, can serve as input. The landmarks are geometrically normalized before further processing, yielding a representation invariant to hand size and sensor distance.
+
+The normalized landmarks are passed to a graph construction module that structures them as a graph, where each landmark is a node and node features encode geometric properties of the hand configuration. This graph is then processed by a Graph Convolutional Network that outputs a probability distribution over the 28 grasp classes of the Feix taxonomy~\cite{feix_grasptax2016}. A temporal smoothing step stabilizes predictions across consecutive frames before the final class is committed to a GraspToken.
+
+Upon receiving a GraspToken, a robot adapter maps the predicted class to a joint configuration for the target platform, scaled continuously by the current hand aperture. This design makes the execution stage robot-agnostic: adapting the framework to a different platform requires only a new adapter, leaving the perception pipeline unchanged.
+
+\subsection{Graph-Based Hand Representation}
+
+Each hand frame is represented as a graph \(G=(V,E)\) with \(|V|=21\) nodes, one per landmark in MediaPipe/HOGraspNet order (wrist, then thumb/index/middle/ring/pinky chains). The edge set follows the hand kinematic skeleton and is converted to an undirected graph before GNN inference.
+
+For the final model (abl04), node features are defined as:
+\begin{equation}
+\mathbf{x}_i=\left[\mathbf{p}_i,\ \theta_i^{\text{flex}},\ \boldsymbol{\phi}_i^{\text{AHG}},\ \mathbf{d}_i^{\text{AHG}}\right] \in \mathbb{R}^{24},
+\end{equation}
+where \(\mathbf{p}_i=(x_i,y_i,z_i)\) are normalized coordinates, \(\theta_i^{\text{flex}}\in\mathbb{R}\) is a local joint-flexion descriptor, and \(\boldsymbol{\phi}_i^{\text{AHG}}, \mathbf{d}_i^{\text{AHG}}\) are features from the Angle-based Hand Gesture (AHG) descriptor~\cite{aiman_anglebas2024b}: \(\boldsymbol{\phi}_i^{\text{AHG}}\in\mathbb{R}^{10}\) encodes AHG angular relations and \(\mathbf{d}_i^{\text{AHG}}\in\mathbb{R}^{10}\) encodes AHG distance relations.
+
+The flexion feature is computed from parent-child geometry at node \(i\):
+\begin{equation}
+\theta_i^{\text{flex}}=\arccos\!\left(
+\frac{(\mathbf{p}_i-\mathbf{p}_{p(i)})\cdot(\mathbf{p}_{c(i)}-\mathbf{p}_i)}
+{\|\mathbf{p}_i-\mathbf{p}_{p(i)}\|\,\|\mathbf{p}_{c(i)}-\mathbf{p}_i\|}
+\right),
+\end{equation}
+with \(\theta_i^{\text{flex}}=0\) for nodes without a valid parent-child pair (e.g., wrist and fingertip terminals).
+
+Following AHG~\cite{aiman_ahg2024}, each node is related to 10 critical joints (five fingertips and five finger bases). The AHG angle component uses wrist-centered vectors:
+\begin{equation}
+\phi_{i,k}^{\text{AHG}}=
+\arccos\!\left(
+\frac{(\mathbf{p}_i-\mathbf{p}_0)\cdot(\mathbf{p}_{c_k}-\mathbf{p}_0)}
+{\|\mathbf{p}_i-\mathbf{p}_0\|\,\|\mathbf{p}_{c_k}-\mathbf{p}_0\|}
+\right),
+\end{equation}
+and the AHG distance component is:
+\begin{equation}
+d_{i,k}^{\text{AHG}}=\|\mathbf{p}_i-\mathbf{p}_{c_k}\|_2,\quad k=1,\dots,10.
+\end{equation}
+
+This representation keeps local articulation (\(\theta^{\text{flex}}\)) and global hand topology (\(\boldsymbol{\phi}^{\text{AHG}},\mathbf{d}^{\text{AHG}}\)) in a single node-wise descriptor. Other feature variants (CMC, bone vectors, global swing) are evaluated separately in the ablation section.
+
+\subsection{Model Architecture and Training}
+
+The final model corresponds to the CAM-based GCN variant `GCN\_CAM\_8\_8\_16\_16\_32` used in run `abl04`. Let \(\mathbf{X}\in\mathbb{R}^{21\times 24}\) be node features for one hand graph. Message passing is performed by five stacked CAM layers with widths
+\[
+24 \rightarrow 8 \rightarrow 8 \rightarrow 16 \rightarrow 16 \rightarrow 32.
+\]
+Unlike a fixed skeletal adjacency, this model uses a shared learnable constraint adjacency matrix
+\(\mathbf{A}_{\text{CAM}}\in\mathbb{R}^{21\times 21}\), optimized end-to-end and reused across all graph layers.
+
+After graph propagation, graph-level pooling uses masked mean and masked max readout, concatenated into a 64-dimensional descriptor. A two-layer MLP head then maps this descriptor to class logits:
+\[
+64 \rightarrow 128 \rightarrow 28,
+\]
+followed by \(\log\)-softmax for 28-way classification.
+
+All ablation runs use the same backbone and training protocol; only input features change. Training uses Adam (\(lr=10^{-3}\), weight decay \(5\times10^{-4}\)), mini-batch size 256, and NLL loss. Early stopping is applied based on validation accuracy. To improve robustness to missing landmarks at deployment, random joint dropout is applied during training by masking individual nodes with probability \(p=0.10\).
+
+\subsection{Feature Ablation Study}
+
+To identify the contribution of each geometric feature to classification performance, we conducted a cumulative ablation study over the 28-class HOGraspNet benchmark using the S1
+subject-level split. All configurations use the same model architecture, training procedure, and plateau learning rate scheduler, differing only in the node-level features provided to the network. Features are added incrementally starting from a minimal XYZ baseline, yielding six configurations M1 through M6. In addition, we ran a directed ablation block using XYZ+AHG as a fixed base to test which single extra feature contributes most.
+
+The features evaluated are the following. M1 uses only the three normalized coordinates $(x, y, z)$ of each of the 21 hand landmarks as the base representation. M2 adds the joint flexion angle $\theta_\text{flex}$, a scalar per node measuring the angle between the incoming and outgoing bone vectors at each joint, capturing local finger curvature. M3 further incorporates $\theta_\text{CMC}$, a graph-level scalar measuring the out-of-plane deviation of the first metacarpal relative to the palm plane, which corresponds to the primary axis separating grasp categories in the Feix taxonomy. M4 adds bone vectors, encoding the displacement from each joint to its parent in the kinematic chain and providing explicit information about bone orientation and length. M5 adds global swing, which encodes the zero-twist rotation that aligns each bone from its rest pose to its observed pose, derived analytically from MANO forward kinematics. Finally, M6 adds AHG features~\cite{aiman_ahg2024}, which augment each node with ten angles and ten Euclidean distances computed between that node and a set of ten critical joints comprising the five fingertips and five finger bases, encoding higher-order geometric relationships that span the full hand topology.
+
+Table~\ref{tab:ablation} reports test accuracy and macro-averaged F1 score for all configurations, and Figure~\ref{fig:ablation_heatmap} shows the per-class F1 delta of each configuration relative to M1.
+
+\begin{table}[h]
+\centering
+\caption{Feature ablation on HOGraspNet (28 classes, S1 split). Abbreviations: F=flex, B=bone, SW=swing.}
+\label{tab:ablation}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llcc}
+\toprule
+Config & Features & Test Acc. & Macro F1 \\
+\midrule
+M1 & XYZ                                    & 67.99\% & 0.619 \\
+M2 & XYZ+F                                  & 63.90\% & 0.575 \\
+M3 & XYZ+F+CMC                              & 65.17\% & 0.585 \\
+M4 & XYZ+F+CMC+B                            & 65.36\% & 0.590 \\
+M5 & XYZ+F+CMC+B+SW                         & 65.87\% & 0.596 \\
+M6 & XYZ+F+CMC+B+SW+AHG                     & \textbf{70.38\%} & \textbf{0.645} \\
+\midrule
+\multicolumn{4}{l}{\textit{Extended ablation on XYZ+AHG base}} \\
+Base & XYZ+AHG                              & 68.17\% & 0.618 \\
++F & XYZ+AHG+F                              & \textbf{71.07\%} & \textbf{0.657} \\
++CMC & XYZ+AHG+CMC                          & 69.18\% & 0.634 \\
++B & XYZ+AHG+B                              & 70.80\% & 0.654 \\
++SW & XYZ+AHG+SW                            & 69.63\% & 0.638 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The results reveal a counterintuitive pattern. Adding joint flexion angles to the XYZ baseline (M2) causes an immediate drop of 4.1 percentage points in accuracy, suggesting that the explicit encoding of local curvature introduces redundancy or noise that the network cannot exploit given the raw coordinate information already present. Subsequent additions of $\theta_\text{CMC}$, bone vectors, and global swing (M3 through M5) each recover a fraction of the lost performance, yet none restores the level achieved by M1. After five cumulative feature additions, M5 still underperforms the XYZ baseline by 2.1 percentage points. The heatmap in Figure~\ref{fig:ablation_heatmap} makes this pattern visible at the class level: the M2 column is uniformly red across nearly all 28 classes, and the subsequent columns recover only partially and unevenly.
+
+AHG features break this trend decisively. Adding the ten angles and ten distances to critical joints (M6) produces a gain of 4.5 percentage points over M5 and 2.4 percentage points over the XYZ baseline, reaching 70.38\% accuracy and a macro F1 of 0.645. This improvement is broadly distributed across classes: the largest per-class F1 gains relative to M1 are observed for Large Diameter (+0.070), Medium Wrap (+0.069), Stick (+0.065), Small Diameter (+0.045), and Sphere 3-Finger (+0.044). The only notable regression is Lateral Tripod ($-$0.066), which remains one of the most geometrically ambiguous classes in the dataset regardless of feature configuration.
+
+The extended ablation clarifies this interaction. Starting from the XYZ+AHG base, adding flex yields the largest gain (71.07\%, macro F1 0.657), while CMC and swing provide smaller improvements. Bone is also beneficial, but remains slightly below the +flex setting. This indicates that AHG and flex are complementary: AHG contributes global inter-finger structure, while flex contributes local articulation cues. Therefore, the best-performing configuration in this study is XYZ+AHG+flex.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{imgs/ablation_heatmap_delta.png}
+\caption{Per-class F1 delta relative to the XYZ baseline (M1) for configurations M2 through M6. Classes are sorted by mean delta across all configurations. Red indicates degradation; green indicates improvement.}
+\label{fig:ablation_heatmap}
+\end{figure}
+
+\subsection{Landmark-Based Class Separability Analysis}
+
+We analyzed class separability to estimate how much error is explained by intrinsic overlap in hand posture when only landmarks are available. For each class, we computed a centroid in a reduced kinematic space (PCA-varimax, \(R^9\)) and measured pairwise Euclidean distances between class centroids.
+
+Table~\ref{tab:separability_pairs} reports the ten nearest class pairs. The closest pairs (e.g., Precision Disk--Precision Sphere, Palmar Pinch--Tip Pinch, Writing Tripod--Lateral Tripod) are consistent with recurrent confusion patterns in frame-level inference, indicating that part of the error is caused by limited geometric separability of postures, not only by model capacity.
+
+\begin{table}[h]
+\centering
+\caption{Nearest class pairs in the landmark-based separability space (PCA-varimax, \(R^9\)).}
+\label{tab:separability_pairs}
+\begin{tabular}{llc}
+\toprule
+\# & Class pair & Distance \\
+\midrule
+1  & Precision Disk -- Precision Sphere & 0.962 \\
+2  & Power Sphere -- Precision Sphere & 0.979 \\
+3  & Palmar Pinch -- Tip Pinch & 1.197 \\
+4  & Palmar -- Medium Wrap & 1.337 \\
+5  & Writing Tripod -- Lateral Tripod & 1.352 \\
+6  & Precision Sphere -- Quadpod & 1.371 \\
+7  & Power Sphere -- Precision Disk & 1.406 \\
+8  & Large Diameter -- Inferior Pincer & 1.451 \\
+9  & Palmar -- Writing Tripod & 1.477 \\
+10 & Distal -- Precision Sphere & 1.480 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:separability_space_map} complements this numeric view with a 2D projection of class centroids in RC1-RC2 space.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{imgs/separability_space_map_rc1_rc2.png}
+\caption{Landmark-based class separability map in PCA-varimax space (RC1 vs RC2). Each point is a class centroid; nearby centroids indicate higher postural similarity under landmark-only input.}
+\label{fig:separability_space_map}
+\end{figure}
+
+\subsection{Simulated Grasp Execution on Dexterous Hands}
+
+The runtime execution layer maps classifier output to Shadow Hand joint targets in MuJoCo. For each grasp class, a canonical 24-DoF pose \(\mathbf{C}_k\) is used as the reference target. At each frame, the abl04 model produces class probabilities, and the postural controller computes a top-2 weighted target. This postural control structure follows the morphing-controller principle introduced by Segil and Weir~\cite{segil_designva2014}, adapted here from EMG input to vision-based grasp probabilities:
+\begin{equation}
+\mathbf{q}_{\text{new}}=\sum_{k \in \{\text{top-2}\}} w_k\,\mathbf{C}_k,\quad \sum_k w_k=1.
+\end{equation}
+
+Before top-2 selection, classes are filtered by reliability: classes with validation \(F1<0.45\) are excluded. In addition, classes without canonical robot pose support are removed from interpolation; in the current setup this affects \textit{Distal}. Probabilities are temporally smoothed with a sliding window of 8 frames.
+
+To stabilize class transitions, switching uses hysteresis. A new class is accepted only if it satisfies both conditions: (i) confidence margin \(p_1-p_2 \ge 0.10\), and (ii) confirmation for 4 consecutive frames. Otherwise, the active class and target pose are held.
+
+Open-hand detection triggers an explicit flat-hand override, and hand-loss reset after 12 frames also returns to flat hand. The commanded pose is finally low-pass filtered before physics update:
+\begin{equation}
+\mathbf{q}_{t+1}=\mathbf{q}_t+\beta\left(\mathbf{q}_{\text{target}}-\mathbf{q}_t\right), \quad \beta=0.18.
+\end{equation}
+
+This control stack is used to run real-time visual grasp execution on the MuJoCo Shadow Hand.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.7\linewidth]{imgs/Diseño sin título.png}
+\caption{Canonical Index Finger Extension pose in MuJoCo.}
+\label{fig:canonical_index_finger}
+\end{figure}
+
+
+\section{Results}
+
+\subsection{Fair-Capacity Baseline: GNN vs MLP}
+
+To verify whether the gain comes from graph modeling rather than model size, we compare the proposed GNN against a linear MLP under a matched parameter budget.
+
+\begin{table}[h]
+\centering
+\caption{Fair-capacity comparison on HOGraspNet (28 classes, S1 split).}
+\label{tab:fair_capacity}
+\begin{tabular}{lccc}
+\toprule
+Model & Params & Test Acc. & Macro F1 \\
+\midrule
+GNN (abl04, XYZ+AHG+flex) & \(\sim\)14k & 71.07\% & 0.6567 \\
+MLP linear (504\(\rightarrow\)28) & 14,140 & 66.67\% & 0.6071 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Under the same parameter budget, the GNN improves accuracy by +4.40 points and macro F1 by +0.0496 over the linear MLP baseline. A larger MLP (504\(\rightarrow\)256\(\rightarrow\)128\(\rightarrow\)28, \(\sim\)165k params) reaches only a marginal gain over the GNN (+1.39 points accuracy, +0.0153 macro F1) while using roughly 12x more trainable parameters. Therefore, the key result is parameter efficiency: near-equal peak accuracy can be approached, but at a much higher model cost.
+
+\section{Discussion}
+
+The directed ablation shows that feature contribution is not additive. XYZ+AHG alone (68.17\%, 0.618) is improved most by adding flex (71.07\%, 0.657), while other single additions produce smaller gains. This supports a complementary effect between relational and local articulation cues.
+
+A plausible interpretation is that each feature family captures a different component of hand posture: XYZ encodes normalized joint placement, flex encodes local joint bending, and AHG encodes inter-joint relational structure. These results suggest that graph-based inductive bias helps capture non-linear inter-joint dependencies more effectively than a capacity-matched linear baseline.
+
+The remaining errors are consistent with intrinsic class overlap under landmark-only input, as shown by close class centroids in the separability map and nearest-pair distances. This limits class reliability in real-time execution and motivates future work on continuous latent postural control instead of strictly discrete class interpolation.
+
+\section{Conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{gnn}
+
+\end{document}
