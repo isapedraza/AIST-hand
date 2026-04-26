@@ -57,6 +57,7 @@ LAMBDA_C   = 10.0
 LAMBDA_REC = 5.0
 LAMBDA_LTC = 1.0
 LAMBDA_TMP = 0.1
+N_TRIPLETS = 2048   # subsample for L_contrastive — avoids [2B, 2B] OOM at large B
 
 # probe batch to get J (number of robot joints) without hardcoding
 _probe = sampler.get_batch_temporal(1)
@@ -126,17 +127,20 @@ for step in range(N_STEPS):
     z_all    = torch.cat([z_t, z_r], dim=0)                              # [2B, 16]
     all_q    = torch.cat([quats_h_sub, quats_r_sub], dim=0)              # [2B, K, 4]
     all_tips = torch.cat([tips_h_sub.flatten(1), tips_r_sub.flatten(1)], dim=0)  # [2B, Fc*3]
-    dot      = (all_q.unsqueeze(1) * all_q.unsqueeze(0)).sum(-1)         # [2B, 2B, K]
-    D_R      = (1 - dot ** 2).sum(-1)                                    # [2B, 2B]
-    D_ee     = (all_tips.unsqueeze(1) - all_tips.unsqueeze(0)).norm(dim=-1)  # [2B, 2B]
-    S        = D_R + D_ee
-    B2       = z_all.shape[0]
-    eye      = torch.eye(B2, dtype=torch.bool, device=DEVICE)
-    pos_idx  = S.masked_fill(eye, float('inf')).argmin(dim=1)
-    neg_idx  = S.masked_fill(eye, float('-inf')).argmax(dim=1)
-    d_pos    = (z_all - z_all[pos_idx]).norm(dim=-1)
-    d_neg    = (z_all - z_all[neg_idx]).norm(dim=-1)
-    L_cont   = torch.relu(d_pos - d_neg + 0.05).mean()
+    # subsample to avoid [2B, 2B] matrix OOM at large B
+    B2   = z_all.shape[0]
+    idx  = torch.randperm(B2, device=DEVICE)[:N_TRIPLETS]
+    zs   = z_all[idx]
+    qs   = all_q[idx]
+    ts   = all_tips[idx]
+    dot  = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)              # [N, N, K]
+    D_R  = (1 - dot ** 2).sum(-1)                                   # [N, N]
+    D_ee = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1)         # [N, N]
+    S    = D_R + D_ee
+    eye  = torch.eye(N_TRIPLETS, dtype=torch.bool, device=DEVICE)
+    pos_idx = S.masked_fill(eye, float('inf')).argmin(dim=1)
+    neg_idx = S.masked_fill(eye, float('-inf')).argmax(dim=1)
+    L_cont  = torch.relu((zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + 0.05).mean()
 
     # L_temporal: velocidad fingertip humano vs robot retargeteado
     fk_t   = sampler.robot_rnd.run_fk(q_r_hat)
