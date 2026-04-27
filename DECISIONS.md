@@ -2611,3 +2611,35 @@ This is post-training only. No val loop during training.
 **References**: Yan et al. 2026 Sec. IV-A (NDS/NVS definition); Entry 50 (training run, motivating need for quality metric).
 
 **Status**: Proposed -- implement after next training run completes.
+
+---
+
+## Entry 52 -- 2026-04-27: Embedding collapse diagnosis and training fixes
+
+**Context**: Entry 50 reported `cont~0` throughout training. Loaded the step 2500 checkpoint and ran a retargeting probe -- Shadow Hand output showed no meaningful pose variation across different human inputs (fingers near rest pose regardless of input). Inspected latent variance directly: z.std()~0.015, range ±0.27 vs theoretical ±1.0 from Tanh output. Confirmed embedding collapse.
+
+Root cause: margin=0.05 too small relative to typical latent distances. With z in [-1,1]^16, Euclidean distances between distinct poses are typically 1-3. At margin=0.05 nearly all triplets already satisfy d_pos - d_neg + margin < 0 by chance -- L_cont saturates to 0 immediately, E_h receives no separation gradient.
+
+With L_cont dead, the only gradients reaching E_h are:
+- L_ltc: round-trip consistency (z_t ≈ E_X(D_X(z_t))) -- does not pressure pose separation
+- L_temp: fingertip velocity signal -- weak and indirect
+
+L_rec does not touch E_h at all (only trains E_r/E_X/D_X/D_r on the robot side). Result: E_h learned to produce z that survive the round-trip but collapsed to a small region of latent space.
+
+**Changes applied**:
+
+1. **margin 0.05 → 0.3**: Triplet margin increased to force meaningful separation. At margin=0.05 with z_dim=16 and Tanh output, nearly all triplets satisfy the constraint by chance. At 0.3 the loss stays active through training.
+2. **Cosine LR decay**: Added `CosineAnnealingLR` starting after `lr_warmup=500` steps, decaying 1e-3 → 1e-5. Addresses the degradation observed after step 2700 in Entry 50, where constant LR likely caused overshooting.
+
+**Code locations**: Both fixes live in `grasp-model/src/cross_emb/train_cross_emb.py` (single source of truth). Colab notebook `train_stage1_colab.ipynb` delegates to the script via `subprocess.run` -- no inline training loop remains.
+
+**Expected effect**: L_cont should be >0 at step 0 and decrease gradually. z.std() should reach ~0.3-0.5 range by step 2000. rec loss should sustain improvement past step 2700 due to LR decay.
+
+**What remains unknown**: Whether margin=0.3 is optimal or overshoots (too aggressive separation). If L_cont dominates and rec degrades, lower lambda_c or reduce margin.
+
+**Next steps**:
+1. Retrain in Colab with these fixes
+2. At step 50, verify L_cont > 0
+3. After run, evaluate with NDS analog (Entry 51)
+
+**Status**: Implemented -- not yet validated by a training run.
