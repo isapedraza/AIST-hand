@@ -53,7 +53,11 @@ class HumanEncoder_E_h(nn.Module):
         self.out_act = nn.Tanh()
 
     def forward(self, quats: torch.Tensor) -> torch.Tensor:
-        # quats: [B, 21, 4]
+        # quats: [B, 20, 4] -- prepend identity wrist node -> [B, 21, 4]
+        B = quats.shape[0]
+        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
+        wrist[:, 0, 0] = 1.0
+        quats = torch.cat([wrist, quats], dim=1)           # [B, 21, 4]
         B, N, in_f = quats.shape
         x = quats.reshape(B * N, in_f)
         x = self.layer1(x, self.cam)
