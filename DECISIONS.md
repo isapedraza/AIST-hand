@@ -2589,3 +2589,25 @@ Current choice: Phase 1 with Shadow Hand only. Risk: latent space anchors to Sha
 **References**: Yan et al. 2026 (training protocol); Entry 49 (architecture and hyperparameter selection).
 
 **Status**: Complete -- training run documented. Step 2500 checkpoint not yet evaluated.
+
+---
+
+## Entry 51 -- 2026-04-27: Post-training test evaluation plan
+
+**Context**: Yan et al. evaluate retargeting quality post-training on a held-out test set (80/20 split on HumanML3D), reporting NDS and NVS metrics. We have no equivalent evaluation yet -- training loss alone does not measure whether fingertips of the robot actually follow the human hand.
+
+**Decision**: After each training run completes, run a dedicated test evaluation script. Protocol:
+
+1. Hold out 20% of `hograspnet_dong.csv` subjects (subject-level split to avoid data leakage)
+2. Load best checkpoint
+3. Inference: `q_r_hat = D_r(D_X(E_h(quats_h)))` on test poses
+4. FK: run `robot_loader` FK on `q_r_hat` to get robot fingertip positions
+5. Metric: normalized fingertip distance similarity (NDS analog) -- fingertip positions in wrist-local frame, normalized by hand span
+
+This is post-training only. No val loop during training.
+
+**Alternatives considered**: Val loop during training (adds overhead, not needed since we are not doing early stopping based on val loss yet); loss-only evaluation (does not measure geometric retargeting quality).
+
+**References**: Yan et al. 2026 Sec. IV-A (NDS/NVS definition); Entry 50 (training run, motivating need for quality metric).
+
+**Status**: Proposed -- implement after next training run completes.
