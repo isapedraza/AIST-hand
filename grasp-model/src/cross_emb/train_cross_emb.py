@@ -115,6 +115,8 @@ def main():
     # Training loop
     # ---------------------------------------------------------------------------
     CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BEST_PATH = CKPT_PATH.parent / "stage1_best.pt"
+    best_rec  = float("inf")
 
     for step in range(args.n_steps):
 
@@ -177,9 +179,21 @@ def main():
         if step > args.lr_warmup:
             scheduler.step()
 
+        if L_rec.item() < best_rec:
+            best_rec = L_rec.item()
+            torch.save({
+                "step": step,
+                "E_h":  E_h.state_dict(),
+                "E_r":  E_r.state_dict(),
+                "E_X":  E_X.state_dict(),
+                "D_X":  D_X.state_dict(),
+                "D_r":  D_r.state_dict(),
+            }, BEST_PATH)
+
         if step % args.log_every == 0:
             lr_now = optimizer.param_groups[0]["lr"]
-            print(f"step {step:05d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} | lr={lr_now:.2e}")
+            best_flag = " *" if L_rec.item() == best_rec else ""
+            print(f"step {step:05d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} | lr={lr_now:.2e}{best_flag}")
 
         if step % args.ckpt_every == 0:
             torch.save({
