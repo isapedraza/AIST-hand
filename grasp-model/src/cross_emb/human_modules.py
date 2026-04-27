@@ -19,13 +19,13 @@ class CAMLayer(nn.Module):
         self.linear = nn.Linear(in_features * 2, out_features)
 
     def forward(self, x: torch.Tensor, cam: torch.Tensor) -> torch.Tensor:
-        B_N, F = x.shape
+        B_N, feat = x.shape
         N = self.n_joints
         B = B_N // N
-        x_3d = x.view(B, N, F)
-        x_agg = torch.einsum('ij,bjf->bif', cam, x_3d)        # [B, N, F]
-        x_cat = torch.cat([x_agg, x_3d], dim=-1)              # [B, N, 2F]
-        return F.elu(self.linear(x_cat.view(B_N, 2 * F)))     # [B*N, out]
+        x_3d = x.view(B, N, feat)
+        x_agg = torch.einsum('ij,bjf->bif', cam, x_3d)             # [B, N, feat]
+        x_cat = torch.cat([x_agg, x_3d], dim=-1)                   # [B, N, 2*feat]
+        return F.elu(self.linear(x_cat.view(B_N, 2 * feat)))       # [B*N, out]
 
 
 class HumanEncoder_E_h(nn.Module):
@@ -54,8 +54,8 @@ class HumanEncoder_E_h(nn.Module):
 
     def forward(self, quats: torch.Tensor) -> torch.Tensor:
         # quats: [B, 21, 4]
-        B, N, F = quats.shape
-        x = quats.reshape(B * N, F)
+        B, N, in_f = quats.shape
+        x = quats.reshape(B * N, in_f)
         x = self.layer1(x, self.cam)
         x = self.layer2(x, self.cam)
         x = self.layer3(x, self.cam)
