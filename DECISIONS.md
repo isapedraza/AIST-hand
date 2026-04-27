@@ -2552,4 +2552,40 @@ Current choice: Phase 1 with Shadow Hand only. Risk: latent space anchors to Sha
 
 **References**: Yan et al. 2026 (batch size justification, multi-robot training protocol, Phase 1/2 architecture); Lee et al. 2023 SAME (GAT ablation analysis); abl04/camgat01 (empirical evidence against GAT in this domain).
 
-**Status**: In progress -- CAM implementation pending.
+**Status**: Implemented -- CAM-GNN live in human_modules.py, first training run complete (see Entry 50).
+
+---
+
+## Entry 50 -- 2026-04-26: Stage 4 first training run -- 5000 steps, B=30k, N_TRIPLETS=4096
+
+**Context**: First completed training run after GAT→CAM-GNN migration (Entry 49). Colab T4, B=30k, N_TRIPLETS=4096, N_STEPS=5000, LR=1e-3 constant, CKPT_EVERY=500.
+
+**Observed behavior**:
+
+- Step 0: total=19.26, cont=0.013, rec=3.43, ltc=0.43, temp=0.24 -- all losses active immediately
+- GPU RAM at step 0: 14.1/15.0 GB reserved (94% utilization). Allocated ~1.06 GB active tensors, rest is reserved but fragmented
+- rec loss decreased from ~3.43 to best ~0.94 around steps 2500-2700
+- ltc converged to near zero rapidly (expected -- robot FK is exact, no noise in latent code)
+- temp loss plateaued at ~0.31
+- cont loss near zero throughout (could indicate collapse or saturation -- not yet diagnosed)
+- Periodic loss spikes observed at multiple steps (approx. steps 2000, 2750, 3150, and others). Spikes correspond to checkpoint save events (CKPT_EVERY=500), but causality not established -- could be checkpoint I/O, stochastic batch variance, or memory pressure at 94% GPU utilization
+- Final losses at step 4950: total=6.06, rec=1.20, ltc=0.006, temp=0.31
+- Final rec (1.20) is worse than best rec (~0.94 at step ~2700) -- model did not sustain improvement after step 2700
+
+**Decision**: Do not train further with constant LR=1e-3. Best checkpoint is step 2500. Before next run, add LR scheduler (cosine decay or step decay after ~2000 steps). This is the most actionable hypothesis for the degradation after step 2700 -- but no other causes have been ruled out.
+
+**What remains unknown**:
+- Whether spike pattern is harmful or merely stochastic
+- Whether cont~0 reflects embedding collapse or appropriate saturation given Shadow Hand Phase 1 only
+- Whether step 2500 checkpoint produces usable retargeting -- not yet evaluated
+
+**Next steps**:
+1. Add cosine LR decay to training notebook
+2. Load step 2500 checkpoint, run retargeting on a held-out pose, visually inspect result
+3. If retargeting quality is acceptable, proceed to Phase 2 (Allegro/LEAP/Inspire)
+
+**Alternatives considered**: Continue from step 4950 checkpoint (rec is worse than step 2500, not preferred); reduce N_TRIPLETS to lower memory pressure and allow higher B (would require re-running from scratch).
+
+**References**: Yan et al. 2026 (training protocol); Entry 49 (architecture and hyperparameter selection).
+
+**Status**: Complete -- training run documented. Step 2500 checkpoint not yet evaluated.
