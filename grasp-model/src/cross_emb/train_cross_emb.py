@@ -35,6 +35,7 @@ B          = 1000    # batch size (target: 1e5, start small)
 N_STEPS    = 10      # training steps (target: thousands)
 LOG_EVERY  = 1       # print losses every N steps
 CKPT_EVERY = 5       # save checkpoint every N steps
+LR_WARMUP  = 500     # steps before cosine decay begins
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -75,6 +76,9 @@ optimizer = torch.optim.Adam(
     list(E_X.parameters()) + list(D_X.parameters()) +
     list(D_r.parameters()),
     lr=LR,
+)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optimizer, T_max=N_STEPS - LR_WARMUP, eta_min=1e-5
 )
 
 # ---------------------------------------------------------------------------
@@ -140,7 +144,7 @@ for step in range(N_STEPS):
     eye  = torch.eye(n, dtype=torch.bool, device=DEVICE)
     pos_idx = S.masked_fill(eye, float('inf')).argmin(dim=1)
     neg_idx = S.masked_fill(eye, float('-inf')).argmax(dim=1)
-    L_cont  = torch.relu((zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + 0.05).mean()
+    L_cont  = torch.relu((zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + 0.3).mean()
 
     # L_temporal: velocidad fingertip humano vs robot retargeteado
     fk_t   = sampler.robot_rnd.run_fk(q_r_hat)
@@ -170,8 +174,12 @@ for step in range(N_STEPS):
     L_total.backward()
     optimizer.step()
 
+    if step > LR_WARMUP:
+        scheduler.step()
+
     if step % LOG_EVERY == 0:
-        print(f"step {step:04d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f}")
+        lr_now = optimizer.param_groups[0]["lr"]
+        print(f"step {step:04d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} | lr={lr_now:.2e}")
 
     if step % CKPT_EVERY == 0:
         CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
