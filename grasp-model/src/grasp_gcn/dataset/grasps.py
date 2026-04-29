@@ -307,7 +307,7 @@ class GraspsClass(InMemoryDataset):
             csv_stem = Path(self._csv_filename).stem  # e.g. 'hograspnet_r014'
             return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
         if self.add_dong_quats:
-            return [f'hograspnet_dong_{self.split}_{cls_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
+            return [f'hograspnet_dong_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
         return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{normxyz_tag}.pt']
 
     # ------------------------------------------------------------------
@@ -464,6 +464,11 @@ class GraspsClass(InMemoryDataset):
         sample = {'grasp_type': grasp_type}
 
         if self.add_dong_quats:
+            if self._add_xyz:
+                vals = row[XYZ_COLS].values.astype(np.float32).reshape(21, 3)
+                for j, name in enumerate(JOINT_NAMES):
+                    sample[name] = vals[j]
+
             # WRIST (joint 0): identity quaternion — reference frame has no rotation
             quats = np.zeros((21, 4), dtype=np.float32)
             quats[0] = [1.0, 0.0, 0.0, 0.0]
