@@ -52,6 +52,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lambda_tmp", type=float, default=0.1)
     p.add_argument("--n_triplets", type=int,   default=2048)
     p.add_argument("--margin",     type=float, default=0.3)
+    p.add_argument(
+        "--zero_wrj",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Force Shadow WRJ2/WRJ1 targets and FK inputs to zero. Dong human input is wrist-local.",
+    )
     return p.parse_args()
 
 
@@ -68,6 +74,7 @@ def main():
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} | margin={args.margin}")
+    print(f"zero_wrj={args.zero_wrj}")
 
     # Add scripts to path
     sys.path.insert(0, str(REPO_ROOT / "grasp-model/scripts"))
@@ -126,6 +133,9 @@ def main():
         quats_h        = batch["quats_h"]
         quats_h_t1     = batch["quats_h_t1"]
         q_r            = batch["q_r"]
+        if args.zero_wrj:
+            q_r = q_r.clone()
+            q_r[:, 0:2] = 0.0  # WRJ2, WRJ1 are not encoded in wrist-local Dong human signal.
         quats_h_sub    = batch["quats_h_sub"]
         quats_r_sub    = batch["quats_r_sub"]
         tips_h_sub     = batch["tips_h_sub"]
@@ -183,7 +193,15 @@ def main():
                 (zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + args.margin
             ).mean()
 
-        fk_t,  fk_t1  = sampler.robot_rnd.run_fk(q_r_hat), sampler.robot_rnd.run_fk(q_r_hat_t1)
+        q_r_hat_fk = q_r_hat
+        q_r_hat_t1_fk = q_r_hat_t1
+        if args.zero_wrj:
+            q_r_hat_fk = q_r_hat.clone()
+            q_r_hat_t1_fk = q_r_hat_t1.clone()
+            q_r_hat_fk[:, 0:2] = 0.0
+            q_r_hat_t1_fk[:, 0:2] = 0.0
+
+        fk_t,  fk_t1  = sampler.robot_rnd.run_fk(q_r_hat_fk), sampler.robot_rnd.run_fk(q_r_hat_t1_fk)
         _, _, meta_t  = sampler.robot_rnd.run_dong_stage2(fk_t,  HAND_CONFIG)
         _, _, meta_t1 = sampler.robot_rnd.run_dong_stage2(fk_t1, HAND_CONFIG)
         tip_labels    = meta_t["tip_labels"]
@@ -213,6 +231,7 @@ def main():
                 "E_X":  E_X.state_dict(),
                 "D_X":  D_X.state_dict(),
                 "D_r":  D_r.state_dict(),
+                "zero_wrj": args.zero_wrj,
             }, BEST_PATH)
 
         if step % args.log_every == 0:
@@ -228,6 +247,7 @@ def main():
                 "E_X":  E_X.state_dict(),
                 "D_X":  D_X.state_dict(),
                 "D_r":  D_r.state_dict(),
+                "zero_wrj": args.zero_wrj,
                 "optimizer": optimizer.state_dict(),
             }, CKPT_PATH)
 
