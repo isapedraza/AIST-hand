@@ -133,8 +133,8 @@ def main():
     # Training loop
     # ---------------------------------------------------------------------------
     CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    BEST_PATH = CKPT_PATH.parent / "stage1_best.pt"
-    best_rec  = float("inf")
+    BEST_TOTAL_PATH = CKPT_PATH.parent / "stage1_best_total.pt"
+    best_total = float("inf")
 
     for step in range(args.n_steps):
 
@@ -191,39 +191,57 @@ def main():
             q_all_k    = torch.cat([q_h_k, q_r_k], dim=0)
             t_all_k    = torch.cat([t_h_k, t_r_k], dim=0)
             B2  = z_all_k.shape[0]
+            if B2 < 3:
+                continue
             n   = min(args.n_triplets, B2)
-            idx = torch.randperm(B2, device=DEVICE)[:n]
-            zs  = z_all_k[idx]; qs = q_all_k[idx]; ts = t_all_k[idx]
-            dot    = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)
-            D_R_k  = (1 - dot ** 2).mean(dim=-1)
-            D_ee_k = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1).mean(dim=-1)
-            S_k    = D_R_k + D_ee_k
-            if args.log_metric_stats:
-                off_diag = ~torch.eye(n, dtype=torch.bool, device=DEVICE)
-                metric_stats[sub] = (
-                    D_R_k[off_diag].mean().item(),
-                    D_ee_k[off_diag].mean().item(),
-                    S_k[off_diag].mean().item(),
-                )
-            # Yan et al. describe randomly sampled triplets. Sample two non-self
-            # candidates per anchor, then use physical similarity S_k only to
-            # order them into positive (more similar) and negative (less similar).
-            anchors = torch.arange(n, device=DEVICE)
-            cand_a = torch.randint(0, n - 1, (n,), device=DEVICE)
+
+            # Yan et al. describe randomly sampled triplets. Sample anchors and
+            # two non-self candidates directly; compute S_k only for the pairs
+            # used by the loss instead of allocating an all-pairs matrix.
+            anchors = torch.randperm(B2, device=DEVICE)[:n]
+            cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
             cand_a = cand_a + (cand_a >= anchors).long()
-            cand_b = torch.randint(0, n - 1, (n,), device=DEVICE)
+            cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
             cand_b = cand_b + (cand_b >= anchors).long()
             same = cand_b == cand_a
             if same.any():
-                cand_b[same] = (cand_b[same] + 1) % n
+                cand_b[same] = (cand_b[same] + 1) % B2
                 cand_b[same] += (cand_b[same] == anchors[same]).long()
-                cand_b[same] %= n
+                cand_b[same] %= B2
 
-            a_closer = S_k[anchors, cand_a] <= S_k[anchors, cand_b]
+            qa = q_all_k[anchors]
+            ta = t_all_k[anchors]
+            q_ca = q_all_k[cand_a]
+            q_cb = q_all_k[cand_b]
+            t_ca = t_all_k[cand_a]
+            t_cb = t_all_k[cand_b]
+
+            dot_a = (qa * q_ca).sum(-1)
+            dot_b = (qa * q_cb).sum(-1)
+            D_R_a = (1 - dot_a ** 2).mean(dim=-1)
+            D_R_b = (1 - dot_b ** 2).mean(dim=-1)
+            D_ee_a = (ta - t_ca).norm(dim=-1).mean(dim=-1)
+            D_ee_b = (ta - t_cb).norm(dim=-1).mean(dim=-1)
+            S_a = D_R_a + D_ee_a
+            S_b = D_R_b + D_ee_b
+
+            if args.log_metric_stats:
+                D_R_pairs = torch.cat([D_R_a, D_R_b])
+                D_ee_pairs = torch.cat([D_ee_a, D_ee_b])
+                S_pairs = torch.cat([S_a, S_b])
+                metric_stats[sub] = (
+                    D_R_pairs.mean().item(),
+                    D_ee_pairs.mean().item(),
+                    S_pairs.mean().item(),
+                )
+
+            a_closer = S_a <= S_b
             pos_idx = torch.where(a_closer, cand_a, cand_b)
             neg_idx = torch.where(a_closer, cand_b, cand_a)
             L_cont  = L_cont + torch.relu(
-                (zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + args.margin
+                (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
+                - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
+                + args.margin
             ).mean()
 
         q_r_hat_fk = q_r_hat
@@ -255,30 +273,46 @@ def main():
         if step > args.lr_warmup:
             scheduler.step()
 
-        if L_rec.item() < best_rec:
-            best_rec = L_rec.item()
-            torch.save({
-                "step": step,
-                "E_h":  E_h.state_dict(),
-                "E_r":  E_r.state_dict(),
-                "E_X":  E_X.state_dict(),
-                "D_X":  D_X.state_dict(),
-                "D_r":  D_r.state_dict(),
-                "zero_wrj": args.zero_wrj,
-            }, BEST_PATH)
+        ckpt_payload = {
+            "step": step,
+            "E_h":  E_h.state_dict(),
+            "E_r":  E_r.state_dict(),
+            "E_X":  E_X.state_dict(),
+            "D_X":  D_X.state_dict(),
+            "D_r":  D_r.state_dict(),
+            "zero_wrj": args.zero_wrj,
+            "losses": {
+                "total": L_total.item(),
+                "cont": L_cont.item(),
+                "rec": L_rec.item(),
+                "ltc": L_ltc.item(),
+                "temp": L_temp.item(),
+            },
+        }
+
+        if L_total.item() < best_total:
+            best_total = L_total.item()
+            torch.save(ckpt_payload, BEST_TOTAL_PATH)
 
         if step % args.log_every == 0:
             lr_now = optimizer.param_groups[0]["lr"]
-            best_flag = " *" if L_rec.item() == best_rec else ""
-            print(f"step {step:05d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} | lr={lr_now:.2e}{best_flag}")
+            best_flag = " *best_total" if L_total.item() == best_total else ""
+            print(
+                f"[step {step:05d}] loss total={L_total.item():.4f} "
+                f"cont={L_cont.item():.4f} rec={L_rec.item():.4f} "
+                f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
+                f"lr={lr_now:.2e}{best_flag}"
+            )
             if extra_human_count:
-                print(f"extra_human={extra_human_count} by_class={extra_human_by_class}")
+                open_count = extra_human_by_class.get(28, 0)
+                fist_count = extra_human_by_class.get(29, 0)
+                print(f"  batch extra_human={extra_human_count} open={open_count} fist={fist_count}")
             if args.log_metric_stats and metric_stats:
                 stats = " | ".join(
-                    f"{sub}: D_R={dr:.4f} D_ee={dee:.4f} S={s:.4f}"
+                    f"{sub}(D_R={dr:.4f}, D_ee={dee:.4f}, S={s:.4f})"
                     for sub, (dr, dee, s) in metric_stats.items()
                 )
-                print(f"metric_stats | {stats}")
+                print(f"  metric pairs {stats}")
 
         if step % args.ckpt_every == 0:
             torch.save({
@@ -289,6 +323,13 @@ def main():
                 "D_X":  D_X.state_dict(),
                 "D_r":  D_r.state_dict(),
                 "zero_wrj": args.zero_wrj,
+                "losses": {
+                    "total": L_total.item(),
+                    "cont": L_cont.item(),
+                    "rec": L_rec.item(),
+                    "ltc": L_ltc.item(),
+                    "temp": L_temp.item(),
+                },
                 "optimizer": optimizer.state_dict(),
             }, CKPT_PATH)
 

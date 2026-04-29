@@ -2886,3 +2886,37 @@ Or equivalently, zero WRJ columns in valid_robot_poses.npz at generation time so
 **Status**: Run 4 evaluated. Issues diagnosed. Run 5 plan above.
 
 **Status**: Design complete. Implementation next (Run 4).
+
+## Entry 58 -- 2026-04-29: Replace all-pairs contrastive mining with explicit random triplets
+
+**Context**: The current Stage 1 contrastive block already uses Yan-style random candidates per anchor, but it still builds an all-pairs physical similarity matrix `S_k [n_triplets, n_triplets]`. This matrix is inherited from the previous hard-mining implementation (`argmin` positive / `argmax` negative). With the current random-candidate logic, only two entries of `S_k` are used per anchor.
+
+**Yan reference**: Yan et al. describe "randomly sampled triplets" from batches containing human and robot poses. The paper defines the physical metric `S_k = D_R + w D_ee` and margin `alpha=0.05`, but does not require all-pairs mining.
+
+**Decision**: Replace all-pairs `S_k` construction with explicit random triplets:
+- sample `n_triplets` anchors from the human+robot pool;
+- sample two non-self candidates per anchor;
+- compute only `S(anchor, cand_a)` and `S(anchor, cand_b)`;
+- assign positive = lower `S`, negative = higher `S`;
+- keep the same triplet loss in latent space.
+
+**Metrics preserved**:
+```
+D_R   = mean_j(1 - <q_a^j, q_b^j>^2)
+D_ee = mean_tip(||tip_a - tip_b||_2)
+S     = D_R + D_ee
+```
+
+**What does not change**:
+- no changes to GNN/encoders;
+- no changes to decoder;
+- no changes to FK;
+- no changes to HaGRID mixing;
+- no changes to `margin=0.05`;
+- no changes to `lambda_c`, `lambda_rec`, `lambda_ltc`, `lambda_tmp`.
+
+**Expected effect**: The contrastive miner becomes O(`n_triplets`) instead of O(`n_triplets^2`) for physical similarity computation. This should allow much larger explicit triplet counts, improving per-step coverage of the 40k human+robot pool without allocating all-pairs matrices.
+
+**Logging change**: `metric_stats` should report statistics over the sampled anchor-candidate pairs actually used by the loss, not over all-pairs similarities.
+
+**Implementation status**: Decision recorded. Code change pending.
