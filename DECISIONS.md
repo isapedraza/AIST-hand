@@ -2732,3 +2732,27 @@ If all three hold, the latent space maintains Yan's interpolation property. The 
 **When to pursue**: Only if cont ≈ 0 persists after running with Proposals 1+3. Do not implement speculatively.
 
 **Status**: Hypothesis. Pending experimental validation of Proposals 1+3.
+
+## Entry 55 -- 2026-04-28: Run 3 results -- NPZ + z_dim=64
+
+**Config**: B=20k, N_STEPS=5000, z_dim=64, margin=0.3, cosine LR decay. Robot sampler: VALID_NPZ (10M collision-free poses, 15.7% acceptance rate).
+
+**Results**:
+- rec: 3.23 → 0.11 (97% reduction). Previous floor was 0.70 -- NPZ + z_dim=64 resolved reconstruction completely.
+- cont: ≈ 0 throughout entire run. Confirmed: S = D_R + D_ee does not discriminate hand grasps.
+- ltc: 3.48 → 0.006. Converged.
+- temp: ~0.32 stable.
+
+**Live test observations**:
+- Shadow Hand poses are now physically valid -- no finger collisions or impossible configurations.
+- Motion is smooth. Hand opens and closes in response to human input.
+- Problem 1 -- only flexion: no grasp-type differentiation. Fist and pinch produce similar output. cont=0 means the latent space has no semantic structure -- E_h maps all poses to the same region regardless of grasp type.
+- Problem 2 -- no rest pose: hand never reaches open/neutral configuration. Always partially flexed. Same dataset gap as Run 2 (HOGraspNet contains only grasping poses, zero open-hand frames).
+
+**Conclusions**:
+- Proposals 1+3 (z_dim=64 + collision filtering) fully resolved the reconstruction problem.
+- cont=0 is now the sole remaining problem. Root cause confirmed: S is too weak to discriminate hand grasps.
+- Next step: Entry 54 -- modify S (anatomy-informed weighting or alternative geometric features).
+- Dataset gap (no open-hand poses) is a separate problem, lower priority until cont is resolved.
+
+**Status**: Run complete. Proceeding to S modification (Entry 54).
