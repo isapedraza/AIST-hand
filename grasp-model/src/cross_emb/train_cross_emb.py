@@ -51,7 +51,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lambda_ltc", type=float, default=1.0)
     p.add_argument("--lambda_tmp", type=float, default=0.1)
     p.add_argument("--n_triplets", type=int,   default=2048)
-    p.add_argument("--margin",     type=float, default=0.3)
+    p.add_argument("--margin",     type=float, default=0.05)
     p.add_argument(
         "--zero_wrj",
         action=argparse.BooleanOptionalAction,
@@ -177,18 +177,32 @@ def main():
 
             z_all_k    = torch.cat([z_h_k, z_r_k], dim=0)
             q_all_k    = torch.cat([q_h_k, q_r_k], dim=0)
-            t_all_k    = torch.cat([t_h_k.flatten(1), t_r_k.flatten(1)], dim=0)
+            t_all_k    = torch.cat([t_h_k, t_r_k], dim=0)
             B2  = z_all_k.shape[0]
             n   = min(args.n_triplets, B2)
             idx = torch.randperm(B2, device=DEVICE)[:n]
             zs  = z_all_k[idx]; qs = q_all_k[idx]; ts = t_all_k[idx]
             dot    = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)
-            D_R_k  = (1 - dot ** 2).sum(-1)
-            D_ee_k = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1)
+            D_R_k  = (1 - dot ** 2).mean(dim=-1)
+            D_ee_k = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1).mean(dim=-1)
             S_k    = D_R_k + D_ee_k
-            eye    = torch.eye(n, dtype=torch.bool, device=DEVICE)
-            pos_idx = S_k.masked_fill(eye, float('inf')).argmin(dim=1)
-            neg_idx = S_k.masked_fill(eye, float('-inf')).argmax(dim=1)
+            # Yan et al. describe randomly sampled triplets. Sample two non-self
+            # candidates per anchor, then use physical similarity S_k only to
+            # order them into positive (more similar) and negative (less similar).
+            anchors = torch.arange(n, device=DEVICE)
+            cand_a = torch.randint(0, n - 1, (n,), device=DEVICE)
+            cand_a = cand_a + (cand_a >= anchors).long()
+            cand_b = torch.randint(0, n - 1, (n,), device=DEVICE)
+            cand_b = cand_b + (cand_b >= anchors).long()
+            same = cand_b == cand_a
+            if same.any():
+                cand_b[same] = (cand_b[same] + 1) % n
+                cand_b[same] += (cand_b[same] == anchors[same]).long()
+                cand_b[same] %= n
+
+            a_closer = S_k[anchors, cand_a] <= S_k[anchors, cand_b]
+            pos_idx = torch.where(a_closer, cand_a, cand_b)
+            neg_idx = torch.where(a_closer, cand_b, cand_a)
             L_cont  = L_cont + torch.relu(
                 (zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + args.margin
             ).mean()
