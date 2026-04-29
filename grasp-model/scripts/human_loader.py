@@ -186,3 +186,79 @@ class HumanLoader:
             "labels":     self.labels,
             "tip_labels": self.tip_labels,
         }
+
+
+class StaticHumanAnchorLoader:
+    """
+    Loads static human anchor poses, such as HaGRID open-hand/fist samples.
+
+    These rows are not temporal sequences. get_batch_temporal returns t1=t so
+    the temporal loss sees zero human fingertip velocity for anchor poses.
+    TIP_COLS are expected to be already normalized by hand length.
+    """
+
+    def __init__(
+        self,
+        csv_path: str | Path,
+        device: str = "cpu",
+    ) -> None:
+        self.device = torch.device(device)
+        self.labels: list[str] = DONG_LABELS
+        self.tip_labels: list[str] = TIP_LABELS
+
+        print(f"[StaticHumanAnchorLoader] Loading {csv_path} ...")
+        df = pd.read_csv(csv_path)
+        if "grasp_type" not in df.columns:
+            raise ValueError(f"{csv_path} must include a grasp_type column")
+
+        quats_np = df[_QUAT_COLS].values.astype(np.float32).reshape(-1, 20, 4)
+        tips_np = df[_TIP_COLS].values.astype(np.float32).reshape(-1, 5, 3)
+        labels_np = df["grasp_type"].values.astype(np.int64)
+
+        self._quats = torch.from_numpy(quats_np).to(self.device)
+        self._tips = torch.from_numpy(tips_np).to(self.device)
+        self._grasp_type = torch.from_numpy(labels_np).to(self.device)
+        self._N = len(df)
+        self._classes = sorted(int(v) for v in np.unique(labels_np))
+        self._class_indices = {
+            c: torch.from_numpy(np.where(labels_np == c)[0].astype(np.int64)).to(self.device)
+            for c in self._classes
+        }
+        class_counts = {c: int((labels_np == c).sum()) for c in self._classes}
+        print(f"[StaticHumanAnchorLoader] Ready. quats={tuple(self._quats.shape)}, classes={class_counts}")
+
+    def _sample_balanced_indices(self, B: int) -> torch.Tensor:
+        if B <= 0:
+            return torch.empty(0, dtype=torch.long, device=self.device)
+        chunks = []
+        n_classes = len(self._classes)
+        base = B // n_classes
+        rem = B % n_classes
+        for i, c in enumerate(self._classes):
+            n = base + (1 if i < rem else 0)
+            pool = self._class_indices[c]
+            pos = torch.randint(0, pool.shape[0], (n,), device=self.device)
+            chunks.append(pool[pos])
+        return torch.cat(chunks, dim=0)[torch.randperm(B, device=self.device)]
+
+    def get_batch(self, B: int) -> dict:
+        idx = self._sample_balanced_indices(B)
+        return {
+            "quats": self._quats[idx],
+            "tips": self._tips[idx],
+            "grasp_type": self._grasp_type[idx],
+            "labels": self.labels,
+            "tip_labels": self.tip_labels,
+        }
+
+    def get_batch_temporal(self, B: int) -> dict:
+        batch = self.get_batch(B)
+        return {
+            "quats_t": batch["quats"],
+            "quats_t1": batch["quats"],
+            "tips_t": batch["tips"],
+            "tips_t1": batch["tips"],
+            "grasp_type": batch["grasp_type"],
+            "labels": batch["labels"],
+            "tip_labels": batch["tip_labels"],
+        }

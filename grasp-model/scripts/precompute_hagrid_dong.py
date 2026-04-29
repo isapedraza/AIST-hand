@@ -6,10 +6,10 @@ Reads HandLandmarks.csv from HandGesture2Emoji repo (HaGRID subset).
 Outputs hagrid_dong.csv compatible with HumanLoader column format.
 
 Classes used:
-  2  = fist
-  7  = palm
-  10 = stop
-  11 = stop_inv
+  2  = fist          -> closed_fist (grasp_type=29)
+  7  = palm          -> open_hand   (grasp_type=28)
+  10 = stop          -> open_hand   (grasp_type=28)
+  11 = stop_inv      -> open_hand   (grasp_type=28)
 
 Usage:
     python precompute_hagrid_dong.py \
@@ -29,8 +29,15 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "grasp-app" / "hand_preprocessing"))
 from dong_kinematics import DongKinematics  # noqa: E402
 
-# HaGRID class labels to include
-TARGET_CLASSES = [2, 7, 10, 11]
+# HaGRID class labels to include. The output grasp_type values intentionally
+# live above the 28 HOGraspNet classes and are used only as metadata.
+HAGRID_LABELS = {
+    2: ("fist", 29, "closed_fist"),
+    7: ("palm", 28, "open_hand"),
+    10: ("stop", 28, "open_hand"),
+    11: ("stop_inverted", 28, "open_hand"),
+}
+TARGET_CLASSES = list(HAGRID_LABELS)
 
 # MediaPipe landmark indices for fingertips
 TIP_IDX = {
@@ -128,11 +135,15 @@ def main():
             continue
         tips_norm = np.stack([pts[idx] / hand_length for idx in TIP_IDX.values()])  # [5, 3]
 
+        source_label, grasp_type, anchor_label = HAGRID_LABELS[int(row.label)]
         r = {
-            "subject_id": 999,          # outside HOGraspNet S1 split
+            "source":     "hagrid",
+            "source_label": source_label,
+            "anchor_label": anchor_label,
+            "subject_id": 9000 + int(row.label),  # reserved synthetic IDs
             "date_id":    0,
-            "object_id":  row.label,    # class label as object_id
-            "grasp_type": row.label,
+            "object_id":  grasp_type,
+            "grasp_type": grasp_type,
             "trial_id":   i,            # unique per sample = no temporal pairing
             "cam":        0,
             "frame_id":   0,

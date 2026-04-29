@@ -27,7 +27,7 @@ from pathlib import Path
 
 import torch
 
-from human_loader import HumanLoader
+from human_loader import HumanLoader, StaticHumanAnchorLoader
 from robot_loader import RobotLoader
 
 
@@ -103,6 +103,8 @@ class CrossEmbodimentSampler:
         valid_poses_path : path to valid_robot_poses.npz (mode=VALID_NPZ).
                            If None, uses random uniform sampling (mode=RANDOM_UNIFORM).
                            If set but file missing, crashes immediately.
+        extra_human_csv  : optional static human anchor CSV, mixed into train batches.
+        extra_human_ratio: fraction of human batch reserved for static anchors.
     """
 
     def __init__(
@@ -113,14 +115,44 @@ class CrossEmbodimentSampler:
         split: str = "train",
         device: str = "cpu",
         valid_poses_path: str | Path | None = None,
+        extra_human_csv: str | Path | None = None,
+        extra_human_ratio: float = 0.0,
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
+        self.split = split
+        self.extra_human_ratio = float(extra_human_ratio)
         self.human_loader = HumanLoader(csv_path, split=split, device=device)
+        self.extra_human_loader = None
+        if extra_human_csv is not None and self.extra_human_ratio > 0:
+            if split != "train":
+                print(f"[CrossEmbodimentSampler] Ignoring extra_human_csv for split={split}.")
+            else:
+                self.extra_human_loader = StaticHumanAnchorLoader(extra_human_csv, device=device)
+                print(
+                    "[CrossEmbodimentSampler] Extra human anchors enabled: "
+                    f"ratio={self.extra_human_ratio:.3f}"
+                )
         self.robot_rnd = RobotLoader(urdf_path, device=device, valid_poses_path=valid_poses_path)
+
+    def _batch_counts(self, B: int) -> tuple[int, int]:
+        if self.extra_human_loader is None:
+            return B, 0
+        B_extra = min(B, max(1, int(round(B * self.extra_human_ratio))))
+        return B - B_extra, B_extra
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:
         """Sample B random human frames + B random robot poses. No temporal pairing."""
-        hb = self.human_loader.get_batch(B, seed=seed)
+        B_base, B_extra = self._batch_counts(B)
+        hb = self.human_loader.get_batch(B_base, seed=seed)
+        extra_counts = {}
+        if B_extra:
+            eb = self.extra_human_loader.get_batch(B_extra)
+            hb["quats"] = torch.cat([hb["quats"], eb["quats"]], dim=0)
+            hb["tips"] = torch.cat([hb["tips"], eb["tips"]], dim=0)
+            extra_counts = {
+                int(k.item()): int(v.item())
+                for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
+            }
         return self._assemble(
             quats_h=hb["quats"],
             tips_h=hb["tips"],
@@ -128,6 +160,8 @@ class CrossEmbodimentSampler:
             tip_labels=hb["tip_labels"],
             B=B,
             seed=seed,
+            extra_human_count=B_extra,
+            extra_human_by_class=extra_counts,
         )
 
     def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
@@ -135,7 +169,19 @@ class CrossEmbodimentSampler:
         Sample B consecutive human frame pairs (t, t+1) + B random robot poses.
         Adds quats_h_t1 and tips_h_t1 to the output dict.
         """
-        hb = self.human_loader.get_batch_temporal(B, seed=seed)
+        B_base, B_extra = self._batch_counts(B)
+        hb = self.human_loader.get_batch_temporal(B_base, seed=seed)
+        extra_counts = {}
+        if B_extra:
+            eb = self.extra_human_loader.get_batch_temporal(B_extra)
+            hb["quats_t"] = torch.cat([hb["quats_t"], eb["quats_t"]], dim=0)
+            hb["quats_t1"] = torch.cat([hb["quats_t1"], eb["quats_t1"]], dim=0)
+            hb["tips_t"] = torch.cat([hb["tips_t"], eb["tips_t"]], dim=0)
+            hb["tips_t1"] = torch.cat([hb["tips_t1"], eb["tips_t1"]], dim=0)
+            extra_counts = {
+                int(k.item()): int(v.item())
+                for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
+            }
         out = self._assemble(
             quats_h=hb["quats_t"],
             tips_h=hb["tips_t"],
@@ -143,6 +189,8 @@ class CrossEmbodimentSampler:
             tip_labels=hb["tip_labels"],
             B=B,
             seed=seed,
+            extra_human_count=B_extra,
+            extra_human_by_class=extra_counts,
         )
         out["quats_h_t1"] = hb["quats_t1"]  # [B, Nh, 4] -> L_temporal
         out["tips_h_t1"]  = hb["tips_t1"]   # [B, Fh, 3] -> v_H^hand velocity
@@ -156,6 +204,8 @@ class CrossEmbodimentSampler:
         tip_labels: list[str],
         B: int,
         seed: int | None,
+        extra_human_count: int = 0,
+        extra_human_by_class: dict[int, int] | None = None,
     ) -> dict:
         q_r, quats_r, labels_r, meta_r = self.robot_rnd.sample_dong(
             B, self.hand_config_path, seed=seed
@@ -177,4 +227,6 @@ class CrossEmbodimentSampler:
             "tips_r_sub":     tips_r_sub,
             "common_labels":  common_labels,
             "common_fingers": common_fingers,
+            "extra_human_count": extra_human_count,
+            "extra_human_by_class": extra_human_by_class or {},
         }

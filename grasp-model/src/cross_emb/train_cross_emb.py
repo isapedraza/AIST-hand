@@ -36,6 +36,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ckpt_path", default=None, help="Override checkpoint path")
     p.add_argument("--hand_config",       default=None, help="Override hand config YAML")
     p.add_argument("--valid_poses_path",  default=None, help="Path to valid_robot_poses.npz (mode=VALID_NPZ). If omitted, uses random uniform sampling.")
+    p.add_argument("--extra_human_csv",   default=None, help="Optional static human anchor CSV, e.g. HaGRID open/fist Dong features.")
     # Training
     p.add_argument("--b",          type=int,   default=1000)
     p.add_argument("--n_steps",    type=int,   default=10)
@@ -52,6 +53,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lambda_tmp", type=float, default=0.1)
     p.add_argument("--n_triplets", type=int,   default=2048)
     p.add_argument("--margin",     type=float, default=0.05)
+    p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(
         "--zero_wrj",
@@ -96,6 +98,8 @@ def main():
         split            = "train",
         device           = DEVICE,
         valid_poses_path = args.valid_poses_path,
+        extra_human_csv  = args.extra_human_csv,
+        extra_human_ratio= args.extra_human_ratio,
     )
 
     _probe = sampler.get_batch_temporal(1)
@@ -144,6 +148,8 @@ def main():
         tips_h_t1      = batch["tips_h_t1"]
         common_fingers = batch["common_fingers"]
         common_labels  = batch["common_labels"]
+        extra_human_count = batch.get("extra_human_count", 0)
+        extra_human_by_class = batch.get("extra_human_by_class", {})
 
         z_t  = E_h(quats_h)       # [B, 3*z_dim]
         z_t1 = E_h(quats_h_t1)
@@ -261,6 +267,8 @@ def main():
             lr_now = optimizer.param_groups[0]["lr"]
             best_flag = " *" if L_rec.item() == best_rec else ""
             print(f"step {step:05d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} | lr={lr_now:.2e}{best_flag}")
+            if extra_human_count:
+                print(f"extra_human={extra_human_count} by_class={extra_human_by_class}")
             if args.log_metric_stats and metric_stats:
                 stats = " | ".join(
                     f"{sub}: D_R={dr:.4f} D_ee={dee:.4f} S={s:.4f}"
