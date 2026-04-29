@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import pytorch_kinematics as pk
@@ -243,7 +244,13 @@ class JointSpec:
 
 
 class RobotLoader:
-    def __init__(self, urdf_path: str | Path, device: str = "cpu", continuous_range: float = math.pi):
+    def __init__(
+        self,
+        urdf_path: str | Path,
+        device: str = "cpu",
+        continuous_range: float = math.pi,
+        valid_poses_path: str | Path | None = None,
+    ):
         self.urdf_path = Path(urdf_path).expanduser().resolve()
         if not self.urdf_path.exists():
             raise FileNotFoundError(f"URDF not found: {self.urdf_path}")
@@ -258,6 +265,21 @@ class RobotLoader:
 
         # Precompute specs in chain order and report missing metadata.
         self.specs_in_chain_order = self._build_specs_in_chain_order()
+
+        # Sampling mode: NPZ pool or random uniform.
+        if valid_poses_path is not None:
+            p = Path(valid_poses_path).expanduser().resolve()
+            if not p.exists():
+                raise FileNotFoundError(
+                    f"valid_poses_path not found: {p}\n"
+                    f"Generate it first: python grasp-model/scripts/generate_valid_robot_poses.py"
+                )
+            data = np.load(p)
+            self._valid_poses = torch.from_numpy(data["q"]).to(self.device)
+            print(f"[RobotLoader] mode=VALID_NPZ  path={p}  n_poses={len(self._valid_poses):,}")
+        else:
+            self._valid_poses = None
+            print(f"[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)")
 
     def _parse_urdf_metadata(self, urdf_path: Path) -> tuple[dict[str, JointSpec], str, list[str]]:
         root = ET.parse(urdf_path).getroot()
@@ -332,6 +354,12 @@ class RobotLoader:
     def sample_q(self, num_samples: int, seed: int | None = None) -> tuple[torch.Tensor, list[str]]:
         if num_samples <= 0:
             raise ValueError(f"num_samples must be > 0, got {num_samples}")
+
+        if self._valid_poses is not None:
+            if seed is not None:
+                torch.manual_seed(int(seed))
+            idx = torch.randint(0, len(self._valid_poses), (num_samples,), device=self.device)
+            return self._valid_poses[idx], self.chain_joint_names
 
         if seed is not None:
             torch.manual_seed(int(seed))

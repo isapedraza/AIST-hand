@@ -34,7 +34,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--dex_root",  default="/home/yareeez/dex-urdf")
     p.add_argument("--csv_path",  default=None, help="Override CSV path")
     p.add_argument("--ckpt_path", default=None, help="Override checkpoint path")
-    p.add_argument("--hand_config", default=None, help="Override hand config YAML")
+    p.add_argument("--hand_config",       default=None, help="Override hand config YAML")
+    p.add_argument("--valid_poses_path",  default=None, help="Path to valid_robot_poses.npz (mode=VALID_NPZ). If omitted, uses random uniform sampling.")
     # Training
     p.add_argument("--b",          type=int,   default=1000)
     p.add_argument("--n_steps",    type=int,   default=10)
@@ -42,7 +43,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ckpt_every", type=int,   default=5)
     p.add_argument("--lr_warmup",  type=int,   default=500)
     # Hyperparams
-    p.add_argument("--z_dim",      type=int,   default=16)
+    p.add_argument("--z_dim",      type=int,   default=64)
     p.add_argument("--shared_dim", type=int,   default=1024)
     p.add_argument("--lr",         type=float, default=1e-3)
     p.add_argument("--lambda_c",   type=float, default=10.0)
@@ -86,6 +87,7 @@ def main():
         hand_config_path = HAND_CONFIG,
         split            = "train",
         device           = DEVICE,
+        valid_poses_path = args.valid_poses_path,
     )
 
     _probe = sampler.get_batch_temporal(1)

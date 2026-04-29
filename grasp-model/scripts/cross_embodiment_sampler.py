@@ -100,6 +100,9 @@ class CrossEmbodimentSampler:
         hand_config_path : path to hand YAML (hand_configs/*.yaml)
         split            : "train", "val", or "test"
         device           : torch device
+        valid_poses_path : path to valid_robot_poses.npz (mode=VALID_NPZ).
+                           If None, uses random uniform sampling (mode=RANDOM_UNIFORM).
+                           If set but file missing, crashes immediately.
     """
 
     def __init__(
@@ -109,10 +112,11 @@ class CrossEmbodimentSampler:
         hand_config_path: str | Path,
         split: str = "train",
         device: str = "cpu",
+        valid_poses_path: str | Path | None = None,
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
         self.human_loader = HumanLoader(csv_path, split=split, device=device)
-        self.robot_rnd = RobotLoader(urdf_path, device=device)
+        self.robot_rnd = RobotLoader(urdf_path, device=device, valid_poses_path=valid_poses_path)
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:
         """Sample B random human frames + B random robot poses. No temporal pairing."""

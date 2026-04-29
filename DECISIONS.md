@@ -2643,3 +2643,92 @@ L_rec does not touch E_h at all (only trains E_r/E_X/D_X/D_r on the robot side).
 3. After run, evaluate with NDS analog (Entry 51)
 
 **Status**: Implemented -- not yet validated by a training run.
+
+---
+
+## Entry 53 -- 2026-04-27: Stage 1 run 2 results and failure analysis
+
+**Context**: Second training run with margin=0.3, cosine LR decay, B=20k, N_STEPS=5000. Tested final checkpoint (step 4972, rec=0.70) in live_retarget.py with webcam.
+
+**Observed behavior**:
+- Shadow Hand detects open/close motion of human hand — flexes when human flexes
+- Never produces a recognizable pose (no fist, no pinch, no tripod)
+- Initial pose with human hand open is bent/semi-closed with colliding fingers
+- Movement is smooth but non-specific
+
+**Problem 1 — E_h dataset gap**:
+HOGraspNet contains only grasping poses — zero open-hand frames. E_h maps an open human hand near the centroid of all grasp embeddings → Shadow Hand defaults to semi-closed. This is a dataset problem, not a training bug. Fix requires either augmenting training data with open-hand poses or a different dataset.
+
+**Problem 2 — rec=0.70 too high**:
+Shadow Hand joints have mean range 1.337 rad. rec=0.70 is 52% of the mean joint range — far too large to produce defined poses. Causes finger collisions and inability to reach pose extremes (e.g., full fist). Target for functional retargeting: rec < 0.1 rad (~7% of mean range). The floor of rec=0.70 was reached around step 2650 and did not improve further despite cosine LR decay to step 5000. This is a training convergence problem, independent of the human dataset — the robot autoencoder (E_r → E_X → D_X → D_r) trains on random uniform joint poses.
+
+**What remains unknown**:
+- Why rec plateaued at 0.70. Hypotheses: (a) D_r MLP capacity too small, (b) shared_dim=1024 bottleneck, (c) E_X/D_X adding unnecessary distortion for the robot-only path, (d) random uniform sampling produces too many unreachable configurations.
+- Whether reducing the robot path (E_r → D_r directly, bypassing E_X/D_X) would produce lower rec.
+
+**Root cause hypothesis for Problem 2**:
+Yan uses 5 decoupled subspaces (LA, RA, TK, LL, RL), each with z_dim=16. Each subspace handles ~2-7 DOF — so 16 dims is more than sufficient per subspace. We use a single subspace with z_dim=16 for 24 DOF — the bottleneck forces lossy compression and the decoder cannot reconstruct with sufficient precision.
+
+**Proposal 1 — Increase z_dim**:
+Increase z_dim from 16 to 64 (or 32) as a first experiment to validate the bottleneck hypothesis. This is the minimal change: one argument, no architectural refactor. If rec drops significantly, the hypothesis is confirmed.
+
+**Proposal 2 (future) — Decoupled subspaces by finger**:
+If z_dim increase is not sufficient, adopt Yan's decoupled design adapted to hands: 5 subspaces (thumb, index, middle, ring, pinky), each with z_dim=16. E_h, E_X, D_X remain single networks but output 5×16=80 dims, partitioned per finger. Contrastive loss applied independently per finger subspace. This mirrors Yan's architecture exactly for the hand domain.
+
+**Proposal 3 — Fix robot sampler: filter colliding poses**:
+Empirical measurement (5000 random poses, same `np.random.uniform(lower, upper)` method as current sampler): 83.8% of poses have at least one self-collision in MuJoCo (`data.ncon > 0`). Only 16.2% are physically valid. The decoder is forced to learn to reconstruct physically impossible configurations, which contaminates the latent space and raises the rec floor artificially. Fix: after sampling, run `mj_forward` and reject poses with `ncon > 0`, resample until B valid poses are collected. This adds overhead per step but is the correct fix — training on invalid poses is the likely dominant cause of rec=0.70.
+
+**Proposal 4 — Hybrid contrastive: label + geometry**:
+Current S = D_R + D_ee is weakly discriminative for hand grasps — different Feix classes can have similar rotation and fingertip distances. Two extremes are both wrong: (a) geometry only (current) → cont~0, no inter-class separation; (b) label only (SupCon) → 28 discrete clusters, intra-class variability collapses, embedding loses continuity — interpolating between poses would produce discrete jumps.
+
+Correct approach: hybrid. Feix label decides which class is positive vs negative (inter-class separation guaranteed). Within the chosen class, S geométrica selects the hardest positive (intra-class continuity preserved). For human-robot and robot-robot pairs where no label exists, S geométrica applies as now.
+
+This gives: semantic separation across classes + continuous structure within each class + cross-embodiment alignment via geometry. Labels never enter E_h forward pass — the latent space remains continuous.
+
+**Proposal 5 — Labeled robot poses via Dexonomy**:
+Dexonomy generates physically valid, collision-free Shadow Hand qpos for each Feix grasp type. Using these instead of random uniform poses would: (a) eliminate colliding poses (Proposal 3 already addresses this but Dexonomy gives semantically labeled poses too), (b) enable SupCon for the robot side as well (same grasp_type = positive across embodiments). Requires downloading Dexonomy, generating Shadow Hand poses per class, and modifying the sampler to load from file instead of random FK. More complex but addresses Problems 1, 2, and 3 simultaneously.
+
+**Priority order**:
+1. Proposal 3 (filter collisions) — highest impact, minimal code change, addresses likely dominant cause of rec=0.70
+2. Proposal 1 (z_dim=64) — validate bottleneck hypothesis
+3. Proposal 4 (richer S) — improve contrastive signal if rec is fixed but cont stays dead
+4. Proposal 2 (decoupled subspaces) — architectural refactor, only if 1+3 insufficient
+5. Proposal 5 (Dexonomy) — most complex, highest potential
+
+**Next step**: Implement Proposal 3 (collision filter in sampler) + Proposal 1 (z_dim=64) together in next run.
+
+**Status**: Full analysis complete. Next experiment addresses root cause of rec floor.
+
+## Entry 54 -- 2026-04-28: Hypothesis -- anatomy-informed S for hand contrastive loss
+
+**Context**: If Proposals 1+3 (z_dim=64 + collision filtering) do not activate the contrastive loss (cont still ≈0), the likely cause is that S = D_R + D_ee is too weak to discriminate hand grasps. Different Feix classes can score similar S values because D_R weights all joints equally and D_ee uses raw fingertip distance -- neither captures the axes of variation that actually separate grasp types.
+
+**Hypothesis**: S can be made more discriminative while preserving Yan's geometric continuity (no labels, no discrete clusters) by weighting joints according to their anatomical discriminative power for hand grasps.
+
+**Proposed modification**:
+```
+S = α * D_thumb + β * D_fingers + γ * D_ee
+```
+where:
+- D_thumb = D_R restricted to thumb joints (THJ5, THJ4, THJ3) -- opposition axis
+- D_fingers = D_R restricted to remaining joints
+- D_ee = fingertip position distance (same as Yan)
+- α > β -- thumb weighted higher, justified by Feix taxonomy
+
+This is a geometric metric, not label-based. Latent space remains continuous. The modification adapts Yan's S to the hand domain by recognizing that thumb opposition is the primary axis separating Feix classes -- morphology-agnostic since the principle applies to any hand (human or Shadow Hand).
+
+**Candidate references**:
+- **Feix et al. (2016)** -- GRASP taxonomy. Defines the 28 classes via virtual finger opposition (VF1=thumb vs VF2=remaining fingers) and contact type. Directly informs which joints are most discriminative for S.
+- **Stival et al.** -- hand pose analysis, potential source for joint importance ranking.
+- **Jarque-Bou et al.** -- PCA of hand grasps, identifies principal axes of postural variation. Could inform α/β weight ratios empirically.
+
+**Constraint for any S modification**: To preserve Yan's navigable latent space, any modification to S must satisfy three conditions simultaneously:
+1. **Continuous** -- no thresholds, no if/else by class. Small change in pose → small change in S.
+2. **Geometric** -- derivable from joint positions/rotations only, not from external labels.
+3. **Cross-embodiment compatible** -- computable from both human Dong quaternions and Shadow Hand FK positions.
+
+If all three hold, the latent space maintains Yan's interpolation property. The open question (to be informed by Feix/Jarque-Bou/Stival) is which geometric variables of the hand satisfy these three conditions while also discriminating between grasp types.
+
+**When to pursue**: Only if cont ≈ 0 persists after running with Proposals 1+3. Do not implement speculatively.
+
+**Status**: Hypothesis. Pending experimental validation of Proposals 1+3.
