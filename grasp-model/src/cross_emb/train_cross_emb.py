@@ -74,6 +74,10 @@ def main():
     CKPT_PATH   = Path(args.ckpt_path)  if args.ckpt_path   else REPO_ROOT / "grasp-model/checkpoints/stage1_latest.pt"
     HAND_CONFIG = Path(args.hand_config) if args.hand_config else REPO_ROOT / "grasp-model/data/hand_configs/shadow_hand_right.yaml"
     URDF_PATH   = DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
+    EXTRA_HUMAN_CSV = Path(args.extra_human_csv) if args.extra_human_csv else None
+
+    if EXTRA_HUMAN_CSV is not None and not EXTRA_HUMAN_CSV.exists():
+        raise FileNotFoundError(f"extra_human_csv not found: {EXTRA_HUMAN_CSV}")
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} | margin={args.margin}")
@@ -98,7 +102,7 @@ def main():
         split            = "train",
         device           = DEVICE,
         valid_poses_path = args.valid_poses_path,
-        extra_human_csv  = args.extra_human_csv,
+        extra_human_csv  = EXTRA_HUMAN_CSV,
         extra_human_ratio= args.extra_human_ratio,
     )
 
