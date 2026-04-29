@@ -2828,4 +2828,61 @@ z_dim per subspace = 64 (same as Run 3). Total latent dim = 3 * 64 = 192. Yan us
 - Jarque-Bou et al. (2019): kinematic synergy analysis justifies thumb independence (synergy #3) and ulnar grouping (synergy #1). Informs subspace boundaries.
 - Yan (Discussion): explicitly states hand retargeting is future work -- this entry is the hand-domain adaptation.
 
+## Entry 57 -- 2026-04-29: Run 4 results -- decoupled subspaces, qualitative evaluation, and Run 5 plan
+
+**Run 4 config**: B=20000, n_steps=5000, z_dim=64, shared_dim=1024, margin=0.3, lambda_c=10, lambda_rec=5, lambda_ltc=1, lambda_tmp=0.1, n_triplets=2048. Checkpoint: stage1_best_run4_subspaces.pt.
+
+**Quantitative**: cont=0.001-0.012 (non-zero from step 0, decoupling fixed collapse). L_rec=3.19 at step 0, ~0.63 at step 1200. Training did not crash.
+
+**Qualitative (live retargeting via live_retarget.py)**:
+- Thumb responds better than all prior runs -- subspace isolation working.
+- Some fingers always bent regardless of human input -- D_r has mean-pose bias toward grasps.
+- Cannot fully close hand to fist -- range of motion not fully covered.
+- Wrist (WRJ1/WRJ2) moves -- incorrect, human signal is in wrist frame (Dong), wrist rotation not encoded.
+
+**Root cause analysis:**
+
+1. **WRJ spurious movement**: D_r predicts all 24 DOF including WRJ1/WRJ2. But E_h receives Dong quaternions which are wrist-relative -- no wrist angle info in input. D_r generates noise in WRJ channels. Fix applied in inference: `q[:, 0:2] = 0.0` in `retarget.py`. Permanent fix for training: zero WRJ in valid_robot_poses so D_r learns WRJ=0 is canonical.
+
+2. **Fingers always bent (bias toward closed pose)**: HOGraspNet contains only grasp frames -- all poses are bent configurations. D_r learned that the average output is a semi-closed hand. When the latent embedding is ambiguous, D_r reverts to mean = grasp. No open-hand signal in human training data. This is the primary qualitative failure.
+
+3. **Cannot fully close**: Likely two sub-causes: (a) 5000 steps insufficient -- L_rec was still ~0.63 and descending at step 1200, model did not converge; (b) D_r capacity is not the bottleneck, but the extreme closed-hand poses are underrepresented in valid_robot_poses (random uniform sampling may undersample extreme flexion configs due to collision filtering).
+
+4. **Asymmetric finger response**: Some fingers respond more than others. Likely due to imbalance in S_k triplet mining -- support subspace (ring+pinky) has fewer discriminative grasps in HOGraspNet and fewer fingertip degrees of freedom in the Shadow Hand's LFJ (little finger has 5 joints vs 4).
+
+**Run 5 proposed config:**
+
+Training changes:
+- n_steps: 5000 → 20000 (model was still converging at step 1200/5000)
+- B: 20000 → 30000 (more triplet diversity per step, if GPU VRAM allows on T4; fallback to 20000)
+- n_triplets: 2048 → 4096 (more mined triplets per subspace per step)
+- WRJ fix in training: zero WRJ1/WRJ2 columns in q_r batch before L_rec (or use separate mask). Prevents D_r from wasting capacity on wrist prediction.
+- lambda_rec: 5.0 → 8.0 (finger bias is the main failure -- increase reconstruction pressure)
+
+Augmentation changes (two-source batch):
+- Source A (HOGraspNet): all current losses -- L_cont + L_rec + L_ltc + L_temporal
+- Source B (open-hand): L_cont + L_rec only (no temporal pairing, no L_ltc)
+- Open-hand human poses: 11K Hands dataset (Afifi 2019) -- 11,076 static images, real pose variety. Pipeline: MediaPipe → Dong precompute → CSV. No sequence metadata available, so temporal pairs duplicated (velocity=0) and excluded from L_temporal.
+- Open-hand robot poses: already partially covered by valid_robot_poses random sampling. Augment by adding extended-finger configurations with low flexion angles explicitly to the valid poses pool.
+- Closed fist: HOGraspNet power grasps cover semi-closed. Add fully-closed synthetic robot poses (all flexion joints at upper limit) as fixed anchor samples -- these anchor D_r to learn full flexion range.
+
+**Decision on augmentation order**:
+- 11K Hands (open-hand) is the highest-priority gap. Fingers always bent = human encoder never saw extension.
+- Fully-closed fist is lower priority -- power grasps in HOGraspNet are close enough to closed. Add only if "cannot fully close" persists after open-hand augmentation and more steps.
+
+**WRJ masking in training (proposed)**:
+In `train_cross_emb.py`, after sampling q_r batch:
+```python
+q_r[:, 0:2] = 0.0  # zero WRJ before L_rec so D_r does not learn wrist prediction from human signal
+```
+Or equivalently, zero WRJ columns in valid_robot_poses.npz at generation time so the dataset never contains non-zero WRJ.
+
+**Next concrete steps**:
+1. Precompute 11K Hands Dong features (MediaPipe → `precompute_dong_features.py` → `11k_hands_dong.csv`)
+2. Add two-source batch logic to `cross_embodiment_sampler.py` or a new `HumanAugLoader`
+3. Zero WRJ in training
+4. Run 5 with above config on Colab T4
+
+**Status**: Run 4 evaluated. Issues diagnosed. Run 5 plan above.
+
 **Status**: Design complete. Implementation next (Run 4).

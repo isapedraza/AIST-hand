@@ -51,4 +51,5 @@ class Retargeter:
     @torch.no_grad()
     def __call__(self, quats: torch.Tensor) -> np.ndarray:
         q = self.D_r(self.D_X(self.E_h(quats))).numpy()
+        q[:, 0:2] = 0.0  # WRJ2, WRJ1 — not encoded in wrist-frame human signal
         return np.clip(q, _LOWER, _UPPER)

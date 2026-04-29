@@ -1,0 +1,39 @@
+run_abl11_dong_xyz_norm -- GCN_CAM_8_8_16_16_32
+Features/node: 7  (xyz_norm=3, dong_quats=4)
+Test Accuracy : 0.6880
+Macro F1      : 0.6298
+
+                        precision    recall  f1-score   support
+
+        Large Diameter      0.677     0.752     0.712      7948
+        Small Diameter      0.652     0.546     0.594      7334
+Index Finger Extension      0.857     0.887     0.871     18858
+        Extension Type      0.799     0.761     0.779     15229
+    Parallel Extension      0.611     0.751     0.674      6688
+                Palmar      0.696     0.612     0.651      6997
+           Medium Wrap      0.441     0.380     0.408      2204
+        Adducted Thumb      0.644     0.635     0.639     16783
+            Light Tool      0.596     0.724     0.654     23738
+                Distal      0.881     0.813     0.845     20543
+                  Ring      0.452     0.630     0.526      5356
+            Power Disk      0.696     0.741     0.718      4933
+          Power Sphere      0.569     0.627     0.597      6602
+       Sphere 4-Finger      0.650     0.866     0.742      4880
+       Sphere 3-Finger      0.699     0.597     0.644     13047
+               Lateral      0.769     0.778     0.773     26701
+                 Stick      0.398     0.290     0.335      3006
+        Adduction Grip      0.702     0.768     0.734      5786
+        Writing Tripod      0.556     0.540     0.548     16116
+        Lateral Tripod      0.505     0.211     0.297      5118
+          Palmar Pinch      0.695     0.743     0.718     13338
+             Tip Pinch      0.567     0.402     0.470      7154
+       Inferior Pincer      0.690     0.671     0.680     14076
+    Prismatic 3 Finger      0.479     0.443     0.460      6905
+        Precision Disk      0.808     0.800     0.804     32794
+      Precision Sphere      0.487     0.413     0.447      5335
+               Quadpod      0.663     0.679     0.671      5491
+                Tripod      0.636     0.646     0.641     24300
+
+              accuracy                          0.688    327260
+             macro avg      0.638     0.632     0.630    327260
+          weighted avg      0.688     0.688     0.685    327260
