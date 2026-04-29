@@ -2919,4 +2919,22 @@ S     = D_R + D_ee
 
 **Logging change**: `metric_stats` should report statistics over the sampled anchor-candidate pairs actually used by the loss, not over all-pairs similarities.
 
-**Implementation status**: Decision recorded. Code change pending.
+**Implementation status**: Implemented in `train_cross_emb.py`.
+
+## Entry 59 -- 2026-04-29: Treat `n_triplets` as a legacy memory cap, not a method hyperparameter
+
+**Context**: Yan et al. report batch size and randomly sampled triplets, but do not define a separate `n_triplets` hyperparameter. Our `n_triplets` existed because the older all-pairs physical similarity matrix made full-batch triplet coverage too expensive.
+
+**Decision**: The default Stage 1 behavior is now full-pool triplet coverage per subspace:
+- `B` still means `B` human poses and `B` robot poses;
+- the contrastive pool is therefore `2B`;
+- if `--n_triplets` is omitted or `<= 0`, the miner uses all `2B` pool entries as anchors;
+- if `--n_triplets` is provided, it is only a legacy/debug memory cap.
+
+**Notebook behavior**: `train_stage1_colab.ipynb` sets `N_TRIPLETS = None`, so the command omits `--n_triplets` and uses the full human+robot pool.
+
+**What does not change**:
+- anchors and candidates are still sampled from the mixed human+robot pool;
+- positive/negative assignment still uses physical `S_k`;
+- triplet loss is still applied in latent space;
+- no changes to GNN, FK, losses, margin, or HaGRID mixing.

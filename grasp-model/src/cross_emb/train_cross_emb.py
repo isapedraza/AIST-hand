@@ -51,7 +51,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lambda_rec", type=float, default=5.0)
     p.add_argument("--lambda_ltc", type=float, default=1.0)
     p.add_argument("--lambda_tmp", type=float, default=0.1)
-    p.add_argument("--n_triplets", type=int,   default=2048)
+    p.add_argument(
+        "--n_triplets",
+        type=int,
+        default=None,
+        help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
+    )
     p.add_argument("--margin",     type=float, default=0.05)
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
@@ -80,7 +85,11 @@ def main():
         raise FileNotFoundError(f"extra_human_csv not found: {EXTRA_HUMAN_CSV}")
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} | margin={args.margin}")
+    triplet_mode = "full_pool" if args.n_triplets is None or args.n_triplets <= 0 else str(args.n_triplets)
+    print(
+        f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} "
+        f"| triplets={triplet_mode} | margin={args.margin}"
+    )
     print(f"zero_wrj={args.zero_wrj}")
 
     # Add scripts to path
@@ -193,7 +202,7 @@ def main():
             B2  = z_all_k.shape[0]
             if B2 < 3:
                 continue
-            n   = min(args.n_triplets, B2)
+            n   = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
 
             # Yan et al. describe randomly sampled triplets. Sample anchors and
             # two non-self candidates directly; compute S_k only for the pairs
