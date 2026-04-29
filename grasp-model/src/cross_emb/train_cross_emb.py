@@ -52,6 +52,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lambda_tmp", type=float, default=0.1)
     p.add_argument("--n_triplets", type=int,   default=2048)
     p.add_argument("--margin",     type=float, default=0.05)
+    p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(
         "--zero_wrj",
         action=argparse.BooleanOptionalAction,
@@ -159,6 +160,7 @@ def main():
         z_t_subs = z_t.chunk(3, dim=-1)   # (z_thumb, z_prec, z_supp) each [B, z_dim]
         z_r_subs = z_r.chunk(3, dim=-1)
         L_cont = torch.tensor(0.0, device=DEVICE)
+        metric_stats = {}
         for k, sub in enumerate(("thumb", "precision", "support")):
             prefixes   = SUBSPACE_LABEL_PREFIX[sub]
             sub_finger = SUBSPACE_FINGERS[sub]
@@ -186,6 +188,13 @@ def main():
             D_R_k  = (1 - dot ** 2).mean(dim=-1)
             D_ee_k = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1).mean(dim=-1)
             S_k    = D_R_k + D_ee_k
+            if args.log_metric_stats:
+                off_diag = ~torch.eye(n, dtype=torch.bool, device=DEVICE)
+                metric_stats[sub] = (
+                    D_R_k[off_diag].mean().item(),
+                    D_ee_k[off_diag].mean().item(),
+                    S_k[off_diag].mean().item(),
+                )
             # Yan et al. describe randomly sampled triplets. Sample two non-self
             # candidates per anchor, then use physical similarity S_k only to
             # order them into positive (more similar) and negative (less similar).
@@ -252,6 +261,12 @@ def main():
             lr_now = optimizer.param_groups[0]["lr"]
             best_flag = " *" if L_rec.item() == best_rec else ""
             print(f"step {step:05d} | total={L_total.item():.4f} | cont={L_cont.item():.4f} rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} | lr={lr_now:.2e}{best_flag}")
+            if args.log_metric_stats and metric_stats:
+                stats = " | ".join(
+                    f"{sub}: D_R={dr:.4f} D_ee={dee:.4f} S={s:.4f}"
+                    for sub, (dr, dee, s) in metric_stats.items()
+                )
+                print(f"metric_stats | {stats}")
 
         if step % args.ckpt_every == 0:
             torch.save({
