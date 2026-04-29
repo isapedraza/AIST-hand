@@ -2756,3 +2756,76 @@ If all three hold, the latent space maintains Yan's interpolation property. The 
 - Dataset gap (no open-hand poses) is a separate problem, lower priority until cont is resolved.
 
 **Status**: Run complete. Proceeding to S modification (Entry 54).
+
+## Entry 56 -- 2026-04-29: Decoupled latent subspaces -- architecture decision and design
+
+**Context**: cont=0 confirmed in Run 3. Two candidate fixes discussed: (A) modify S with anatomical weights (Entry 54), (B) decouple latent space by body segment following Yan exactly. Decision: implement B first -- it is the approach Yan validates empirically, not a new hypothesis. A is a novel proposal without validation.
+
+**Decision: 3 subspaces (thumb / index / ulnar)**
+
+Justified by Jarque-Bou et al. (2019) kinematic synergy analysis (77 subjects, 20 grasps, NinaPro DB1/DB2/DB5):
+- Synergy #1 (most prevalent, most variance): MCP flexion fingers 3-5 + PIP flexion fingers 2-5. Index PIP couples with ulnar fingers -- index is not fully independent.
+- Synergy #3: thumb CMC/MCP/IP acts independently of all other fingers.
+- Thumb independence is robust. Full index independence is not supported by the dominant synergy.
+
+2 subspaces (thumb + digits) would be most faithful to the dominant synergy. 3 subspaces (thumb + index + ulnar) cuts synergy #1 at the index PIP -- the index PIP will show redundant signal between z_index and z_ulnar. Accepted: 3 subspaces provides higher S granularity, which is the primary goal, and the redundancy is minor.
+
+**Subspace joint assignment:**
+
+Three subspaces: thumb / precision / support. Justified by functional independence analysis:
+- Thumb: maximum independence — opposition axis, CMC 2-DOF
+- Precision (index+middle): index has high independence; middle is the ambiguous case. Placing middle with index (not ulnar) avoids the contrastive loss penalizing middle for deviating from ring+pinky in grasps like tripod where middle acts with index, not ulnar.
+- Support (ring+pinky): ring and pinky never act independently from each other across any Feix grasp. Always co-vary. Placing together is unambiguous.
+
+Human side (21 CAM-GNN nodes: 0=wrist identity, 1-20=Dong joints):
+- z_thumb:     nodes [1,2,3,4]   — thumb_mcp/pip/dip/tip
+- z_precision: nodes [5..12]     — index_mcp/pip/dip/tip + middle_mcp/pip/dip/tip
+- z_support:   nodes [13..20]    — ring_mcp/pip/dip/tip + pinky_mcp/pip/dip/tip
+
+Wrist (node 0): part of CAM graph (propagates info to all nodes), no projection head. Human wrist = identity quaternion (Dong reference frame). Robot WRJ1-2 excluded from S_k, participates in L_rec via E_r/D_r.
+
+Fingertip labels per subspace (for D_ee):
+- z_thumb:     ["thumb"]
+- z_precision: ["index", "middle"]
+- z_support:   ["ring", "pinky"]
+
+Robot side (Shadow Hand, 24 DOF):
+- z_thumb:     THJ1-THJ5 (filtered by label prefix "thumb_")
+- z_precision: FFJ1-4 + MFJ1-4 (prefixes "index_", "middle_")
+- z_support:   RFJ1-4 + LFJ1-5 (prefixes "ring_", "pinky_")
+
+Wrist joints (WRJ1-2): excluded from all S_k. Human has no wrist quaternion (muñeca = Dong reference frame, always identity). WRJ encoded in E_r → 1024-dim and reconstructed by D_r via L_rec. No contrastive signal for wrist -- acceptable because wrist angle encodes approach direction, not grasp type.
+
+**Similarity metric per subspace (all subspaces):**
+
+All three subspaces use:
+```
+S_k = D_R_k + D_ee_k
+```
+where D_R_k sums over joints in subspace k only, D_ee_k uses fingertips of subspace k only. Same formula as Yan's arm subspaces -- fingertips are the end-effectors for hands, directly analogous.
+
+**Architecture changes (following Yan exactly):**
+
+Current: E_h → z [B, z_dim], E_X → z_r [B, z_dim], one contrastive loss over all 24 joints.
+
+New:
+- E_h: [B, Nh, 4] → [z_thumb, z_index, z_ulnar], each [B, z_dim]. One MLP, 3 output heads (K*z_dim output dim).
+- E_X: [B, 1024] → [z_thumb_r, z_index_r, z_ulnar_r], each [B, z_dim]. One MLP, 3 output heads.
+- L_cont = L_cont_thumb + L_cont_index + L_cont_ulnar. Each computed independently with its own S_k.
+- D_X: concat([z_thumb, z_index, z_ulnar]) → [B, 1024]. Input dim 3*z_dim. Rest unchanged.
+- E_r, D_r, L_rec, L_ltc, L_temp: unchanged.
+
+z_dim per subspace = 64 (same as Run 3). Total latent dim = 3 * 64 = 192. Yan uses 16 per subspace (5 body parts) -- our z_dim is larger because hands have more complex intra-subspace structure than a 2-joint arm.
+
+**What changes in code:**
+- `human_modules.py`: E_h output dim 64 → 192 (3 heads)
+- `shared_modules.py`: E_X output dim 64 → 192; D_X input dim 64 → 192
+- `train_cross_emb.py`: split z into 3 subspaces, compute S_k and L_cont_k per subspace, sum
+- `cross_embodiment_sampler.py`: return per-subspace joint/tip indices for S_k computation
+
+**Evidence base:**
+- Yan et al. (2026): decoupled subspaces validated empirically for cross-embodiment full-body retargeting. Directly applied here.
+- Jarque-Bou et al. (2019): kinematic synergy analysis justifies thumb independence (synergy #3) and ulnar grouping (synergy #1). Informs subspace boundaries.
+- Yan (Discussion): explicitly states hand retargeting is future work -- this entry is the hand-domain adaptation.
+
+**Status**: Design complete. Implementation next (Run 4).

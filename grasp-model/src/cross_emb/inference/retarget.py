@@ -37,11 +37,11 @@ class Retargeter:
 
     def __init__(self, ckpt_path: str | Path):
         ck    = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-        z_dim = ck["E_h"]["proj.weight"].shape[0]
+        z_dim = ck["E_h"]["proj_thumb.weight"].shape[0]  # per-subspace dim
         n_j   = ck["D_r"]["fc.weight"].shape[0]
 
         self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
-        self.D_X = SharedDecoder_D_X(z_dim=z_dim, shared_dim=1024).eval()
+        self.D_X = SharedDecoder_D_X(z_dim=z_dim, shared_dim=1024).eval()  # internally uses 3*z_dim
         self.D_r = RobotDecoder_D_r(n_joints=n_j, shared_dim=1024).eval()
 
         self.E_h.load_state_dict(ck["E_h"])

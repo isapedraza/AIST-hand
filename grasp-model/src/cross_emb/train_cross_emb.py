@@ -74,7 +74,7 @@ def main():
     sys.path.insert(0, str(REPO_ROOT / "grasp-model/src/cross_emb"))
 
     from cross_embodiment_sampler import CrossEmbodimentSampler
-    from human_modules import HumanEncoder_E_h
+    from human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
     from robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
     from shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 
@@ -132,10 +132,11 @@ def main():
         tips_r_sub     = batch["tips_r_sub"]
         tips_h_t1      = batch["tips_h_t1"]
         common_fingers = batch["common_fingers"]
+        common_labels  = batch["common_labels"]
 
-        z_t  = E_h(quats_h)
+        z_t  = E_h(quats_h)       # [B, 3*z_dim]
         z_t1 = E_h(quats_h_t1)
-        z_r  = E_X(E_r(q_r))
+        z_r  = E_X(E_r(q_r))     # [B, 3*z_dim]
 
         q_r_hat    = D_r(D_X(z_r))
         z_h_rt     = E_X(D_X(z_t))
@@ -144,21 +145,43 @@ def main():
         L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
         L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
 
-        z_all    = torch.cat([z_t, z_r], dim=0)
-        all_q    = torch.cat([quats_h_sub, quats_r_sub], dim=0)
-        all_tips = torch.cat([tips_h_sub.flatten(1), tips_r_sub.flatten(1)], dim=0)
-        B2  = z_all.shape[0]
-        n   = min(args.n_triplets, B2)
-        idx = torch.randperm(B2, device=DEVICE)[:n]
-        zs  = z_all[idx];  qs = all_q[idx];  ts = all_tips[idx]
-        dot     = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)
-        D_R     = (1 - dot ** 2).sum(-1)
-        D_ee    = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1)
-        S       = D_R + D_ee
-        eye     = torch.eye(n, dtype=torch.bool, device=DEVICE)
-        pos_idx = S.masked_fill(eye, float('inf')).argmin(dim=1)
-        neg_idx = S.masked_fill(eye, float('-inf')).argmax(dim=1)
-        L_cont  = torch.relu((zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + args.margin).mean()
+        # --- Per-subspace contrastive loss (Yan et al. 2026) ---
+        z_t_subs = z_t.chunk(3, dim=-1)   # (z_thumb, z_prec, z_supp) each [B, z_dim]
+        z_r_subs = z_r.chunk(3, dim=-1)
+        L_cont = torch.tensor(0.0, device=DEVICE)
+        for k, sub in enumerate(("thumb", "precision", "support")):
+            prefixes   = SUBSPACE_LABEL_PREFIX[sub]
+            sub_finger = SUBSPACE_FINGERS[sub]
+            # Indices into common_labels / quats_*_sub for this subspace
+            jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
+            # Indices into common_fingers / tips_*_sub for this subspace
+            tidx = [i for i, f in enumerate(common_fingers) if f in sub_finger]
+            if not jidx:
+                continue
+            z_h_k = z_t_subs[k]                          # [B, z_dim]
+            z_r_k = z_r_subs[k]
+            q_h_k = quats_h_sub[:, jidx, :]              # [B, Jk, 4]
+            q_r_k = quats_r_sub[:, jidx, :]
+            t_h_k = tips_h_sub[:, tidx, :] if tidx else tips_h_sub[:, :0, :]
+            t_r_k = tips_r_sub[:, tidx, :] if tidx else tips_r_sub[:, :0, :]
+
+            z_all_k    = torch.cat([z_h_k, z_r_k], dim=0)
+            q_all_k    = torch.cat([q_h_k, q_r_k], dim=0)
+            t_all_k    = torch.cat([t_h_k.flatten(1), t_r_k.flatten(1)], dim=0)
+            B2  = z_all_k.shape[0]
+            n   = min(args.n_triplets, B2)
+            idx = torch.randperm(B2, device=DEVICE)[:n]
+            zs  = z_all_k[idx]; qs = q_all_k[idx]; ts = t_all_k[idx]
+            dot    = (qs.unsqueeze(1) * qs.unsqueeze(0)).sum(-1)
+            D_R_k  = (1 - dot ** 2).sum(-1)
+            D_ee_k = (ts.unsqueeze(1) - ts.unsqueeze(0)).norm(dim=-1)
+            S_k    = D_R_k + D_ee_k
+            eye    = torch.eye(n, dtype=torch.bool, device=DEVICE)
+            pos_idx = S_k.masked_fill(eye, float('inf')).argmin(dim=1)
+            neg_idx = S_k.masked_fill(eye, float('-inf')).argmax(dim=1)
+            L_cont  = L_cont + torch.relu(
+                (zs - zs[pos_idx]).norm(dim=-1) - (zs - zs[neg_idx]).norm(dim=-1) + args.margin
+            ).mean()
 
         fk_t,  fk_t1  = sampler.robot_rnd.run_fk(q_r_hat), sampler.robot_rnd.run_fk(q_r_hat_t1)
         _, _, meta_t  = sampler.robot_rnd.run_dong_stage2(fk_t,  HAND_CONFIG)
