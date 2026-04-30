@@ -14,8 +14,9 @@ DEFAULT_EIGENGRASPS = Path(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("target", type=Path, help="Dexonomy .npy file containing grasp_qpos [N,29].")
+    parser.add_argument("target", type=Path, help="Dexonomy .npy file containing qpos arrays [N,29].")
     parser.add_argument("--row", type=int, default=0)
+    parser.add_argument("--qpos-key", default="grasp_qpos")
     parser.add_argument("--eigengrasps", type=Path, default=DEFAULT_EIGENGRASPS)
     parser.add_argument("--k", type=int, nargs="*", default=[6, 9, 12, 17, 22])
     args = parser.parse_args()
@@ -23,13 +24,16 @@ def main() -> None:
     target = np.load(args.target, allow_pickle=True).item()
     eigen = np.load(args.eigengrasps, allow_pickle=False)
 
-    grasp_qpos = target["grasp_qpos"]
-    if len(grasp_qpos.shape) != 2 or grasp_qpos.shape[1] != 29:
-        raise ValueError(f"Expected grasp_qpos [N,29], got {grasp_qpos.shape}")
-    if args.row < 0 or args.row >= grasp_qpos.shape[0]:
-        raise IndexError(f"row={args.row} out of bounds for grasp_qpos with {grasp_qpos.shape[0]} rows")
+    if args.qpos_key not in target:
+        available = ", ".join(sorted(str(key) for key in target.keys()))
+        raise KeyError(f"Missing {args.qpos_key}. Available keys: {available}")
+    target_qpos = target[args.qpos_key]
+    if len(target_qpos.shape) != 2 or target_qpos.shape[1] != 29:
+        raise ValueError(f"Expected {args.qpos_key} [N,29], got {target_qpos.shape}")
+    if args.row < 0 or args.row >= target_qpos.shape[0]:
+        raise IndexError(f"row={args.row} out of bounds for {args.qpos_key} with {target_qpos.shape[0]} rows")
 
-    q22 = grasp_qpos[args.row, 7:].astype(np.float64)
+    q22 = target_qpos[args.row, 7:].astype(np.float64)
     low = eigen["joint_low"].astype(np.float64)
     high = eigen["joint_high"].astype(np.float64)
     mean = eigen["mean_norm"].astype(np.float64)
@@ -40,7 +44,8 @@ def main() -> None:
     centered = qnorm - mean
 
     print(f"target={args.target}")
-    print(f"row={args.row} rows={grasp_qpos.shape[0]}")
+    print(f"qpos_key={args.qpos_key}")
+    print(f"row={args.row} rows={target_qpos.shape[0]}")
     print("q22=" + " ".join(f"{value:+.4f}" for value in q22))
 
     for k in args.k:

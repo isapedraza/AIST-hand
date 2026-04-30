@@ -11,6 +11,7 @@ Controls (terminal, no need to press Enter):
 
 Run from AIST-hand/:
     python grasp-model/scripts/mujoco_eigengrasp_viewer.py
+    python grasp-model/scripts/mujoco_eigengrasp_viewer.py --coeffs +1.0 -0.5 +0.2
 """
 
 from __future__ import annotations
@@ -118,13 +119,16 @@ def project_q22(eigen: dict[str, np.ndarray], q22: np.ndarray, n_knobs: int) -> 
     return (q_norm - mean) @ comps.T
 
 
-def load_target_qpos(path: Path, row: int) -> np.ndarray:
+def load_target_qpos(path: Path, row: int, qpos_key: str) -> np.ndarray:
     raw = np.load(path, allow_pickle=True).item()
-    qpos = raw["grasp_qpos"]
+    if qpos_key not in raw:
+        available = ", ".join(sorted(str(key) for key in raw.keys()))
+        raise KeyError(f"Missing {qpos_key}. Available keys: {available}")
+    qpos = raw[qpos_key]
     if len(qpos.shape) != 2 or qpos.shape[1] != 29:
-        raise ValueError(f"Expected grasp_qpos shape [N,29], got {qpos.shape}")
+        raise ValueError(f"Expected {qpos_key} shape [N,29], got {qpos.shape}")
     if row < 0 or row >= qpos.shape[0]:
-        raise IndexError(f"row={row} out of bounds for grasp_qpos with {qpos.shape[0]} rows")
+        raise IndexError(f"row={row} out of bounds for {qpos_key} with {qpos.shape[0]} rows")
     return np.concatenate([np.zeros(2, dtype=np.float64), qpos[row, 7:].astype(np.float64)])
 
 
@@ -152,8 +156,15 @@ def main() -> None:
     parser.add_argument("--eigengrasps", type=Path, default=DEFAULT_EIGEN)
     parser.add_argument("--n-knobs", type=int, default=9)
     parser.add_argument("--step", type=float, default=0.08)
+    parser.add_argument(
+        "--coeffs",
+        type=float,
+        nargs="+",
+        help="Initial eigengrasp coefficients. Missing coefficients are padded with zero.",
+    )
     parser.add_argument("--target-npy", type=Path)
     parser.add_argument("--target-row", type=int, default=0)
+    parser.add_argument("--target-qpos-key", default="grasp_qpos")
     args = parser.parse_args()
 
     eigen = load_eigengrasps(args.eigengrasps)
@@ -161,9 +172,15 @@ def main() -> None:
     n_knobs = int(np.clip(args.n_knobs, 1, n_available))
     coeffs = np.zeros(n_knobs, dtype=np.float64)
     explained = eigen["explained_ratio"].astype(np.float64)
+    if args.coeffs:
+        n_given = min(len(args.coeffs), n_knobs)
+        coeffs[:n_given] = np.asarray(args.coeffs[:n_given], dtype=np.float64)
+        if len(args.coeffs) > n_knobs:
+            print(f"Ignoring {len(args.coeffs) - n_knobs} coeffs beyond --n-knobs={n_knobs}.")
+
     target_qpos = None
     if args.target_npy:
-        target_qpos = load_target_qpos(args.target_npy, args.target_row)
+        target_qpos = load_target_qpos(args.target_npy, args.target_row, args.target_qpos_key)
         coeffs[:] = project_q22(eigen, target_qpos[2:], n_knobs)
         print("Projected target coefficients:")
         print(" ".join(f"{i + 1}:{v:+.4f}" for i, v in enumerate(coeffs)))

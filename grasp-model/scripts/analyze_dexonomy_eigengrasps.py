@@ -16,6 +16,7 @@ DEFAULT_OUT = Path(
     "grasp-model/data/processed/"
     "dexonomy_shadow_eigengrasps_balanced_sample.npz"
 )
+DEFAULT_QPOS_KEYS = ("grasp_qpos",)
 
 JOINTS22 = [
     "FFJ4",
@@ -124,9 +125,13 @@ def sample_paths_by_class(root: Path, max_files_per_class: int, seed: int) -> tu
     return dict(paths_by_class), total
 
 
-def load_qpos(paths_by_class: dict[str, list[Path]]) -> tuple[np.ndarray, Counter, Counter, list[tuple[str, object]]]:
+def load_qpos(
+    paths_by_class: dict[str, list[Path]],
+    qpos_keys: tuple[str, ...],
+) -> tuple[np.ndarray, Counter, Counter, Counter, list[tuple[str, object]]]:
     q_rows: list[np.ndarray] = []
     row_counts: Counter[str] = Counter()
+    key_counts: Counter[str] = Counter()
     shape_counts: Counter[tuple[int, ...]] = Counter()
     bad: list[tuple[str, object]] = []
 
@@ -134,20 +139,25 @@ def load_qpos(paths_by_class: dict[str, list[Path]]) -> tuple[np.ndarray, Counte
         for path in paths:
             try:
                 data = np.load(path, allow_pickle=True).item()
-                grasp_qpos = data["grasp_qpos"]
-                shape_counts[tuple(grasp_qpos.shape)] += 1
-                if len(grasp_qpos.shape) != 2 or grasp_qpos.shape[1] != 29:
-                    bad.append((str(path), grasp_qpos.shape))
-                    continue
-                rows = grasp_qpos[:, 7:].astype(np.float32)
-                q_rows.append(rows)
-                row_counts[cls] += rows.shape[0]
+                for key in qpos_keys:
+                    if key not in data:
+                        bad.append((str(path), f"missing {key}"))
+                        continue
+                    qpos = data[key]
+                    shape_counts[tuple(qpos.shape)] += 1
+                    if len(qpos.shape) != 2 or qpos.shape[1] != 29:
+                        bad.append((str(path), f"{key} shape {qpos.shape}"))
+                        continue
+                    rows = qpos[:, 7:].astype(np.float32)
+                    q_rows.append(rows)
+                    row_counts[cls] += rows.shape[0]
+                    key_counts[key] += rows.shape[0]
             except Exception as exc:  # noqa: BLE001 - diagnostic script
                 bad.append((str(path), repr(exc)))
 
     if not q_rows:
         raise RuntimeError("No valid Dexonomy qpos rows found.")
-    return np.concatenate(q_rows, axis=0), shape_counts, row_counts, bad
+    return np.concatenate(q_rows, axis=0), shape_counts, row_counts, key_counts, bad
 
 
 def print_joint_ranges(qpos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -186,19 +196,31 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--max-files-per-class", type=int, default=3000)
     parser.add_argument("--seed", type=int, default=1337)
+    parser.add_argument(
+        "--qpos-keys",
+        nargs="+",
+        default=list(DEFAULT_QPOS_KEYS),
+        help=(
+            "Dexonomy qpos arrays to include as PCA rows. "
+            "Examples: grasp_qpos pregrasp_qpos squeeze_qpos"
+        ),
+    )
     args = parser.parse_args()
+    qpos_keys = tuple(args.qpos_keys)
 
     paths_by_class, total_npy = sample_paths_by_class(args.root, args.max_files_per_class, args.seed)
 
     print(f"root={args.root}")
+    print(f"qpos_keys={qpos_keys}")
     print(f"total_npy={total_npy}")
     print(f"classes={len(paths_by_class)}")
     for cls, paths in sorted(paths_by_class.items(), key=lambda item: class_sort_key(item[0])):
         print(f"class_sample {cls}: {len(paths)}")
 
-    qpos, shape_counts, row_counts, bad = load_qpos(paths_by_class)
+    qpos, shape_counts, row_counts, key_counts, bad = load_qpos(paths_by_class, qpos_keys)
     print(f"loaded_qpos_rows={qpos.shape[0]}")
     print(f"shape_counts={dict(shape_counts)}")
+    print(f"row_counts_by_qpos_key={dict(key_counts)}")
     print(f"row_counts_by_class={dict(sorted(row_counts.items(), key=lambda item: class_sort_key(item[0])))}")
     print(f"bad_count={len(bad)}")
     if bad[:5]:
@@ -227,6 +249,7 @@ def main() -> None:
         source_root=str(args.root),
         seed=args.seed,
         max_files_per_class=args.max_files_per_class,
+        qpos_keys=np.array(qpos_keys),
         joint_names=np.array(JOINTS22),
         joint_low=LOW22,
         joint_high=HIGH22,
