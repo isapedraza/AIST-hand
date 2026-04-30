@@ -3358,3 +3358,200 @@ The eigengrasp approach is validated enough to proceed. Dexonomy-derived Shadow 
 
 **Next implementation target**:
 Build a generator that samples coefficients in eigengrasp space, decodes them to Shadow qpos, clips to our MuJoCo limits, filters invalid/colliding poses, and writes a new robot pose NPZ for Stage 1 training.
+
+## Entry 63 -- 2026-04-30: Synthetic open/close anchors included in Dexonomy eigengrasp PCA
+
+**Context**: The Dexonomy eigengrasp PCA originally used real Dexonomy grasp rows only. After balancing by class and phase, the PCA still lacked two global robot postures that matter for teleoperation and latent training: a true open hand and a true closed hand/fist. Dexonomy pregrasp/grasp/squeeze rows are grasp phases, not global open/closed anchors. Repeating a single qpos exactly would create a degenerate high-weight point, so synthetic clouds were needed.
+
+**Decision**:
+
+Add two synthetic Shadow Hand pose sources, each weighted like one real Dexonomy class:
+
+```
+synthetic_open_hand:  29,670 qpos22 rows
+synthetic_close_hand: 29,670 qpos22 rows
+```
+
+Both are generated as standalone local NPZ files under `grasp-model/data/processed/`:
+
+```
+synthetic_open_hand_shadow_qpos.npz
+synthetic_close_hand_shadow_qpos.npz
+```
+
+These artifacts are generated data and remain ignored by git. Their generation scripts are versioned:
+
+```
+grasp-model/scripts/generate_synthetic_open_hand_qpos.py
+grasp-model/scripts/generate_synthetic_close_hand_qpos.py
+```
+
+The PCA script now includes both synthetic sources by default:
+
+```
+DEFAULT_SYNTHETIC_QPOS_NPZ = (
+    synthetic_open_hand_shadow_qpos.npz,
+    synthetic_close_hand_shadow_qpos.npz,
+)
+```
+
+An ablation can disable them explicitly:
+
+```
+--no-synthetic-qpos
+```
+
+The PCA output saves synthetic provenance and rows:
+
+```
+synthetic_qpos_npz
+synthetic_pose_names
+synthetic_pose_sources
+synthetic_pose_counts
+synthetic_qpos22
+```
+
+**Synthetic close hand**:
+
+Base source:
+
+```
+mujoco_menagerie/shadow_hand/keyframes.xml
+keyframe = "close hand"
+qpos22 = qpos24[2:]
+```
+
+Generation model:
+
+- grouped curl jitter per long finger on `J3/J2/J1`, preserving finger-level correlation;
+- low thumb jitter;
+- near-zero abduction jitter;
+- `LFJ5` essentially fixed;
+- max per-joint delta clipped to `0.04 rad`.
+
+Collision rule:
+
+The official MuJoCo `close hand` keyframe already has contacts and small penetration:
+
+```
+baseline_ncon = 9
+baseline_min_contact_dist ~= -0.001212 m
+```
+
+Therefore close hand is not filtered by `ncon == 0`. A sample is accepted if it does not worsen the baseline penetration by more than `0.0005 m`:
+
+```
+sample_min_contact_dist >= baseline_min_contact_dist - 0.0005
+```
+
+Final generated stats:
+
+```
+accepted_rows        = 29,670
+generated_candidates = 36,864
+rejected_contact     = 3,755
+acceptance_rate      = 0.805
+sample_min_dist min  ~= -0.001712 m
+sample_min_dist max  ~= -0.001011 m
+```
+
+**Synthetic open hand**:
+
+Base source:
+
+```
+mujoco_menagerie/shadow_hand/keyframes.xml
+keyframe = "open hand"
+```
+
+The `paper` keyframe was inspected and found to differ from `open hand` only in `THJ2`:
+
+```
+open hand: THJ2 = 0.0000
+paper:     THJ2 = 0.6981
+```
+
+This was interpreted as a continuous thumb-spread movement, not as a separate pose class.
+
+Open-hand parameters:
+
+```
+thumb_spread:
+  THJ2 in [0.0, 0.6981]
+
+finger_fan:
+  FFJ4 = -0.34 * fan
+  MFJ4 =  0.00
+  RFJ4 = -0.23 * fan
+  LFJ4 = -0.34 * fan
+  LFJ5 =  0.00
+  fan in [0.0, 1.0]
+
+open_relax:
+  relax in [-0.08, +0.14]
+  for FF/MF/RF/LF:
+    J3 = relax
+    J2 = 0.75 * max(relax, 0)
+    J1 = 0.75 * max(relax, 0)
+  THJ1 = 0.5 * relax
+```
+
+`LFJ5` was intentionally removed from the fan pattern because it moves the little-finger metacarpal/palm base, not an equivalent lateral spread joint for all fingers.
+
+Collision rule:
+
+Open-hand candidates are accepted if no meaningful penetration is detected:
+
+```
+sample_min_contact_dist >= -0.0002 m
+```
+
+Final generated stats:
+
+```
+accepted_rows        = 29,670
+generated_candidates = 32,768
+rejected_contact     = 0
+sample_ncon          = 0 for every accepted sample
+thumb_spread range   ~= [0.0000, 0.6981]
+finger_fan range     ~= [0.0001, 1.0000]
+open_relax range     ~= [-0.0800, +0.1400]
+```
+
+**Validation tools added**:
+
+```
+grasp-model/scripts/mujoco_synthetic_close_hand_samples.py
+grasp-model/scripts/mujoco_synthetic_open_hand_samples.py
+grasp-model/scripts/mujoco_open_hand_fan_calibrator.py
+grasp-model/scripts/mujoco_synthetic_qpos_npz_viewer.py
+```
+
+The viewers were used to inspect synthetic samples interactively in MuJoCo with arrow-key navigation. `mujoco_open_hand_fan_calibrator.py` was used to tune thumb spread, finger fan, and open-hand relax before generating the final open-hand NPZ.
+
+**Alternatives considered**:
+
+- Treat `open hand` and `paper` as separate synthetic sources. Rejected because they differ only by `THJ2`; they are endpoints of the same thumb-spread movement.
+- Use `rock` instead of `close hand` for fist. Rejected because `close hand` is the generic MuJoCo closure keyframe, while `rock` is a gesture-specific keyframe.
+- Include `LFJ5` in open-hand fan. Rejected because it moves the little-finger metacarpal/palm base and makes the fan visually asymmetric.
+- Reject any close-hand contact. Rejected because the official `close hand` keyframe already has small MuJoCo penetration.
+- Repeat exact open/close qpos rows. Rejected because repeated identical rows would overweight a degenerate point in PCA.
+
+**Expected impact**:
+
+The eigengrasp PCA now sees three kinds of robot posture structure:
+
+1. balanced real Dexonomy phases (`pregrasp_qpos`, `grasp_qpos`, `squeeze_qpos`);
+2. a compact but non-degenerate open-hand manifold;
+3. a compact but non-degenerate close-hand/fist manifold.
+
+This should prevent the robot-side postural/eigengrasp space from lacking clean open and closed endpoints, while still avoiding discrete class anchors as the only source of variation.
+
+**References**:
+
+- Entry 61: eigengrasp-based robot sampler rationale
+- Entry 62: Dexonomy eigengrasps validated by real-vs-reconstructed grasps
+- MuJoCo Menagerie Shadow Hand keyframes: `open hand`, `paper`, `close hand`
+- Dexonomy Shadow dataset under `Dexonomy_GRASP_shadow/succ_collect`
+
+**Status**: Implemented

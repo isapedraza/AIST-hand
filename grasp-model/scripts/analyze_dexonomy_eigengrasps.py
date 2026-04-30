@@ -17,6 +17,10 @@ DEFAULT_OUT = Path(
     "dexonomy_shadow_eigengrasps_balanced_sample.npz"
 )
 DEFAULT_QPOS_KEYS = ("pregrasp_qpos", "grasp_qpos", "squeeze_qpos")
+DEFAULT_SYNTHETIC_QPOS_NPZ = (
+    Path("grasp-model/data/processed/synthetic_open_hand_shadow_qpos.npz"),
+    Path("grasp-model/data/processed/synthetic_close_hand_shadow_qpos.npz"),
+)
 
 JOINTS22 = [
     "FFJ4",
@@ -227,6 +231,42 @@ def build_unbalanced_qpos(
     return np.concatenate(rows, axis=0)
 
 
+def load_synthetic_qpos_npz(paths: list[Path]) -> tuple[np.ndarray, list[str], list[int], list[str]]:
+    rows: list[np.ndarray] = []
+    names: list[str] = []
+    counts: list[int] = []
+    sources: list[str] = []
+
+    for path in paths:
+        data = np.load(path, allow_pickle=False)
+        if "qpos22" not in data:
+            raise KeyError(f"{path} must contain qpos22")
+        qpos22 = data["qpos22"].astype(np.float32)
+        if qpos22.ndim != 2 or qpos22.shape[1] != len(JOINTS22):
+            raise ValueError(f"Expected {path} qpos22 shape [N,{len(JOINTS22)}], got {qpos22.shape}")
+
+        if "joint_names" in data:
+            got_names = [str(name) for name in data["joint_names"]]
+            if got_names != JOINTS22:
+                raise ValueError(f"{path} joint_names do not match PCA joint order.")
+
+        name = str(data["synthetic_pose_name"]) if "synthetic_pose_name" in data else path.stem
+        source = str(data["source"]) if "source" in data else "unknown"
+        rows.append(qpos22)
+        names.append(name)
+        counts.append(qpos22.shape[0])
+        sources.append(source)
+
+    if not rows:
+        return (
+            np.empty((0, len(JOINTS22)), dtype=np.float32),
+            [],
+            [],
+            [],
+        )
+    return np.concatenate(rows, axis=0), names, counts, sources
+
+
 def print_joint_ranges(qpos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     qmin = qpos.min(axis=0)
     qmax = qpos.max(axis=0)
@@ -291,8 +331,25 @@ def main() -> None:
         action="store_true",
         help="Use every loaded row after file-level class sampling instead of row-balancing by class/key.",
     )
+    parser.add_argument(
+        "--synthetic-qpos-npz",
+        type=Path,
+        nargs="*",
+        default=list(DEFAULT_SYNTHETIC_QPOS_NPZ),
+        help=(
+            "Synthetic qpos NPZ files containing qpos22 rows to append after Dexonomy balancing. "
+            "Default: synthetic close hand."
+        ),
+    )
+    parser.add_argument(
+        "--no-synthetic-qpos",
+        action="store_true",
+        help="Disable default synthetic qpos rows for ablations.",
+    )
     args = parser.parse_args()
     qpos_keys = tuple(args.qpos_keys)
+    if args.no_synthetic_qpos:
+        args.synthetic_qpos_npz = []
     key_weights = parse_qpos_key_weights(qpos_keys, args.qpos_key_weights)
 
     paths_by_class, total_npy = sample_paths_by_class(args.root, args.max_files_per_class, args.seed)
@@ -321,6 +378,10 @@ def main() -> None:
         )
         balance_mode = "class_key_no_replacement"
 
+    synthetic_qpos, synthetic_names, synthetic_counts, synthetic_sources = load_synthetic_qpos_npz(args.synthetic_qpos_npz)
+    if synthetic_qpos.shape[0] > 0:
+        qpos = np.concatenate([qpos, synthetic_qpos], axis=0)
+
     print(f"loaded_qpos_rows={qpos.shape[0]}")
     print(f"balance_mode={balance_mode}")
     print(f"qpos_key_weights={key_weights}")
@@ -330,6 +391,9 @@ def main() -> None:
     print(f"available_row_counts_by_class={dict(sorted(row_counts.items(), key=lambda item: class_sort_key(item[0])))}")
     print(f"selected_row_counts_by_qpos_key={dict(selected_by_key)}")
     print(f"selected_row_counts_by_class={dict(sorted(selected_by_class.items(), key=lambda item: class_sort_key(item[0])))}")
+    print(f"synthetic_qpos_npz={[str(path) for path in args.synthetic_qpos_npz]}")
+    print(f"synthetic_row_counts={dict(zip(synthetic_names, synthetic_counts, strict=True))}")
+    print(f"synthetic_total_rows={synthetic_qpos.shape[0]}")
     print(f"bad_count={len(bad)}")
     if bad[:5]:
         print(f"bad_examples={bad[:5]}")
@@ -359,6 +423,11 @@ def main() -> None:
         max_files_per_class=args.max_files_per_class,
         qpos_keys=np.array(qpos_keys),
         qpos_key_weights=np.array([key_weights[key] for key in qpos_keys], dtype=np.int32),
+        synthetic_qpos_npz=np.array([str(path) for path in args.synthetic_qpos_npz]),
+        synthetic_pose_names=np.array(synthetic_names),
+        synthetic_pose_sources=np.array(synthetic_sources),
+        synthetic_pose_counts=np.array(synthetic_counts, dtype=np.int32),
+        synthetic_qpos22=synthetic_qpos.astype(np.float32),
         balance_mode=balance_mode,
         rows_per_weight_unit=rows_per_weight_unit,
         joint_names=np.array(JOINTS22),
