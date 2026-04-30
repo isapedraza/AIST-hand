@@ -1104,6 +1104,174 @@ El Encoder B solo se usa durante entrenamiento. En inferencia solo se ejecutan E
 
 **Status**: Implemented
 
+## Entry 64 -- 2026-04-30: New open/close phase-balanced eigengrasp PCA compared against previous PCA
+
+**Context**: Entry 63 added synthetic open/close anchors and changed `analyze_dexonomy_eigengrasps.py` so the default PCA input is:
+
+```
+balanced Dexonomy(pregrasp_qpos, grasp_qpos, squeeze_qpos)
++ synthetic_open_hand
++ synthetic_close_hand
+```
+
+The previous local reference PCA was:
+
+```
+grasp-model/data/processed/dexonomy_shadow_eigengrasps_balanced_sample.npz
+```
+
+That previous artifact has no `qpos_keys`, `balance_mode`, or `synthetic_*` metadata and corresponds to the older real-Dexonomy-only eigengrasp basis. It remains useful as a historical baseline.
+
+The new artifact is:
+
+```
+grasp-model/data/processed/dexonomy_shadow_eigengrasps_balanced_phase_open_close_sample.npz
+```
+
+**New PCA metadata**:
+
+```
+qpos_keys             = [pregrasp_qpos, grasp_qpos, squeeze_qpos]
+qpos_key_weights      = [1, 1, 1]
+balance_mode          = class_key_no_replacement
+rows_per_weight_unit  = 9890
+synthetic_pose_names  = [synthetic_open_hand, synthetic_close_hand]
+synthetic_pose_counts = [29670, 29670]
+synthetic_qpos22      = (59340, 22)
+```
+
+Expected total PCA input rows:
+
+```
+31 Dexonomy classes * 3 phases * 9890 rows
++ 29670 synthetic_open_hand rows
++ 29670 synthetic_close_hand rows
+= 979110 qpos22 rows
+```
+
+**Variance comparison**:
+
+```
+                old PCA   new PCA
+PC1             0.37400   0.38405
+PC2             0.17361   0.15560
+PC3             0.12818   0.10511
+PC4             0.06813   0.09170
+PC5             0.04787   0.04722
+PC6             0.04479   0.04155
+
+cum6            0.83658   0.82524
+cum9            0.91377   0.91069
+cum12           0.95633   0.95316
+cum17           0.99082   0.99103
+
+k_for_80        6         6
+k_for_90        9         9
+k_for_95        12        12
+k_for_99        17        17
+```
+
+The dimensionality thresholds did not change. The new basis still reaches 90% variance with 9 eigengrasps and 95% with 12 eigengrasps.
+
+**PC alignment**:
+
+Component signs are arbitrary in PCA, so absolute cosine similarity is the relevant comparison.
+
+```
+old PC1 -> new PC1 |cos| = 0.951
+old PC2 -> new PC2 |cos| = 0.893
+old PC3 -> new PC3 |cos| = 0.982
+old PC4 -> new PC4 |cos| = 0.814
+old PC5 -> new PC5 |cos| = 0.949
+old PC6 -> new PC6 |cos| = 0.945
+```
+
+Conclusion: the new PCA did not rotate chaotically. The first six eigengrasp axes still correspond closely to the old basis. PC4 changed the most and gained variance, consistent with the new phase/open-close coverage strengthening a secondary abduction/thumb/fan-related direction.
+
+**PC1 interpretation**:
+
+Old PC1 and new PC1 are the same major axis up to sign:
+
+```
+cos(old PC1, new PC1) = -0.951
+```
+
+After sign alignment, PC1 remains the coordinated finger flexion/closure axis.
+
+Old PC1 top loadings:
+
+```
+LFJ1:-0.385, LFJ2:-0.382, RFJ2:-0.378, RFJ1:-0.373,
+MFJ1:-0.263, THJ4:+0.249, MFJ2:-0.249, FFJ1:-0.201,
+THJ2:-0.194, FFJ2:-0.178
+```
+
+New PC1 top loadings after sign flip:
+
+```
+LFJ2:-0.380, LFJ1:-0.379, RFJ2:-0.373, RFJ1:-0.367,
+MFJ1:-0.290, MFJ2:-0.286, FFJ1:-0.240, FFJ2:-0.224,
+LFJ3:-0.221, RFJ3:-0.202
+```
+
+Interpretation: PC1 remains closure of the long fingers. In the new PCA it becomes slightly cleaner as a long-finger axis; thumb terms are less dominant in the top loadings.
+
+**Mean qpos shift**:
+
+Largest changes in raw `q_mean`:
+
+```
+THJ4 old=+0.9876 new=+0.9020 diff=-0.0855
+MFJ1 old=+0.7150 new=+0.7549 diff=+0.0399
+LFJ3 old=+1.0045 new=+0.9699 diff=-0.0346
+THJ5 old=+0.0150 new=-0.0180 diff=-0.0330
+FFJ1 old=+0.6321 new=+0.6635 diff=+0.0314
+FFJ4 old=-0.1506 new=-0.1232 diff=+0.0274
+THJ3 old=+0.0689 new=+0.0420 diff=-0.0270
+RFJ1 old=+0.8179 new=+0.8445 diff=+0.0266
+RFJ3 old=+0.9631 new=+0.9434 diff=-0.0197
+FFJ3 old=+0.7502 new=+0.7305 diff=-0.0197
+```
+
+The mean shifts are measurable but not catastrophic. The largest shift is in `THJ4`, while long-finger joints shift only modestly.
+
+**Decision**:
+
+Use the new phase-balanced open/close PCA as the default eigengrasp basis for the next robot sampler. Keep the old PCA file for historical comparison only.
+
+Recommended next artifact name:
+
+```
+valid_robot_poses_eigengrasp_phase_open_close_*.npz
+```
+
+The sampler should use the new PCA formula:
+
+```
+q_norm = mean_norm + coeffs @ components_norm[:k]
+q22    = q_norm * (joint_high - joint_low) + joint_low
+q24    = [WRJ2=0, WRJ1=0] + q22
+```
+
+Then clip to limits, filter contacts/penetration in MuJoCo, and save qpos plus coefficient metadata.
+
+**Alternatives considered**:
+
+- Recompute without synthetic anchors for a strict ablation. Still useful later, but not required before building the next sampler because Entry 63 established that open/close endpoints are required for the operational robot space.
+- Keep the old PCA because thresholds did not change. Rejected: thresholds stayed stable, but the new PCA has better coverage and explicit open/close endpoints without destabilizing the basis.
+
+**Expected impact**:
+
+The eigengrasp sampler can now sample a robot postural space that preserves the old coordinated grasp structure while including clean open and closed endpoints. Since `k_for_90=9` and `k_for_95=12` are unchanged, the previous `k=9/12/17` comparison plan remains valid.
+
+**References**:
+
+- Entry 61: eigengrasp-based robot sampler
+- Entry 62: old Dexonomy eigengrasp validation
+- Entry 63: synthetic open/close anchor generation and default inclusion
+
+**Status**: Implemented
+
 ---
 
 ## Entry 20 -- 2026-04-14: Step4 MCP First Layer implemented (Dong Eq.19-24) with Eq.23 translation constrained by Eq.15

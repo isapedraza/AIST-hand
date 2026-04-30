@@ -141,8 +141,12 @@ def load_qpos(
     shape_counts: Counter[tuple[int, ...]] = Counter()
     bad: list[tuple[str, object]] = []
 
-    for cls, paths in sorted(paths_by_class.items()):
-        for path in paths:
+    class_items = sorted(paths_by_class.items(), key=lambda item: class_sort_key(item[0]))
+    for class_idx, (cls, paths) in enumerate(class_items, start=1):
+        print(f"load_qpos class {class_idx}/{len(class_items)} start {cls}: files={len(paths)}", flush=True)
+        class_key_counts: Counter[str] = Counter()
+        class_bad_start = len(bad)
+        for file_idx, path in enumerate(paths, start=1):
             try:
                 data = np.load(path, allow_pickle=True).item()
                 for key in qpos_keys:
@@ -158,8 +162,16 @@ def load_qpos(
                     rows_by_class_key[cls][key].append(rows)
                     row_counts[cls] += rows.shape[0]
                     key_counts[key] += rows.shape[0]
+                    class_key_counts[key] += rows.shape[0]
             except Exception as exc:  # noqa: BLE001 - diagnostic script
                 bad.append((str(path), repr(exc)))
+            if file_idx % 500 == 0 or file_idx == len(paths):
+                print(
+                    f"load_qpos class {class_idx}/{len(class_items)} {cls}: "
+                    f"files={file_idx}/{len(paths)} rows={dict(class_key_counts)} "
+                    f"bad={len(bad) - class_bad_start}",
+                    flush=True,
+                )
 
     if not any(chunks for rows_by_key in rows_by_class_key.values() for chunks in rows_by_key.values()):
         raise RuntimeError("No valid Dexonomy qpos rows found.")
