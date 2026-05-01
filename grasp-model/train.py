@@ -32,6 +32,7 @@ print('🚀 Import libraries: OK')
 # GG_MANO_PKL:       path to MANO_RIGHT.pkl (required when GG_GLOBAL_SWING=true)
 # GG_AHG_ANGLES:     "true" | "false"  -- 10 wrist-relative angles per node (Aiman & Ahmad 2024)
 # GG_AHG_DISTANCES:  "true" | "false"  -- 10 distances to critical joints per node
+# GG_DONG_EULER:     "true" | "false"  -- 2 Dong euler angles (beta/gamma) per node, zero-padded
 
 RUN_NAME      = os.getenv("GG_RUN_NAME",      "run_unnamed")
 _collapse     = os.getenv("GG_COLLAPSE",      "none").strip().lower()
@@ -45,6 +46,7 @@ GLOBAL_SWING  = os.getenv("GG_GLOBAL_SWING", "false").strip().lower() == "true"
 AHG_ANGLES    = os.getenv("GG_AHG_ANGLES",   "false").strip().lower() == "true"
 AHG_DISTANCES = os.getenv("GG_AHG_DISTANCES","false").strip().lower() == "true"
 DONG_QUATS    = os.getenv("GG_DONG_QUATS",   "false").strip().lower() == "true"
+DONG_EULER    = os.getenv("GG_DONG_EULER",   "false").strip().lower() == "true"
 DONG_CSV_PATH = os.getenv("GG_DONG_CSV_PATH","").strip() or None
 CSV_FILENAME  = os.getenv("GG_CSV_FILENAME", "").strip() or None
 ADD_XYZ       = os.getenv("GG_ADD_XYZ",      "").strip().lower() or None
@@ -63,6 +65,7 @@ print(f"Global swing:  {GLOBAL_SWING}")
 print(f"AHG angles:    {AHG_ANGLES}")
 print(f"AHG distances: {AHG_DISTANCES}")
 print(f"Dong quats:    {DONG_QUATS}" + (f" ({DONG_CSV_PATH})" if DONG_QUATS else ""))
+print(f"Dong euler:    {DONG_EULER}" + (f" ({DONG_CSV_PATH})" if DONG_EULER else ""))
 print(f"Add XYZ:       {ADD_XYZ}  |  Normalize XYZ: {NORMALIZE_XYZ}")
 
 # ====================== Hyperparameters =========================
@@ -93,8 +96,8 @@ writer = SummaryWriter(log_dir=f'experiments/runs/{RUN_NAME}')
 # ==================== Datasets ===================================
 print("📦 Loading datasets...")
 
-datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
-datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
+datasetTrain = GraspsClass(root='data/', split='train', collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, add_dong_euler=DONG_EULER, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
+datasetVal   = GraspsClass(root='data/', split='val',   collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, add_dong_euler=DONG_EULER, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
 
 print(f"Train: {len(datasetTrain)}, Val: {len(datasetVal)}")
 print(f"Num classes:         {datasetTrain.num_classes}")
@@ -111,6 +114,7 @@ _tg = _ToGraph(
     add_ahg_angles=AHG_ANGLES,
     add_ahg_distances=AHG_DISTANCES,
     add_dong_quats=DONG_QUATS,
+    add_dong_euler=DONG_EULER,
     normalize_xyz=NORMALIZE_XYZ,
 )
 expected_F = _tg.F
@@ -261,7 +265,7 @@ import gc; gc.collect()
 
 # ==================== Load Test Set (lazy) =======================
 print("📦 Loading test dataset...")
-datasetTest = GraspsClass(root='data/', split='test', collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
+datasetTest = GraspsClass(root='data/', split='test', collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, add_dong_euler=DONG_EULER, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
 test_loader = DataLoader(datasetTest, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 print(f"Test: {len(datasetTest)}")
 

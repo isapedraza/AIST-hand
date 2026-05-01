@@ -21,6 +21,42 @@ SPLIT_SUBJECTS = {
 
 MANO_POSE_COLS = [f'MANO_pose_{i:02d}' for i in range(45)]
 DONG_QUAT_COLS = [f'q{i}_{ax}' for i in range(1, 21) for ax in ('w', 'x', 'y', 'z')]
+EULER_COLS = [
+    'beta1_deg', 'gamma1_deg',
+    'beta5_deg', 'gamma5_deg',
+    'beta9_deg', 'gamma9_deg',
+    'beta13_deg', 'gamma13_deg',
+    'beta17_deg', 'gamma17_deg',
+    'beta2_deg', 'beta3_deg',
+    'beta6_deg', 'beta7_deg',
+    'beta10_deg', 'beta11_deg',
+    'beta14_deg', 'beta15_deg',
+    'beta18_deg', 'beta19_deg',
+]
+# Maps MediaPipe node index (0-20) to (beta_col, gamma_col); None = zero-pad.
+_NODE_TO_EULER = [
+    (None,         None),           # 0  WRIST
+    ('beta1_deg',  'gamma1_deg'),   # 1  THUMB_CMC
+    ('beta2_deg',  None),           # 2  THUMB_MCP
+    ('beta3_deg',  None),           # 3  THUMB_IP
+    (None,         None),           # 4  THUMB_TIP
+    ('beta5_deg',  'gamma5_deg'),   # 5  INDEX_MCP
+    ('beta6_deg',  None),           # 6  INDEX_PIP
+    ('beta7_deg',  None),           # 7  INDEX_DIP
+    (None,         None),           # 8  INDEX_TIP
+    ('beta9_deg',  'gamma9_deg'),   # 9  MIDDLE_MCP
+    ('beta10_deg', None),           # 10 MIDDLE_PIP
+    ('beta11_deg', None),           # 11 MIDDLE_DIP
+    (None,         None),           # 12 MIDDLE_TIP
+    ('beta13_deg', 'gamma13_deg'),  # 13 RING_MCP
+    ('beta14_deg', None),           # 14 RING_PIP
+    ('beta15_deg', None),           # 15 RING_DIP
+    (None,         None),           # 16 RING_TIP
+    ('beta17_deg', 'gamma17_deg'),  # 17 PINKY_MCP
+    ('beta18_deg', None),           # 18 PINKY_PIP
+    ('beta19_deg', None),           # 19 PINKY_DIP
+    (None,         None),           # 20 PINKY_TIP
+]
 
 # Named XYZ columns in the same order as JOINT_NAMES (works for both CSVs)
 XYZ_COLS = [
@@ -233,6 +269,7 @@ class GraspsClass(InMemoryDataset):
                  csv_filename=None,
                  add_xyz=None,
                  normalize_xyz=False,
+                 add_dong_euler=False,
                  transform=None, pre_transform=None):
         assert split in SPLIT_SUBJECTS, f"split must be one of {list(SPLIT_SUBJECTS)}"
         # collapse: False (28 cls) | True or 'feix' (16 cls) | 'taxonomy_v1' (17 cls)
@@ -255,6 +292,9 @@ class GraspsClass(InMemoryDataset):
         # add_xyz: explicit override. None = legacy auto (False if dong_quats, else True)
         self._add_xyz = add_xyz if add_xyz is not None else (not add_dong_quats)
         self.normalize_xyz = normalize_xyz
+        self.add_dong_euler = add_dong_euler
+        if add_dong_euler and dong_csv_path is None:
+            raise ValueError("dong_csv_path required when add_dong_euler=True")
         super().__init__(root, transform, pre_transform)
 
         try:
@@ -298,24 +338,27 @@ class GraspsClass(InMemoryDataset):
         swing_tag = '_swing' if self.add_global_swing  else ''
         ahga_tag  = '_ahga'  if self.add_ahg_angles    else ''
         ahgd_tag  = '_ahgd'  if self.add_ahg_distances else ''
-        dongq_tag  = '_dongq'   if self.add_dong_quats           else ''
-        xyz_tag    = '_xyz'     if (self.add_dong_quats and self._add_xyz) else ''
-        normxyz_tag = '_normxyz' if self.normalize_xyz            else ''
+        dongq_tag   = '_dongq'  if self.add_dong_quats                    else ''
+        xyz_tag     = '_xyz'    if (self.add_dong_quats and self._add_xyz) else ''
+        normxyz_tag = '_normxyz' if self.normalize_xyz                    else ''
+        euler_tag   = '_euler'  if self.add_dong_euler                    else ''
         # If using a custom CSV, embed its stem in the cache filename to avoid collisions
         if self._csv_filename:
             from pathlib import Path
             csv_stem = Path(self._csv_filename).stem  # e.g. 'hograspnet_r014'
-            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
+            return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}{euler_tag}.pt']
         if self.add_dong_quats:
-            return [f'hograspnet_dong_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}.pt']
-        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{normxyz_tag}.pt']
+            return [f'hograspnet_dong_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}{euler_tag}.pt']
+        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{normxyz_tag}{euler_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
         """Columns to load from CSV. Skips unused columns to reduce RAM during processing."""
-        if self.add_dong_quats:
-            xyz_part = XYZ_COLS if self._add_xyz else []
-            return ['subject_id', 'grasp_type'] + xyz_part + DONG_QUAT_COLS
+        if self.add_dong_quats or self.add_dong_euler:
+            xyz_part   = XYZ_COLS        if self._add_xyz          else []
+            quat_part  = DONG_QUAT_COLS  if self.add_dong_quats    else []
+            euler_part = EULER_COLS      if self.add_dong_euler     else []
+            return ['subject_id', 'grasp_type'] + xyz_part + quat_part + euler_part
         cols = ['subject_id', 'sequence_id', 'cam', 'grasp_type', 'contact_sum']
         if self.add_velocity:
             cols.append('frame_id')
@@ -336,9 +379,10 @@ class GraspsClass(InMemoryDataset):
             add_ahg_distances=self.add_ahg_distances,
             add_dong_quats=self.add_dong_quats,
             normalize_xyz=self.normalize_xyz,
+            add_dong_euler=self.add_dong_euler,
         )
 
-        csv_path = self.dong_csv_path if self.add_dong_quats else self.raw_paths[0]
+        csv_path = self.dong_csv_path if (self.add_dong_quats or self.add_dong_euler) else self.raw_paths[0]
         log.info(f"Reading {csv_path}")
         df = pd.read_csv(csv_path, usecols=self._usecols())
         df['grasp_type'] = self._remap_grasp_type_to_local(df['grasp_type'])
@@ -484,6 +528,15 @@ class GraspsClass(InMemoryDataset):
                 sample[name] = vals[j]
             if self.add_mano_pose:
                 sample['mano_pose'] = row[MANO_POSE_COLS].values.astype(np.float32)
+
+        if self.add_dong_euler:
+            euler = np.zeros((21, 2), dtype=np.float32)
+            for i, (beta_col, gamma_col) in enumerate(_NODE_TO_EULER):
+                if beta_col is not None:
+                    euler[i, 0] = float(row[beta_col])
+                if gamma_col is not None:
+                    euler[i, 1] = float(row[gamma_col])
+            sample['dong_euler'] = euler
 
         return sample
 

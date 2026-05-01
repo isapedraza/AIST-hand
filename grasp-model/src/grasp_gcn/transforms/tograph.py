@@ -128,7 +128,8 @@ class ToGraph:
                  add_ahg_angles: bool = False,
                  add_ahg_distances: bool = False,
                  add_dong_quats: bool = False,
-                 normalize_xyz: bool = False):
+                 normalize_xyz: bool = False,
+                 add_dong_euler: bool = False):
         if not add_xyz:
             _positional_flags = {
                 'add_joint_angles': add_joint_angles,
@@ -157,6 +158,7 @@ class ToGraph:
         self.add_ahg_distances = add_ahg_distances
         self.add_dong_quats = add_dong_quats
         self.normalize_xyz = normalize_xyz
+        self.add_dong_euler = add_dong_euler
         self._prev_positions: Optional[np.ndarray] = None  # [21, 3], deploy-time buffer
         self._prev_timestamp: Optional[float] = None       # wall-clock time of last frame
         self.F_xyz = 3 if add_xyz else 0
@@ -168,7 +170,8 @@ class ToGraph:
                   + (3 if add_global_swing else 0)
                   + (10 if add_ahg_angles else 0)
                   + (10 if add_ahg_distances else 0)
-                  + (4 if add_dong_quats else 0))  # total features per node
+                  + (4 if add_dong_quats else 0)
+                  + (2 if add_dong_euler else 0))  # total features per node
 
         # Parent joint index for each of the 21 joints (-1 = no parent).
         # Order: WRIST(0), THUMB_CMC(1)..THUMB_TIP(4),
@@ -397,6 +400,16 @@ class ToGraph:
                 dong_quats[:, 0] = 1.0  # identity for all if missing
             for i in range(21):
                 rows[i] = np.append(rows[i], dong_quats[i])
+
+        # Dong Euler angles: [beta, gamma] per node in degrees (Dong Eq.13-36).
+        # MCP joints: (beta, gamma). PIP/DIP: (beta, 0). WRIST/TIP: (0, 0).
+        # sample['dong_euler'] is [21, 2] pre-extracted from CSV by GraspsClass.
+        if self.add_dong_euler:
+            dong_euler = sample.get('dong_euler', None)
+            if dong_euler is None:
+                dong_euler = np.zeros((21, 2), dtype=np.float32)
+            for i in range(21):
+                rows[i] = np.append(rows[i], dong_euler[i])
 
         # Nodo features y máscara
         x = torch.tensor(np.vstack(rows), dtype=torch.float32)               # [21, F]
