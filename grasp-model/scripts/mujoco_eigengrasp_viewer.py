@@ -37,7 +37,7 @@ DEFAULT_EIGEN = (
     / "grasp-model"
     / "data"
     / "processed"
-    / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_sample.npz"
+    / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_coeffstats_sample.npz"
 )
 DEFAULT_OPEN_SYNTHETIC = ROOT / "grasp-model" / "data" / "processed" / "synthetic_open_hand_shadow_qpos.npz"
 DEFAULT_CLOSE_SYNTHETIC = ROOT / "grasp-model" / "data" / "processed" / "synthetic_close_hand_shadow_qpos.npz"
@@ -103,7 +103,12 @@ def load_eigengrasps(path: Path) -> dict[str, np.ndarray]:
     missing = sorted(required - set(data.files))
     if missing:
         raise KeyError(f"Missing keys in {path}: {missing}")
-    return {k: data[k] for k in data.files}
+    result = {k: data[k] for k in data.files}
+    if "coeff_p01" not in result or "coeff_p99" not in result:
+        n = int(result["components_norm"].shape[0])
+        result.setdefault("coeff_p01", np.full(n, -np.inf, dtype=np.float32))
+        result.setdefault("coeff_p99", np.full(n,  np.inf, dtype=np.float32))
+    return result
 
 
 def reconstruct_qpos(eigen: dict[str, np.ndarray], coeffs: np.ndarray, n_knobs: int) -> np.ndarray:
@@ -180,13 +185,16 @@ def print_status(
     n_knobs: int,
     step: float,
     target_mode: bool,
+    coeff_p01: np.ndarray,
+    coeff_p99: np.ndarray,
 ) -> None:
     active = coeffs[:n_knobs]
     coeff_txt = " ".join(f"{i + 1}:{active[i]:+.2f}" for i in range(n_knobs))
     mode = "target-real" if target_mode else "reconstruction"
+    lo, hi = coeff_p01[idx], coeff_p99[idx]
     print(
         f"\r  mode={mode:<14s} knob={idx + 1:02d}/{n_knobs}  step={step:.2f}  "
-        f"PC{idx + 1} var={explained[idx] * 100:.1f}%  [{coeff_txt}]      ",
+        f"PC{idx + 1} var={explained[idx] * 100:.1f}%  range=[{lo:+.2f},{hi:+.2f}]  [{coeff_txt}]      ",
         end="",
         flush=True,
     )
@@ -237,6 +245,9 @@ def main() -> None:
         print(" ".join(f"{i + 1}:{v:+.4f}" for i, v in enumerate(coeffs)))
     initial_coeffs = coeffs.copy()
 
+    coeff_p01 = eigen["coeff_p01"].astype(np.float64)
+    coeff_p99 = eigen["coeff_p99"].astype(np.float64)
+
     state = {"idx": 0, "quit": False, "dirty": True, "target_mode": False}
 
     print(f"Loaded eigengrasps: {args.eigengrasps}")
@@ -258,10 +269,12 @@ def main() -> None:
                 state["idx"] = (state["idx"] - 1) % n_knobs
                 state["dirty"] = True
             elif ch == "\x1b[A":
-                coeffs[state["idx"]] += args.step
+                i = state["idx"]
+                coeffs[i] = min(coeffs[i] + args.step, coeff_p99[i])
                 state["dirty"] = True
             elif ch == "\x1b[B":
-                coeffs[state["idx"]] -= args.step
+                i = state["idx"]
+                coeffs[i] = max(coeffs[i] - args.step, coeff_p01[i])
                 state["dirty"] = True
             elif ch in ("t", "T") and target_qpos is not None:
                 state["target_mode"] = not state["target_mode"]
@@ -283,7 +296,7 @@ def main() -> None:
     target = reconstruct_qpos(eigen, coeffs, n_knobs)
     data.qpos[:HAND_QPOS_DIM] = target
     mujoco.mj_forward(model, data)
-    print_status(state["idx"], coeffs, explained, n_knobs, args.step, state["target_mode"])
+    print_status(state["idx"], coeffs, explained, n_knobs, args.step, state["target_mode"], coeff_p01, coeff_p99)
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         while viewer.is_running() and not state["quit"]:
@@ -292,7 +305,7 @@ def main() -> None:
                     target = target_qpos
                 else:
                     target = reconstruct_qpos(eigen, coeffs, n_knobs)
-                print_status(state["idx"], coeffs, explained, n_knobs, args.step, state["target_mode"])
+                print_status(state["idx"], coeffs, explained, n_knobs, args.step, state["target_mode"], coeff_p01, coeff_p99)
                 state["dirty"] = False
 
             hand_qpos = data.qpos[:HAND_QPOS_DIM]
