@@ -8,7 +8,7 @@ import numpy as np
 
 DEFAULT_EIGENGRASPS = Path(
     "grasp-model/data/processed/"
-    "dexonomy_shadow_eigengrasps_balanced_sample.npz"
+    "dexonomy_shadow_eigengrasps_balanced_phase_open_close_sample.npz"
 )
 
 

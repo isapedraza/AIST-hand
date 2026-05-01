@@ -32,7 +32,15 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 SHADOW_DIR = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND = SHADOW_DIR / "right_hand.xml"
-DEFAULT_EIGEN = ROOT / "grasp-model" / "data" / "processed" / "dexonomy_shadow_eigengrasps_balanced_sample.npz"
+DEFAULT_EIGEN = (
+    ROOT
+    / "grasp-model"
+    / "data"
+    / "processed"
+    / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_sample.npz"
+)
+DEFAULT_OPEN_SYNTHETIC = ROOT / "grasp-model" / "data" / "processed" / "synthetic_open_hand_shadow_qpos.npz"
+DEFAULT_CLOSE_SYNTHETIC = ROOT / "grasp-model" / "data" / "processed" / "synthetic_close_hand_shadow_qpos.npz"
 
 HAND_QPOS_DIM = 24
 POSE_ALPHA = 0.20
@@ -119,6 +127,39 @@ def project_q22(eigen: dict[str, np.ndarray], q22: np.ndarray, n_knobs: int) -> 
     return (q_norm - mean) @ comps.T
 
 
+def load_synthetic_pose_q22(path: Path, *, use_mean: bool = False) -> np.ndarray:
+    data = np.load(path, allow_pickle=False)
+    if not use_mean and "base_qpos22" in data:
+        qpos22 = data["base_qpos22"].astype(np.float64)
+        if qpos22.shape != (22,):
+            raise ValueError(f"Expected base_qpos22 shape [22] in {path}, got {qpos22.shape}")
+        return qpos22
+    if "qpos22" not in data:
+        raise KeyError(f"Missing qpos22 in {path}")
+    qpos22 = data["qpos22"].astype(np.float64)
+    if qpos22.ndim != 2 or qpos22.shape[1] != 22:
+        raise ValueError(f"Expected qpos22 shape [N,22] in {path}, got {qpos22.shape}")
+    return qpos22.mean(axis=0)
+
+
+def start_pose_coeffs(
+    eigen: dict[str, np.ndarray],
+    start_pose: str,
+    n_knobs: int,
+    open_synthetic: Path,
+    close_synthetic: Path,
+) -> np.ndarray:
+    if start_pose == "mean":
+        return np.zeros(n_knobs, dtype=np.float64)
+    if start_pose == "open":
+        q22 = load_synthetic_pose_q22(open_synthetic)
+    elif start_pose == "close":
+        q22 = load_synthetic_pose_q22(close_synthetic)
+    else:
+        raise ValueError(f"Unknown start pose: {start_pose}")
+    return project_q22(eigen, q22, n_knobs)
+
+
 def load_target_qpos(path: Path, row: int, qpos_key: str) -> np.ndarray:
     raw = np.load(path, allow_pickle=True).item()
     if qpos_key not in raw:
@@ -156,11 +197,14 @@ def main() -> None:
     parser.add_argument("--eigengrasps", type=Path, default=DEFAULT_EIGEN)
     parser.add_argument("--n-knobs", type=int, default=9)
     parser.add_argument("--step", type=float, default=0.08)
+    parser.add_argument("--start-pose", choices=("mean", "open", "close"), default="mean")
+    parser.add_argument("--open-synthetic", type=Path, default=DEFAULT_OPEN_SYNTHETIC)
+    parser.add_argument("--close-synthetic", type=Path, default=DEFAULT_CLOSE_SYNTHETIC)
     parser.add_argument(
         "--coeffs",
         type=float,
         nargs="+",
-        help="Initial eigengrasp coefficients. Missing coefficients are padded with zero.",
+        help="Initial absolute eigengrasp coefficients. Overrides --start-pose for provided coefficients.",
     )
     parser.add_argument("--target-npy", type=Path)
     parser.add_argument("--target-row", type=int, default=0)
@@ -170,10 +214,17 @@ def main() -> None:
     eigen = load_eigengrasps(args.eigengrasps)
     n_available = int(eigen["components_norm"].shape[0])
     n_knobs = int(np.clip(args.n_knobs, 1, n_available))
-    coeffs = np.zeros(n_knobs, dtype=np.float64)
+    coeffs = start_pose_coeffs(
+        eigen,
+        args.start_pose,
+        n_knobs,
+        args.open_synthetic,
+        args.close_synthetic,
+    )
     explained = eigen["explained_ratio"].astype(np.float64)
     if args.coeffs:
         n_given = min(len(args.coeffs), n_knobs)
+        coeffs[:] = 0.0
         coeffs[:n_given] = np.asarray(args.coeffs[:n_given], dtype=np.float64)
         if len(args.coeffs) > n_knobs:
             print(f"Ignoring {len(args.coeffs) - n_knobs} coeffs beyond --n-knobs={n_knobs}.")
@@ -184,11 +235,16 @@ def main() -> None:
         coeffs[:] = project_q22(eigen, target_qpos[2:], n_knobs)
         print("Projected target coefficients:")
         print(" ".join(f"{i + 1}:{v:+.4f}" for i, v in enumerate(coeffs)))
+    initial_coeffs = coeffs.copy()
 
     state = {"idx": 0, "quit": False, "dirty": True, "target_mode": False}
 
     print(f"Loaded eigengrasps: {args.eigengrasps}")
-    print(f"Using {n_knobs} knobs. LEFT/RIGHT=select  UP/DOWN=change  T=target/recon  0=reset  1..9=jump  Q=quit\n")
+    print(f"Start pose: {args.start_pose}")
+    print(
+        f"Using {n_knobs} knobs. LEFT/RIGHT=select  UP/DOWN=change  T=target/recon  "
+        "0=reset start  1..9=jump  Q=quit\n"
+    )
 
     def keyboard_thread() -> None:
         while not state["quit"]:
@@ -211,7 +267,7 @@ def main() -> None:
                 state["target_mode"] = not state["target_mode"]
                 state["dirty"] = True
             elif ch == "0":
-                coeffs[:] = 0.0
+                coeffs[:] = initial_coeffs
                 state["dirty"] = True
             elif ch.isdigit() and ch != "0":
                 target = int(ch) - 1

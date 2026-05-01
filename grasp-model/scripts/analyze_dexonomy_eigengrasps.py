@@ -309,6 +309,26 @@ def compute_pca(qpos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
     return mean, components, ratio, cumulative
 
 
+def compute_coeff_stats(
+    qpos: np.ndarray,
+    mean: np.ndarray,
+    components: np.ndarray,
+) -> dict[str, np.ndarray]:
+    scale = HIGH22.astype(np.float64) - LOW22.astype(np.float64)
+    qnorm = (qpos.astype(np.float64) - LOW22.astype(np.float64)) / scale
+    coeffs = (qnorm - mean.astype(np.float64)) @ components.astype(np.float64).T
+    return {
+        "coeff_min": coeffs.min(axis=0).astype(np.float32),
+        "coeff_p01": np.percentile(coeffs, 1, axis=0).astype(np.float32),
+        "coeff_p05": np.percentile(coeffs, 5, axis=0).astype(np.float32),
+        "coeff_mean": coeffs.mean(axis=0).astype(np.float32),
+        "coeff_std": coeffs.std(axis=0).astype(np.float32),
+        "coeff_p95": np.percentile(coeffs, 95, axis=0).astype(np.float32),
+        "coeff_p99": np.percentile(coeffs, 99, axis=0).astype(np.float32),
+        "coeff_max": coeffs.max(axis=0).astype(np.float32),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
@@ -412,6 +432,7 @@ def main() -> None:
 
     qmin, qmax, qmean = print_joint_ranges(qpos)
     mean, components, ratio, cumulative = compute_pca(qpos)
+    coeff_stats = compute_coeff_stats(qpos, mean, components)
 
     print("pca_normalized:")
     for i, value in enumerate(ratio):
@@ -426,6 +447,17 @@ def main() -> None:
         order = np.argsort(np.abs(comp))[::-1][:8]
         terms = ", ".join(f"{JOINTS22[j]}:{comp[j]:+.3f}" for j in order)
         print(f"  PC{pc_idx + 1:02d}: {terms}")
+
+    print("coeff_stats:")
+    for pc_idx in range(9):
+        print(
+            f"  PC{pc_idx + 1:02d}: "
+            f"min={coeff_stats['coeff_min'][pc_idx]:+.4f} "
+            f"p01={coeff_stats['coeff_p01'][pc_idx]:+.4f} "
+            f"p99={coeff_stats['coeff_p99'][pc_idx]:+.4f} "
+            f"max={coeff_stats['coeff_max'][pc_idx]:+.4f} "
+            f"std={coeff_stats['coeff_std'][pc_idx]:.4f}"
+        )
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
@@ -452,6 +484,7 @@ def main() -> None:
         q_min=qmin.astype(np.float32),
         q_max=qmax.astype(np.float32),
         q_mean=qmean.astype(np.float32),
+        **coeff_stats,
     )
     print(f"saved={args.out}")
 
