@@ -14,9 +14,9 @@ Run from grasp-model/ with the venv activated:
 Default Dong CSV path: data/processed/hograspnet_abl13.csv
 
 Output .pt files used by the abl13 notebook:
-    data/processed/hograspnet_dong_train_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt
-    data/processed/hograspnet_dong_val_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt
-    data/processed/hograspnet_dong_test_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt
+    data/processed/hograspnet_train_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt
+    data/processed/hograspnet_val_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt
+    data/processed/hograspnet_test_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt
 """
 
 import argparse
@@ -30,9 +30,9 @@ from grasp_gcn.dataset.grasps import GraspsClass
 
 EXPECTED_FEATURES = 25
 EXPECTED_OUTPUTS = {
-    "train": "data/processed/hograspnet_dong_train_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt",
-    "val":   "data/processed/hograspnet_dong_val_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt",
-    "test":  "data/processed/hograspnet_dong_test_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt",
+    "train": "data/processed/hograspnet_train_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt",
+    "val":   "data/processed/hograspnet_val_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt",
+    "test":  "data/processed/hograspnet_test_c28_noflex_ahga_ahgd_xyz_normxyz_euler.pt",
 }
 
 
@@ -89,20 +89,25 @@ def main() -> int:
     print(f"abl13 CSV: {dong_csv} ({dong_csv.stat().st_size / 1e6:.0f} MB)")
     print(f"Features/node: {EXPECTED_FEATURES} (xyz_norm=3, ahg_angles=10, ahg_distances=10, dong_euler=2)")
 
-    existing = [Path(path) for path in EXPECTED_OUTPUTS.values() if Path(path).exists()]
+    existing = {split: Path(path) for split, path in EXPECTED_OUTPUTS.items() if Path(path).exists()}
+    missing  = [split for split in ("train", "val", "test") if split not in existing]
+
     if existing and not args.overwrite:
-        print("\nExisting abl13 cache files found; leaving them untouched:")
-        for path in existing:
+        print("\nExisting abl13 cache files (will be skipped):")
+        for split, path in existing.items():
             print(f"  {path} ({path.stat().st_size / 1e6:.0f} MB)")
-        print("\nUse --overwrite to rebuild them.")
-        return 0
 
     if args.overwrite:
-        for path in existing:
+        for split, path in existing.items():
             print(f"Deleting existing cache: {path}")
             path.unlink()
+        missing = list(("train", "val", "test"))
 
-    for split in ("train", "val", "test"):
+    if not missing and not args.overwrite:
+        print("\nAll splits already exist. Use --overwrite to rebuild.")
+        return 0
+
+    for split in missing:
         build_split(split, dong_csv)
 
     print("\nAll abl13 caches done.")

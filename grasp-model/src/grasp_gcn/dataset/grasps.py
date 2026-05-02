@@ -339,7 +339,7 @@ class GraspsClass(InMemoryDataset):
         ahga_tag  = '_ahga'  if self.add_ahg_angles    else ''
         ahgd_tag  = '_ahgd'  if self.add_ahg_distances else ''
         dongq_tag   = '_dongq'  if self.add_dong_quats                    else ''
-        xyz_tag     = '_xyz'    if (self.add_dong_quats and self._add_xyz) else ''
+        xyz_tag     = '_xyz'    if ((self.add_dong_quats or self.add_dong_euler) and self._add_xyz) else ''
         normxyz_tag = '_normxyz' if self.normalize_xyz                    else ''
         euler_tag   = '_euler'  if self.add_dong_euler                    else ''
         # If using a custom CSV, embed its stem in the cache filename to avoid collisions
