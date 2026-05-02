@@ -66,6 +66,8 @@ def _parse_args() -> argparse.Namespace:
         default=True,
         help="Force Shadow WRJ2/WRJ1 targets and FK inputs to zero. Dong human input is wrist-local.",
     )
+    p.add_argument("--resume_ckpt", default=None, help="Path to checkpoint to resume from. Loads model weights only; optimizer and scheduler reset fresh.")
+    p.add_argument("--T_0", type=int, default=2000, help="CosineAnnealingWarmRestarts period (steps). LR resets to --lr every T_0 steps.")
     return p.parse_args()
 
 
@@ -90,7 +92,7 @@ def main():
         f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} "
         f"| triplets={triplet_mode} | margin={args.margin}"
     )
-    print(f"zero_wrj={args.zero_wrj}")
+    print(f"zero_wrj={args.zero_wrj} | scheduler=CosineWarmRestarts(T_0={args.T_0}) | resume={args.resume_ckpt or 'none'}")
 
     # Add scripts to path
     sys.path.insert(0, str(REPO_ROOT / "grasp-model/scripts"))
@@ -128,14 +130,24 @@ def main():
     D_X = SharedDecoder_D_X(z_dim=args.z_dim, shared_dim=args.shared_dim).to(DEVICE)
     D_r = RobotDecoder_D_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
 
+    if args.resume_ckpt:
+        ckpt = torch.load(args.resume_ckpt, map_location=DEVICE)
+        E_h.load_state_dict(ckpt["E_h"])
+        E_r.load_state_dict(ckpt["E_r"])
+        E_X.load_state_dict(ckpt["E_X"])
+        D_X.load_state_dict(ckpt["D_X"])
+        D_r.load_state_dict(ckpt["D_r"])
+        print(f"Resumed weights from {args.resume_ckpt} (step {ckpt.get('step', '?')})")
+        print("Optimizer and scheduler reset fresh.")
+
     optimizer = torch.optim.Adam(
         list(E_h.parameters()) + list(E_r.parameters()) +
         list(E_X.parameters()) + list(D_X.parameters()) +
         list(D_r.parameters()),
         lr=args.lr,
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=max(1, args.n_steps - args.lr_warmup), eta_min=1e-5
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=args.T_0, eta_min=1e-5
     )
 
     # ---------------------------------------------------------------------------
@@ -280,7 +292,7 @@ def main():
         optimizer.step()
 
         if step > args.lr_warmup:
-            scheduler.step()
+            scheduler.step(step - args.lr_warmup)
 
         ckpt_payload = {
             "step": step,
