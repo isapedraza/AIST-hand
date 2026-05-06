@@ -178,9 +178,9 @@ def main():
         extra_human_count = batch.get("extra_human_count", 0)
         extra_human_by_class = batch.get("extra_human_by_class", {})
 
-        z_t  = E_h(quats_h)       # [B, 3*z_dim]
+        z_t  = E_h(quats_h)       # [B, 5*z_dim]
         z_t1 = E_h(quats_h_t1)
-        z_r  = E_X(E_r(q_r))     # [B, 3*z_dim]
+        z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
 
         q_r_hat    = D_r(D_X(z_r))
         z_h_rt     = E_X(D_X(z_t))
@@ -190,11 +190,11 @@ def main():
         L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
 
         # --- Per-subspace contrastive loss (Yan et al. 2026) ---
-        z_t_subs = z_t.chunk(3, dim=-1)   # (z_thumb, z_prec, z_supp) each [B, z_dim]
-        z_r_subs = z_r.chunk(3, dim=-1)
+        z_t_subs = z_t.chunk(5, dim=-1)   # (z_thumb, z_index, z_middle, z_ring, z_pinky) each [B, z_dim]
+        z_r_subs = z_r.chunk(5, dim=-1)
         L_cont = torch.tensor(0.0, device=DEVICE)
         metric_stats = {}
-        for k, sub in enumerate(("thumb", "precision", "support")):
+        for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
             prefixes   = SUBSPACE_LABEL_PREFIX[sub]
             sub_finger = SUBSPACE_FINGERS[sub]
             # Indices into common_labels / quats_*_sub for this subspace

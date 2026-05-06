@@ -11,7 +11,7 @@ def _mlp(dims: list[int]) -> nn.Sequential:
     return nn.Sequential(*layers)
 
 
-N_SUBSPACES = 3  # thumb / precision / support
+N_SUBSPACES = 5  # thumb / index / middle / ring / pinky
 
 
 class SharedEncoder_E_X(nn.Module):

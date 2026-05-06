@@ -5,19 +5,25 @@ import torch.nn.functional as F
 # Node indices in the 21-node graph (0=wrist identity, 1-20=Dong joints per finger)
 # Wrist (node 0) propagates info to all via CAM but has no projection head.
 SUBSPACE_NODES: dict[str, list[int]] = {
-    "thumb":     [1, 2, 3, 4],
-    "precision": [5, 6, 7, 8, 9, 10, 11, 12],   # index + middle
-    "support":   [13, 14, 15, 16, 17, 18, 19, 20],  # ring + pinky
+    "thumb":  [1, 2, 3, 4],
+    "index":  [5, 6, 7, 8],
+    "middle": [9, 10, 11, 12],
+    "ring":   [13, 14, 15, 16],
+    "pinky":  [17, 18, 19, 20],
 }
 SUBSPACE_FINGERS: dict[str, list[str]] = {
-    "thumb":     ["thumb"],
-    "precision": ["index", "middle"],
-    "support":   ["ring", "pinky"],
+    "thumb":  ["thumb"],
+    "index":  ["index"],
+    "middle": ["middle"],
+    "ring":   ["ring"],
+    "pinky":  ["pinky"],
 }
 SUBSPACE_LABEL_PREFIX: dict[str, tuple[str, ...]] = {
-    "thumb":     ("thumb_",),
-    "precision": ("index_", "middle_"),
-    "support":   ("ring_", "pinky_"),
+    "thumb":  ("thumb_",),
+    "index":  ("index_",),
+    "middle": ("middle_",),
+    "ring":   ("ring_",),
+    "pinky":  ("pinky_",),
 }
 
 
@@ -66,9 +72,11 @@ class HumanEncoder_E_h(nn.Module):
         self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
         self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
         self.layer3 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
-        self.proj_thumb     = nn.Linear(hidden_dim, z_dim)
-        self.proj_precision = nn.Linear(hidden_dim, z_dim)
-        self.proj_support   = nn.Linear(hidden_dim, z_dim)
+        self.proj_thumb  = nn.Linear(hidden_dim, z_dim)
+        self.proj_index  = nn.Linear(hidden_dim, z_dim)
+        self.proj_middle = nn.Linear(hidden_dim, z_dim)
+        self.proj_ring   = nn.Linear(hidden_dim, z_dim)
+        self.proj_pinky  = nn.Linear(hidden_dim, z_dim)
         self.out_act = nn.Tanh()
 
     def forward(self, quats: torch.Tensor) -> torch.Tensor:
@@ -83,10 +91,9 @@ class HumanEncoder_E_h(nn.Module):
         x = self.layer2(x, self.cam)
         x = self.layer3(x, self.cam)
         x = x.view(B, N, -1)                              # [B, 21, hidden]
-        z_thumb = self.out_act(self.proj_thumb(
-            x[:, SUBSPACE_NODES["thumb"], :].max(dim=1).values))
-        z_prec  = self.out_act(self.proj_precision(
-            x[:, SUBSPACE_NODES["precision"], :].max(dim=1).values))
-        z_supp  = self.out_act(self.proj_support(
-            x[:, SUBSPACE_NODES["support"], :].max(dim=1).values))
-        return torch.cat([z_thumb, z_prec, z_supp], dim=-1)  # [B, 3*z_dim]
+        z_thumb  = self.out_act(self.proj_thumb( x[:, SUBSPACE_NODES["thumb"],  :].max(dim=1).values))
+        z_index  = self.out_act(self.proj_index( x[:, SUBSPACE_NODES["index"],  :].max(dim=1).values))
+        z_middle = self.out_act(self.proj_middle(x[:, SUBSPACE_NODES["middle"], :].max(dim=1).values))
+        z_ring   = self.out_act(self.proj_ring(  x[:, SUBSPACE_NODES["ring"],   :].max(dim=1).values))
+        z_pinky  = self.out_act(self.proj_pinky( x[:, SUBSPACE_NODES["pinky"],  :].max(dim=1).values))
+        return torch.cat([z_thumb, z_index, z_middle, z_ring, z_pinky], dim=-1)  # [B, 5*z_dim]
