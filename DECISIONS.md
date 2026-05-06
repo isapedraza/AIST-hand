@@ -4040,3 +4040,39 @@ E_h separates open vs fist better (2.15x) than Large Diam vs Index Ext (1.55x). 
 | L_cont alignment | Partial | Correct direction, insufficient magnitude |
 
 The model shows the right gradient but not enough of it. D_r receives a z_h that encodes "slightly more index-extended" relative to large diameter, but the difference is small enough that D_r output stays close to the prior (semi-flexed).
+
+## Entry 72 -- 2026-05-06: Run 14 -- per-finger subspaces + z_dim=16 + lambda_ltc=10 + margin=0.1
+
+Fresh start. Incompatible with all prior checkpoints (E_h output 192→80, D_X/E_X dims change).
+
+### Changes vs prior runs
+
+| Parameter | Before (Runs 10-13) | Run 14 | Reason |
+|-----------|---------------------|--------|--------|
+| Subespaces E_h | 3 (thumb/precision/support) | 5 (thumb/index/middle/ring/pinky) | precision mezclaba index+middle, diluyendo señal por dedo |
+| z_dim | 64 | 16 | Yan et al. usa 16×5=80 total; 64/dedo era 4x sobreparametrizado para 4 DOFs |
+| Total latent dims | 192 | 80 | Igual a Yan et al. |
+| shared_dim | 1024 | 1024 | Sin cambio -- ya coincidía con Yan |
+| lambda_ltc | 1.0 | 10.0 | z_h muestra dirección correcta pero magnitud insuficiente; LTC más fuerte jala z_h más adentro del manifold robot |
+| margin | 0.05 | 0.1 | S_k ahora es por dedo (no agregado) -- gradiente más dirigido, menos riesgo que 0.2 (Run 11) |
+| RESUME_CKPT | NEW.pt | None | Arquitectura incompatible |
+
+### Evidencia que motiva los cambios (Entry 71)
+
+- **Prueba A**: D_r reconstruye index extension a 0.0085 rad. No es el problema.
+- **Prueba B** (Feix 1 vs 17): between/within = 1.55x, output en dirección correcta (FFJ3 < MFJ3 < RFJ3), pero magnitud insuficiente. FFJ3=0.127 en vez de ~0.
+- **Open vs Fist** (HaGRID): 2.15x between/within, separación más fuerte porque cinemática es más distinta en agregado.
+- Causa raíz: subespacio "precision" = index+middle mezclados. S_k para ese subespacio promedia ambos dedos -- la diferencia de índice queda diluida por middle. L_cont no puede darle gradiente específico al índice.
+
+### Por qué per-finger resuelve esto
+
+Con subespacio dedicado por dedo, S_k para "index" se computa solo con joints de índice (common_labels que empiezan con "index_"). Para Feix 1 vs 17, el índice difiere mientras middle/ring/pinky son similares -- ahora eso genera gradiente fuerte en z_index sin diluirse.
+
+Robots sin pinky (Allegro, LEAP): pinky no aparece en `common_fingers` del YAML → `jidx` vacío → `continue`. z_pinky flota sin L_cont para esos robots. No es problema funcional -- D_r robot-específico aprende a ignorar esa dimensión.
+
+### Qué observar en Run 14
+
+- L_rec debe bajar igual de rápido (arquitectura robot E_r/D_r sin cambio)
+- L_cont debe bajar más lento al inicio (más triplets activos con margin=0.1 y nueva arquitectura sin precalentamiento)
+- L_ltc más alto al inicio (x10) pero debe converger
+- En demo: índice debe moverse más independiente de middle/ring/pinky
