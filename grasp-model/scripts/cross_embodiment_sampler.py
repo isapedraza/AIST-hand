@@ -13,6 +13,8 @@ Output contract:
     quats_r_sub    [B, K, 4]   robot quats, common joints only    -> D_R robot
     tips_h_sub     [B, Fc, 3]  human fingertips, common fingers   -> D_ee human
     tips_r_sub     [B, Fc, 3]  robot fingertips, common fingers   -> D_ee robot
+    chain_h_sub    [B, Fc, 4, 3] human chain positions, common fingers -> D_joints human
+    chain_r_sub    [B, Fc, 4, 3] robot chain positions, common fingers -> D_joints robot
     common_labels  list[str]   joint labels in subspace (len K)
     common_fingers list[str]   finger names in subspace (len Fc)
 
@@ -149,6 +151,7 @@ class CrossEmbodimentSampler:
             eb = self.extra_human_loader.get_batch(B_extra)
             hb["quats"] = torch.cat([hb["quats"], eb["quats"]], dim=0)
             hb["tips"] = torch.cat([hb["tips"], eb["tips"]], dim=0)
+            hb["chain"] = torch.cat([hb["chain"], eb["chain"]], dim=0)
             extra_counts = {
                 int(k.item()): int(v.item())
                 for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
@@ -156,6 +159,7 @@ class CrossEmbodimentSampler:
         return self._assemble(
             quats_h=hb["quats"],
             tips_h=hb["tips"],
+            chain_h=hb["chain"],
             labels=hb["labels"],
             tip_labels=hb["tip_labels"],
             B=B,
@@ -178,6 +182,8 @@ class CrossEmbodimentSampler:
             hb["quats_t1"] = torch.cat([hb["quats_t1"], eb["quats_t1"]], dim=0)
             hb["tips_t"] = torch.cat([hb["tips_t"], eb["tips_t"]], dim=0)
             hb["tips_t1"] = torch.cat([hb["tips_t1"], eb["tips_t1"]], dim=0)
+            hb["chain_t"] = torch.cat([hb["chain_t"], eb["chain_t"]], dim=0)
+            hb["chain_t1"] = torch.cat([hb["chain_t1"], eb["chain_t1"]], dim=0)
             extra_counts = {
                 int(k.item()): int(v.item())
                 for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
@@ -185,6 +191,7 @@ class CrossEmbodimentSampler:
         out = self._assemble(
             quats_h=hb["quats_t"],
             tips_h=hb["tips_t"],
+            chain_h=hb["chain_t"],
             labels=hb["labels"],
             tip_labels=hb["tip_labels"],
             B=B,
@@ -200,6 +207,7 @@ class CrossEmbodimentSampler:
         self,
         quats_h: torch.Tensor,
         tips_h: torch.Tensor,
+        chain_h: torch.Tensor,
         labels: list[str],
         tip_labels: list[str],
         B: int,
@@ -218,6 +226,14 @@ class CrossEmbodimentSampler:
             meta_r["tips"], meta_r["tip_labels"],
         )
 
+        # Chain positions for common fingers: [B, Fc, 4, 3]
+        tidx_h = [tip_labels.index(f) for f in common_fingers]
+        tidx_r = [meta_r["tip_labels"].index(f) for f in common_fingers]
+        chain_h_sub = chain_h[:, tidx_h, :, :]
+        chain_r_sub = torch.stack(
+            [meta_r["chain_positions"][f] for f in common_fingers], dim=1
+        )  # [B, Fc, 4, 3]
+
         return {
             "q_r":            q_r,
             "quats_h":        quats_h,
@@ -225,6 +241,8 @@ class CrossEmbodimentSampler:
             "quats_r_sub":    quats_r_sub,
             "tips_h_sub":     tips_h_sub,
             "tips_r_sub":     tips_r_sub,
+            "chain_h_sub":    chain_h_sub,
+            "chain_r_sub":    chain_r_sub,
             "common_labels":  common_labels,
             "common_fingers": common_fingers,
             "extra_human_count": extra_human_count,

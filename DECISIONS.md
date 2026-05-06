@@ -3817,3 +3817,41 @@ filter: ncon == 0 (MuJoCo, no self-collision)
 **Status**: Implemented. Full 10M NPZ (`valid_robot_poses_eigengrasp.npz`) generating.
 
 **Status**: Implemented
+
+---
+
+## Entry 66 -- 2026-05-05: Diagnosis of semi-flexed prior and enrichment of S_k with D_joints
+
+**Context**: Runs 1-9 of Stage 1 produce a retargeter where the Shadow Hand remains stuck in a semi-flexed pose regardless of the human input. The thumb is the only exception -- it exhibits noticeably better tracking. After ~30k training steps, L_cont decays from 0.041 to 0.030 at a rate of ~0.001 per 10k steps and decelerating. Increasing batch size (up to 50k) or adding warm restarts did not change the convergence rate.
+
+**Hypothesis (Yahel Ramirez, 2026-05-05)**:
+
+The central problem is that the Shadow Hand fails to reach the full dynamic range of opening and closing during teleoperation, stalling in a semi-flexed pose. Unlike the original Yan and Lee (2026) implementation -- designed for humanoid full-body robots where movements are measured in meters and the similarity metric S_k is highly discriminative -- in the millimetric space of a dexterous hand this metric (based on joint rotations and fingertip positions) is geometrically ambiguous, which weakens the alignment of the shared latent space. This lack of resolution, combined with asymmetric supervision during training -- where the robot decoder D_r is optimized to reconstruct absolute poses (L_rec) only from the robot path, while the human path is supervised only through latent consistency (L_ltc) and velocity alignment (L_temporal) -- causes the system to extrapolate toward the statistical prior (the mean or relaxed pose) when receiving human signals that are not perfectly anchored to real physical targets in radians. Consequently, the contrastive gradient (L_cont) based on random triplets becomes ineffective before the fingers manage to displace toward the functional extremes of the manifold. This phenomenon does not affect the thumb because it has a more distinctive latent subspace and a kinematically easier-to-discriminate range of motion.
+
+**Why the thumb works better**: The thumb has its own subspace (z_thumb). THJ5 (abduction) and THJ4 vary massively across grasp types -- S_k is highly discriminative for the thumb subspace. Precision (index+middle) and support (ring+pinky) fingers move similarly across many grasps -- S_k less discriminative there -- weaker alignment -- decoder falls to semi-flexed prior for those fingers.
+
+**Why more steps do not help**: With random triplet selection, as L_cont decreases, most sampled triplets already satisfy the margin -- gradient approaches zero. The model only learns from hard triplets that appear by chance, and the rate of improvement is demonstrably stable and low regardless of batch size.
+
+**Root cause**: D_r never receives gradient from the human path. It is trained only via `E_r -> E_X -> D_X -> D_r` (L_rec). At inference, the path is `E_h -> E_X -> D_X -> D_r`. If latent alignment were perfect (z_h == z_r for similar poses), D_r would work correctly. But with random triplets and a non-discriminative S_k, alignment is imperfect and D_r extrapolates to its prior.
+
+**Decision: Enrich S_k with D_joints**
+
+Replace D_ee (fingertip positions only) with D_joints (all chain positions: MCP, PIP, DIP, TIP per finger). S_k_new = D_R + D_joints.
+
+D_joints rationale:
+- D_ee used only 1 position per finger (the tip). D_joints uses 4 positions per finger (full kinematic chain).
+- Two poses with the same fingertip positions can differ significantly in intermediate joint configurations (e.g., extended vs. curled reaching the same tip location). D_joints captures this.
+- All positions are normalized by hand_length and computed in wrist-local frame -- directly comparable cross-embodiment.
+- D_joints absorbs D_ee (TIP is the last element of the chain) -- no information lost.
+- Robot-agnostic: uses `common_fingers` pattern, same as D_R and old D_ee. A robot with 4 fingers automatically produces Fc=4 common fingers.
+- Richer geometry: 5 fingers x 4 joints = 20 positions (vs 5 fingertips before) -- more discriminative signal for triplet assignment.
+
+**Implementation**:
+
+- `human_loader.py`: Added `_CHAIN_COLS` (60 column names, MCP/PIP/DIP/TIP per finger). `self._chain [N, 5, 4, 3]` normalized by subject hand_length. Exposed in `get_batch` (`chain`) and `get_batch_temporal` (`chain_t`, `chain_t1`). `StaticHumanAnchorLoader` also updated with graceful fallback.
+- `cross_embodiment_sampler.py`: chains threaded through `get_batch`, `get_batch_temporal`, `_assemble`. `chain_h_sub [B, Fc, 4, 3]` and `chain_r_sub [B, Fc, 4, 3]` added to output dict. Robot chain assembled from `meta_r["chain_positions"]` (already normalized by hand_length in RobotLoader).
+- `train_cross_emb.py`: `chain_h_sub`/`chain_r_sub` pulled from batch. In per-subspace loop, `D_ee` replaced by `D_joints = (chain_a - chain_ca).norm(dim=-1).mean(dim=(-2, -1))`. Metric stats logging updated to `D_joints`.
+
+**Validated**: Smoke-tested with Shadow Hand, Allegro Hand, and LEAP Hand. All three produce correct `chain_h_sub`/`chain_r_sub` shapes with automatic finger subspace filtering via `common_fingers`.
+
+**Status**: Implemented. D_ahg (inter-joint angles normalized by hand_length) pending as additional S_k term.

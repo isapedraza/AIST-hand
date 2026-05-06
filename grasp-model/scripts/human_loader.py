@@ -67,6 +67,32 @@ _MIDDLE_TIP_COLS: list[str] = [
     "MIDDLE_FINGER_TIP_x", "MIDDLE_FINGER_TIP_y", "MIDDLE_FINGER_TIP_z"
 ]
 
+# Full chain positions per finger: [MCP, PIP, DIP, TIP] x [x, y, z]
+# Ordered to match TIP_LABELS: thumb, index, middle, ring, pinky
+# Thumb: IP used as PIP analog; TIP used as DIP proxy (no separate DIP)
+_CHAIN_COLS: list[str] = [
+    "THUMB_MCP_x",         "THUMB_MCP_y",         "THUMB_MCP_z",
+    "THUMB_IP_x",          "THUMB_IP_y",           "THUMB_IP_z",
+    "THUMB_TIP_x",         "THUMB_TIP_y",          "THUMB_TIP_z",
+    "THUMB_TIP_x",         "THUMB_TIP_y",          "THUMB_TIP_z",
+    "INDEX_FINGER_MCP_x",  "INDEX_FINGER_MCP_y",   "INDEX_FINGER_MCP_z",
+    "INDEX_FINGER_PIP_x",  "INDEX_FINGER_PIP_y",   "INDEX_FINGER_PIP_z",
+    "INDEX_FINGER_DIP_x",  "INDEX_FINGER_DIP_y",   "INDEX_FINGER_DIP_z",
+    "INDEX_FINGER_TIP_x",  "INDEX_FINGER_TIP_y",   "INDEX_FINGER_TIP_z",
+    "MIDDLE_FINGER_MCP_x", "MIDDLE_FINGER_MCP_y",  "MIDDLE_FINGER_MCP_z",
+    "MIDDLE_FINGER_PIP_x", "MIDDLE_FINGER_PIP_y",  "MIDDLE_FINGER_PIP_z",
+    "MIDDLE_FINGER_DIP_x", "MIDDLE_FINGER_DIP_y",  "MIDDLE_FINGER_DIP_z",
+    "MIDDLE_FINGER_TIP_x", "MIDDLE_FINGER_TIP_y",  "MIDDLE_FINGER_TIP_z",
+    "RING_FINGER_MCP_x",   "RING_FINGER_MCP_y",    "RING_FINGER_MCP_z",
+    "RING_FINGER_PIP_x",   "RING_FINGER_PIP_y",    "RING_FINGER_PIP_z",
+    "RING_FINGER_DIP_x",   "RING_FINGER_DIP_y",    "RING_FINGER_DIP_z",
+    "RING_FINGER_TIP_x",   "RING_FINGER_TIP_y",    "RING_FINGER_TIP_z",
+    "PINKY_MCP_x",         "PINKY_MCP_y",          "PINKY_MCP_z",
+    "PINKY_PIP_x",         "PINKY_PIP_y",          "PINKY_PIP_z",
+    "PINKY_DIP_x",         "PINKY_DIP_y",          "PINKY_DIP_z",
+    "PINKY_TIP_x",         "PINKY_TIP_y",          "PINKY_TIP_z",
+]
+
 
 class HumanLoader:
     """
@@ -114,14 +140,21 @@ class HumanLoader:
         quats_np = df[_QUAT_COLS].values.astype(np.float32)  # [N, 80]
         quats_np = quats_np.reshape(-1, 20, 4)
 
+        hl = hl_per_frame[:, None, None]  # [N, 1, 1]
+
         # Tips: [N, 5, 3] normalized by subject hand_length
         tips_np = df[_TIP_COLS].values.astype(np.float32)    # [N, 15]
         tips_np = tips_np.reshape(-1, 5, 3)
-        hl = hl_per_frame[:, None, None]  # [N, 1, 1]
         tips_np = tips_np / hl
 
-        self._quats = torch.from_numpy(quats_np).to(self.device)  # [N, 20, 4]
-        self._tips  = torch.from_numpy(tips_np).to(self.device)   # [N, 5, 3]
+        # Chain positions: [N, 5, 4, 3] — MCP/PIP/DIP/TIP per finger, normalized
+        chain_np = df[_CHAIN_COLS].values.astype(np.float32)  # [N, 60]
+        chain_np = chain_np.reshape(-1, 5, 4, 3)
+        chain_np = chain_np / hl[:, :, None, :]
+
+        self._quats = torch.from_numpy(quats_np).to(self.device)   # [N, 20, 4]
+        self._tips  = torch.from_numpy(tips_np).to(self.device)    # [N, 5, 3]
+        self._chain = torch.from_numpy(chain_np).to(self.device)   # [N, 5, 4, 3]
         self._N = len(df)
 
         # Build next_idx: for each frame i, next_idx[i] = i+1 if same trial, else -1
@@ -158,6 +191,7 @@ class HumanLoader:
             "labels":     self.labels,
             "tips":       self._tips[idx],
             "tip_labels": self.tip_labels,
+            "chain":      self._chain[idx],
         }
 
     def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
@@ -185,6 +219,8 @@ class HumanLoader:
             "tips_t1":    self._tips[idx_t1],
             "labels":     self.labels,
             "tip_labels": self.tip_labels,
+            "chain_t":    self._chain[idx_t],
+            "chain_t1":   self._chain[idx_t1],
         }
 
 
@@ -215,8 +251,14 @@ class StaticHumanAnchorLoader:
         tips_np = df[_TIP_COLS].values.astype(np.float32).reshape(-1, 5, 3)
         labels_np = df["grasp_type"].values.astype(np.int64)
 
+        if all(c in df.columns for c in _CHAIN_COLS):
+            chain_np = df[_CHAIN_COLS].values.astype(np.float32).reshape(-1, 5, 4, 3)
+        else:
+            chain_np = np.repeat(tips_np[:, :, None, :], 4, axis=2)
+
         self._quats = torch.from_numpy(quats_np).to(self.device)
         self._tips = torch.from_numpy(tips_np).to(self.device)
+        self._chain = torch.from_numpy(chain_np).to(self.device)
         self._grasp_type = torch.from_numpy(labels_np).to(self.device)
         self._N = len(df)
         self._classes = sorted(int(v) for v in np.unique(labels_np))
@@ -246,6 +288,7 @@ class StaticHumanAnchorLoader:
         return {
             "quats": self._quats[idx],
             "tips": self._tips[idx],
+            "chain": self._chain[idx],
             "grasp_type": self._grasp_type[idx],
             "labels": self.labels,
             "tip_labels": self.tip_labels,
@@ -258,6 +301,8 @@ class StaticHumanAnchorLoader:
             "quats_t1": batch["quats"],
             "tips_t": batch["tips"],
             "tips_t1": batch["tips"],
+            "chain_t": batch["chain"],
+            "chain_t1": batch["chain"],
             "grasp_type": batch["grasp_type"],
             "labels": batch["labels"],
             "tip_labels": batch["tip_labels"],
