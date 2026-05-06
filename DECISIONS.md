@@ -3936,3 +3936,90 @@ In Run 10 metric logs, D_joints (~0.32) dominated D_ahg (~0.12) by a factor of ~
 **Run 13 config**: Resume from `stage1_best_total_NEW.pt`, revert to Run 10 hyperparameters (margin=0.05, lambda_ahg=1.0), N_STEPS=15000 (safe under Colab quota limit of ~17k). Goal: test whether more steps with proven config produces any finger independence, or whether the mechanism itself is the bottleneck.
 
 **If Run 13 shows no finger independence**: The mechanism needs to change. Candidate: add supervised contrastive loss on the human side using Feix grasp_type labels (0-27) to guarantee E_h separates the 28 classes before alignment with z_r.
+
+---
+
+## Entry 71 -- 2026-05-06: Diagnostic methodology -- isolating where finger block movement comes from
+
+**Symptom**: All 4 fingers move as a block. Can only open/close. No independent finger control (e.g., index extension while others closed).
+
+**What is NOT yet proven**: Previous sessions made claims ("z_h never reaches the correct region") without concrete data. This entry defines two tests with clear methodology and interpretation before drawing conclusions.
+
+### Prueba A -- Aislar el Decoder (D_r)
+
+**Goal**: Prove D_r CAN produce independent finger poses when given the right input.
+
+**Method**: Take robot poses from the eigengrasp NPZ that correspond to known configurations (index extended, full open, full close). Pass q_r through E_r → E_X → D_X → D_r. Show the resulting qpos.
+
+**Interpretation**:
+- If D_r outputs independent finger poses for those z_r → D_r is capable, problem is upstream
+- If D_r always outputs block movement even from z_r → D_r itself learned a bad prior
+
+### Prueba B -- Aislar el Encoder Humano (E_h)
+
+**Goal**: Determine if E_h distinguishes between very different human poses or collapses them.
+
+**Method**: Take two maximally different human hand poses (open hand vs index pointing). Pass through E_h. Measure L2 distance between z_h1 and z_h2.
+
+**Interpretation**:
+- If distance ≈ 0: E_h is collapsed, cannot distinguish poses → raise margin α or fix contrastive
+- If distance is large but robot output is the same: E_h distinguishes but the translation bridge (D_X → D_r) maps different z_h to the same qpos → problem is alignment or decoder prior
+
+### Results
+
+#### Prueba A -- D_r isolation (2026-05-05)
+
+NPZ: `valid_robot_poses_eigengrasp.npz`, 10M Shadow Hand poses.
+
+Filter: index extended = FFJ3 < 0.2 AND MFJ3 > 0.6 AND RFJ3 > 0.6.
+Count matching: **402,929 / 10M** — diverse index-extended poses exist in NPZ.
+
+Picked one pose. Pipeline: q_r → E_r → E_X → D_X → D_r → q_pred.
+
+| Joint | Original | D_r output |
+|-------|----------|------------|
+| FFJ3 (index MCP) | -0.065 | -0.065 |
+| MFJ3 (middle MCP) | 0.702 | 0.629 |
+| RFJ3 (ring MCP) | 1.089 | 0.727 |
+
+D_r reconstructed index extended while other fingers stay flexed. Reconstruction error: 0.004 rad (consistent with L_rec).
+
+**Conclusion A**: D_r CAN produce independent finger poses. Problem is NOT in D_r.
+
+#### Prueba B -- E_h isolation (2026-05-05)
+
+Checkpoint: `stage1_best_total_NEW.pt` (step 6269, Run 11 base).
+
+Human groups:
+- Group 1: grasp_type=2 (Index Finger Extension) — 2000 samples
+- Group 2: grasp_type=5 (Large Diameter) — 2000 samples
+
+z_h distance: **L2 = 2.484** (mean z_h norm = 2.714, relative distance = 91.5%)
+
+E_h IS distinguishing between the two grasps (distance is 91.5% of embedding norm, not collapsed).
+
+Pipeline output (z_h → D_X → D_r) for grasp_type=2 (Index Finger Extension):
+
+| Joint | Expected | Actual (mean ± std) |
+|-------|----------|---------------------|
+| FFJ3 (index MCP) | ~0 (extended) | 0.71 ± 0.15 |
+| MFJ3 (middle MCP) | >0.8 (flexed) | 0.96 ± 0.09 |
+| RFJ3 (ring MCP) | >0.8 (flexed) | 0.98 ± 0.09 |
+
+All fingers flexed. Index should be extended (FFJ3 ≈ 0) but comes out as flexed (FFJ3 = 0.71). Wrong.
+
+For comparison, grasp_type=5 (Large Diameter) output: FFJ3=0.24-0.27, MFJ3=0.50-0.62, RFJ3=0.64-0.87 — less flexed across the board, which is also wrong for index extension.
+
+**Conclusion B**: E_h distinguishes grasps (z_h vectors differ by 91.5% of norm). But the z_h for Index Finger Extension lands in a robot pose region where ALL fingers are flexed. The z_h vector is in the wrong place in the shared space — it is NOT aligned with the robot z_r that corresponds to index extension.
+
+### Combined diagnosis
+
+| Component | Status | Evidence |
+|-----------|--------|----------|
+| D_r (robot decoder) | OK | 0.004 rad reconstruction, can produce index extension |
+| E_h (human encoder) | Distinguishes, but misaligned | 91.5% relative z_h distance, but output is wrong |
+| L_cont alignment | BROKEN | z_h for Index Extension → all fingers flexed |
+
+Root cause: L_cont (triplet contrastive) is not sufficient to align z_h with the correct z_r region. z_h for "index extension" is far from z_r for "index extension" in the shared space. More training steps with the same L_cont will not fix this — the supervision signal does not connect human pose identity to robot pose identity at the semantic level.
+
+Direct fix needed: loss that explicitly maps human grasp type to robot grasp type (e.g., supervised contrastive on Feix labels, or direct h↔r paired loss).
