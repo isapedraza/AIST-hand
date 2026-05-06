@@ -19,9 +19,16 @@ class CAMLayer(nn.Module):
     to [B, N, F] for the einsum, then flattened back.
     """
 
-    def __init__(self, in_features: int, out_features: int, n_joints: int = 21):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        n_joints: int = 21,
+        activation: bool = True,
+    ):
         super().__init__()
         self.n_joints = n_joints
+        self.activation = activation
         # Input to linear is cat(aggregated, original) -> 2 * in_features
         self.linear = nn.Linear(in_features * 2, out_features)
 
@@ -37,7 +44,36 @@ class CAMLayer(nn.Module):
         x_agg = torch.einsum('ij,bjf->bif', cam, x_3d)        # [B, N, F]
         x_cat = torch.cat([x_agg, x_3d], dim=-1)              # [B, N, 2F]
         x_out = self.linear(x_cat.view(B_N, 2 * feat_dim))    # [B*N, F_out]
-        return F.elu(x_out)
+        return F.elu(x_out) if self.activation else x_out
+
+
+class CAMDropoutBlock(nn.Module):
+    """CAM-GNN block followed by dropout, matching AHG-GCN's dropout placement."""
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        n_joints: int = 21,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.cam_layer = CAMLayer(
+            in_features,
+            out_features,
+            n_joints=n_joints,
+            activation=True,
+        )
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        cam: torch.Tensor,
+        mask: torch.Tensor = None,
+    ) -> torch.Tensor:
+        x = self.cam_layer(x, cam, mask)
+        return self.dropout(x)
 
 
 class GCN_CAM_8_8_16_16_32(nn.Module):
@@ -292,6 +328,63 @@ class GCN_CAM_32_32_64_64_128(nn.Module):
         x = self.layer5(x, self.cam, mask)
 
         h = masked_readout(x, batch, mask)                     # [B, 256]
+
+        h   = F.elu(self.fc1(h))
+        out = self.fc2(h)
+        return F.log_softmax(out, dim=1)
+
+
+class GCN_CAM_AHG_64_64_64_64_128_128_128_256(nn.Module):
+    """
+    AHG-GCN-inspired CAM model for ABL14.
+
+    Keeps this project's shared learnable CAM topology, but mirrors the paper's
+    frame-channel schedule as closely as possible in a frame-wise model:
+    input BatchNorm, 8 graph blocks, channels 64x4 -> 128x3 -> 256, and
+    dropout 0.1 after each graph unit. Temporal convolutions/strides are not
+    included because this model still classifies one graph frame at a time.
+    """
+
+    N_JOINTS = 21
+
+    def __init__(self, numFeatures: int, numClasses: int, dropout: float = 0.1):
+        super().__init__()
+        self.numClasses = numClasses
+
+        self.input_bn = nn.BatchNorm1d(numFeatures)
+        self.cam = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS))
+        nn.init.uniform_(self.cam, -1.0, 1.0)
+
+        self.layer1 = CAMDropoutBlock(numFeatures, 64,  self.N_JOINTS, dropout)
+        self.layer2 = CAMDropoutBlock(64,          64,  self.N_JOINTS, dropout)
+        self.layer3 = CAMDropoutBlock(64,          64,  self.N_JOINTS, dropout)
+        self.layer4 = CAMDropoutBlock(64,          64,  self.N_JOINTS, dropout)
+        self.layer5 = CAMDropoutBlock(64,          128, self.N_JOINTS, dropout)
+        self.layer6 = CAMDropoutBlock(128,         128, self.N_JOINTS, dropout)
+        self.layer7 = CAMDropoutBlock(128,         128, self.N_JOINTS, dropout)
+        self.layer8 = CAMDropoutBlock(128,         256, self.N_JOINTS, dropout)
+
+        self.fc1 = nn.Linear(512, 256)
+        self.fc2 = nn.Linear(256, numClasses)
+
+    def forward(self, data):
+        x     = data.x
+        batch = getattr(data, 'batch',
+                        torch.zeros(x.size(0), dtype=torch.long,
+                                    device=x.device))
+        mask  = getattr(data, 'mask', None)
+
+        x = self.input_bn(x)
+        x = self.layer1(x, self.cam, mask)
+        x = self.layer2(x, self.cam, mask)
+        x = self.layer3(x, self.cam, mask)
+        x = self.layer4(x, self.cam, mask)
+        x = self.layer5(x, self.cam, mask)
+        x = self.layer6(x, self.cam, mask)
+        x = self.layer7(x, self.cam, mask)
+        x = self.layer8(x, self.cam, mask)
+
+        h = masked_readout(x, batch, mask)
 
         h   = F.elu(self.fc1(h))
         out = self.fc2(h)

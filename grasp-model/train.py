@@ -33,6 +33,9 @@ print('🚀 Import libraries: OK')
 # GG_AHG_ANGLES:     "true" | "false"  -- 10 wrist-relative angles per node (Aiman & Ahmad 2024)
 # GG_AHG_DISTANCES:  "true" | "false"  -- 10 distances to critical joints per node
 # GG_DONG_EULER:     "true" | "false"  -- 2 Dong euler angles (beta/gamma) per node, zero-padded
+# GG_EULER_TO_RADIANS: "true" | "false" -- convert final Dong Euler columns from degrees to radians
+# GG_FEATURE_ZSCORE: "true" | "false" -- z-score node features with train-set stats
+# GG_NETWORK_TYPE:   registered network name, e.g. "GCN_CAM_AHG_64_64_64_64_128_128_128_256"
 
 RUN_NAME      = os.getenv("GG_RUN_NAME",      "run_unnamed")
 _collapse     = os.getenv("GG_COLLAPSE",      "none").strip().lower()
@@ -53,6 +56,8 @@ ADD_XYZ       = os.getenv("GG_ADD_XYZ",      "").strip().lower() or None
 if ADD_XYZ is not None:
     ADD_XYZ = ADD_XYZ == "true"
 NORMALIZE_XYZ = os.getenv("GG_NORMALIZE_XYZ","false").strip().lower() == "true"
+EULER_TO_RADIANS = os.getenv("GG_EULER_TO_RADIANS", "false").strip().lower() == "true"
+FEATURE_ZSCORE   = os.getenv("GG_FEATURE_ZSCORE",   "false").strip().lower() == "true"
 
 print(f"Run:           {RUN_NAME}")
 print(f"Collapse:      {COLLAPSE}")
@@ -67,11 +72,13 @@ print(f"AHG distances: {AHG_DISTANCES}")
 print(f"Dong quats:    {DONG_QUATS}" + (f" ({DONG_CSV_PATH})" if DONG_QUATS else ""))
 print(f"Dong euler:    {DONG_EULER}" + (f" ({DONG_CSV_PATH})" if DONG_EULER else ""))
 print(f"Add XYZ:       {ADD_XYZ}  |  Normalize XYZ: {NORMALIZE_XYZ}")
+print(f"Euler radians: {EULER_TO_RADIANS}  |  Feature z-score: {FEATURE_ZSCORE}")
 
 # ====================== Hyperparameters =========================
 
 lr = 1e-3
 network_type = os.getenv("GG_NETWORK_TYPE", "GCN_CAM_8_8_16_16_32")
+print(f"Network:       {network_type}")
 weight_decay = 5e-4
 seed = 42
 BATCH_SIZE = 256
@@ -125,6 +132,53 @@ if actual_F != expected_F:
         "Delete stale .pt cache and re-run."
     )
 print(f"Features per node:   {actual_F}  (verified)")
+
+# ==================== Optional feature preprocessing ====================
+# Applied after cache load so existing .pt files can be reused. Statistics are
+# computed on train only and then applied unchanged to val/test.
+feature_mean = None
+feature_std = None
+
+def _convert_dong_euler_to_radians(dataset):
+    if not (DONG_EULER and EULER_TO_RADIANS):
+        return
+    dataset._data.x[:, -2:] = dataset._data.x[:, -2:] * (np.pi / 180.0)
+
+
+def _fit_feature_zscore(dataset):
+    x = dataset._data.x.float()
+    mean = x.mean(dim=0, keepdim=True)
+    std = x.std(dim=0, keepdim=True).clamp_min(1e-6)
+    return mean, std
+
+
+def _apply_feature_zscore(dataset, mean, std):
+    if not FEATURE_ZSCORE:
+        return
+    dataset._data.x = (dataset._data.x.float() - mean) / std
+
+
+_convert_dong_euler_to_radians(datasetTrain)
+_convert_dong_euler_to_radians(datasetVal)
+
+if FEATURE_ZSCORE:
+    feature_mean, feature_std = _fit_feature_zscore(datasetTrain)
+    _apply_feature_zscore(datasetTrain, feature_mean, feature_std)
+    _apply_feature_zscore(datasetVal, feature_mean, feature_std)
+    os.makedirs("experiments", exist_ok=True)
+    stats_path = f"experiments/{RUN_NAME}_feature_stats.pt"
+    torch.save(
+        {
+            "mean": feature_mean.cpu(),
+            "std": feature_std.cpu(),
+            "euler_to_radians": EULER_TO_RADIANS,
+            "feature_zscore": FEATURE_ZSCORE,
+        },
+        stats_path,
+    )
+    print(f"Feature z-score: fitted on train and saved to {stats_path}")
+elif EULER_TO_RADIANS:
+    print("Dong Euler columns converted from degrees to radians.")
 
 # DataLoaders
 train_loader = DataLoader(datasetTrain, batch_size=BATCH_SIZE, shuffle=True,  num_workers=NUM_WORKERS)
@@ -266,6 +320,9 @@ import gc; gc.collect()
 # ==================== Load Test Set (lazy) =======================
 print("📦 Loading test dataset...")
 datasetTest = GraspsClass(root='data/', split='test', collapse=COLLAPSE, add_joint_angles=JOINT_ANGLES, add_bone_vectors=BONE_VECTORS, add_velocity=VELOCITY, add_mano_pose=MANO_POSE, add_global_swing=GLOBAL_SWING, add_ahg_angles=AHG_ANGLES, add_ahg_distances=AHG_DISTANCES, add_dong_quats=DONG_QUATS, add_dong_euler=DONG_EULER, dong_csv_path=DONG_CSV_PATH, csv_filename=CSV_FILENAME, add_xyz=ADD_XYZ, normalize_xyz=NORMALIZE_XYZ)
+_convert_dong_euler_to_radians(datasetTest)
+if FEATURE_ZSCORE:
+    _apply_feature_zscore(datasetTest, feature_mean, feature_std)
 test_loader = DataLoader(datasetTest, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 print(f"Test: {len(datasetTest)}")
 
