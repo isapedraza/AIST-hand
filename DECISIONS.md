@@ -3892,3 +3892,47 @@ D_joints rationale:
 **Definitive conclusion**: D_r is not the problem. The bottleneck is 100% alignment -- z_h is not landing in the same latent region as z_r for the same grasp type. More steps are needed because L_cont requires more time to align the precision and support subspaces.
 
 **Next decision point**: Evaluate step 15000-20000 checkpoint. If behavior unchanged, Run 12 fresh start with margin=0.2 and lambda_ahg=2.0 (instead of resuming from Run 10 basin).
+
+---
+
+## Entry 69 -- 2026-05-06: Rationale for margin=0.2 and lambda_ahg=2.0 (Runs 11 and 12)
+
+**Core hypothesis**: The bottleneck is L_cont signal strength. With margin=0.05, most triplets in a well-trained model already satisfy the constraint by chance -- gradient to E_h approaches zero. E_h stops learning to separate grasp types, so z_h drifts away from the latent region where z_r lives for the same grasp type. D_r then extrapolates to its prior (semi-flexed pose).
+
+**Change 1: margin 0.05 -> 0.2**
+
+With margin=0.05, a triplet (anchor, cand_a, cand_b) is violated only when S(anchor, cand_a) + 0.05 > S(anchor, cand_b). As training progresses and the latent space organizes, most triplets satisfy this easily -- the loss goes to near zero, and E_h receives almost no gradient. Increasing to margin=0.2 forces more triplets to remain violated throughout training, keeping the gradient active and pushing E_h to separate grasps more aggressively.
+
+Expected effect: cont plateau higher (floor raised from ~0.035 to ~0.14), but E_h receives stronger gradient throughout. Risk: if margin is too large, all triplets are always violated and loss stagnates for different reasons (gradient pointing in all directions equally).
+
+**Change 2: lambda_ahg 1.0 -> 2.0**
+
+In Run 10 metric logs, D_joints (~0.32) dominated D_ahg (~0.12) by a factor of ~2.7x in the S_k sum. D_ahg encodes inter-joint angles -- more sensitive to finger direction independence (e.g., index extension vs closed fist) than D_joints which measures absolute position. With lambda_ahg=2.0, the effective contribution is D_joints (~0.32) vs 2.0 * D_ahg (~0.25), more balanced. Hypothesis: better-balanced S_k creates more discriminative triplets for grasps that differ primarily in finger orientation rather than fingertip position.
+
+**Run 11 (resume from Run 10, now terminated early due to Colab quota)**:
+- Expected: margin=0.2 would force more gradient into E_h from Run 10's basin, eventually reshaping the latent space.
+- What happened: at step ~5000/40000, behavior identical to Run 10. Terminated by Colab quota.
+- Retrospective: Run 10 trained E_h for ~10k steps into a specific basin. 5k new steps with larger margin were insufficient to escape it. Resume was the wrong choice -- the Run 10 basin absorbed the new gradient without significant reorganization.
+
+**Run 12 (fresh start, same hyperparameters, N_STEPS=10000)**:
+- Expected: fresh initialization means E_h has no prior basin. margin=0.2 from step 0 forces strong gradient from the start. By step 10k, E_h should reach a different region of weight space than Run 10/11 -- one where z_h and z_r for the same grasp type are closer.
+- Early signal (step 3200): cont=0.154, dropping from 1.40 at step 0. Comparable to Run 11 at the same training step count despite Run 11 having ~16k effective steps (10k Run 10 + 6k Run 11).
+- Decision point: step 8000-10000 checkpoint. Test with live_retarget.py -- look specifically for index extension and tip pinch operating independently of other fingers.
+
+---
+
+## Entry 70 -- 2026-05-06: Run 12 post-mortem and Run 13 config
+
+**Run 12 result (step 9943, fresh, margin=0.2, lambda_ahg=2.0)**: Worse than all previous runs in live demo. Deformed poses, thumb never abducts correctly, index always points up regardless of input. Worse than Run 11 at step 5000, which itself was worse than Run 10.
+
+**Key finding -- margin=0.2 and lambda_ahg=2.0 show no isolated benefit:**
+- `stage1_best_total_NEW.pt` (Run 11, step 6269) is the best checkpoint by live demo feel -- smoother motion than any other.
+- However, its quality comes from Run 10's foundation (10k steps, margin=0.05, lambda_ahg=1.0), not from Run 11's added hyperparameters.
+- When margin=0.2 and lambda_ahg=2.0 are tested from fresh start (Run 12), the result is demonstrably worse -- not better. This means those hyperparameters caused damage when isolated, not improvement.
+- The suavidad of NEW.pt is attributable to more total effective steps (~16k) on a clean Run 10 base, not to margin=0.2 or lambda_ahg=2.0.
+
+**Core problem unchanged**: E_h alignment with z_r is still unresolved. More steps and hyperparameter tuning produce smoother motion but do not fix independent finger control. The mechanism (L_cont alone) may be insufficient.
+
+**Run 13 config**: Resume from `stage1_best_total_NEW.pt`, revert to Run 10 hyperparameters (margin=0.05, lambda_ahg=1.0), N_STEPS=15000 (safe under Colab quota limit of ~17k). Goal: test whether more steps with proven config produces any finger independence, or whether the mechanism itself is the bottleneck.
+
+**If Run 13 shows no finger independence**: The mechanism needs to change. Candidate: add supervised contrastive loss on the human side using Feix grasp_type labels (0-27) to guarantee E_h separates the 28 classes before alignment with z_r.
