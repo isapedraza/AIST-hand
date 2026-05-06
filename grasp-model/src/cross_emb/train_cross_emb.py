@@ -57,7 +57,8 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
     )
-    p.add_argument("--margin",     type=float, default=0.05)
+    p.add_argument("--margin",      type=float, default=0.05)
+    p.add_argument("--lambda_ahg",  type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = D_R + D_joints + lambda_ahg * D_ahg.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(
@@ -268,8 +269,8 @@ def main():
             D_ahg_a = _ahg(chain_a, chain_ca)
             D_ahg_b = _ahg(chain_a, chain_cb)
 
-            S_a = D_R_a + D_joints_a + D_ahg_a
-            S_b = D_R_b + D_joints_b + D_ahg_b
+            S_a = D_R_a + D_joints_a + args.lambda_ahg * D_ahg_a
+            S_b = D_R_b + D_joints_b + args.lambda_ahg * D_ahg_b
 
             if args.log_metric_stats:
                 D_R_pairs      = torch.cat([D_R_a, D_R_b])
