@@ -3967,59 +3967,66 @@ In Run 10 metric logs, D_joints (~0.32) dominated D_ahg (~0.12) by a factor of ~
 
 ### Results
 
-#### Prueba A -- D_r isolation (2026-05-05)
+#### Prueba A -- D_r isolation (2026-05-06, executed)
 
 NPZ: `valid_robot_poses_eigengrasp.npz`, 10M Shadow Hand poses.
+Checkpoint: `stage1_best_total_NEW.pt` (step 6269).
 
 Filter: index extended = FFJ3 < 0.2 AND MFJ3 > 0.6 AND RFJ3 > 0.6.
 Count matching: **402,929 / 10M** — diverse index-extended poses exist in NPZ.
 
-Picked one pose. Pipeline: q_r → E_r → E_X → D_X → D_r → q_pred.
+Picked first matching pose. Pipeline: q_r → E_r → E_X → D_X → D_r → q_pred.
 
 | Joint | Original | D_r output |
 |-------|----------|------------|
 | FFJ3 (index MCP) | -0.065 | -0.065 |
-| MFJ3 (middle MCP) | 0.702 | 0.629 |
-| RFJ3 (ring MCP) | 1.089 | 0.727 |
+| MFJ3 (middle MCP) | 0.628 | 0.629 |
+| RFJ3 (ring MCP) | 0.727 | 0.727 |
 
-D_r reconstructed index extended while other fingers stay flexed. Reconstruction error: 0.004 rad (consistent with L_rec).
+5 samples confirmed same: D_r reproduces index-extended poses faithfully. L2 error: 0.0085 rad.
 
-**Conclusion A**: D_r CAN produce independent finger poses. Problem is NOT in D_r.
+**Conclusion A**: D_r CAN produce independent finger poses from z_r. Problem is NOT in D_r.
 
-#### Prueba B -- E_h isolation (2026-05-05)
+#### Prueba B -- E_h isolation (2026-05-06, executed)
 
-Checkpoint: `stage1_best_total_NEW.pt` (step 6269, Run 11 base).
+Checkpoint: `stage1_best_total_NEW.pt` (step 6269).
 
-Human groups:
-- Group 1: grasp_type=2 (Index Finger Extension) — 2000 samples
-- Group 2: grasp_type=5 (Large Diameter) — 2000 samples
+Human groups (random sample, seed=42):
+- Group 1: grasp_type=2 (Index Finger Extension) — 33,257 total, 500 sampled
+- Group 2: grasp_type=5 (Large Diameter) — 123,974 total, 500 sampled
 
-z_h distance: **L2 = 2.484** (mean z_h norm = 2.714, relative distance = 91.5%)
+**z_h distances:**
+- Individual z_h norm (mean): 2.364
+- Mean z_h (Index Ext) norm: 2.088
+- Mean z_h (Large Diam) norm: 2.069
+- L2 between mean z_h vectors: **0.496** (23.9% of z_h norm)
+- Pairwise cross-group L2 (200 random pairs): **1.720** (72.8% of z_h norm)
+- Pairwise within-group L2 (Index Ext vs Index Ext): **1.488**
+- **Between/within ratio: 1.16x**
 
-E_h IS distinguishing between the two grasps (distance is 91.5% of embedding norm, not collapsed).
+A good discriminative embedding has between/within >> 1. At 1.16x, E_h barely separates Index Extension from Large Diameter more than it separates two Index Extension poses from each other. E_h is near-collapsed for this pair.
 
-Pipeline output (z_h → D_X → D_r) for grasp_type=2 (Index Finger Extension):
+**Pipeline output (z_h → D_X → D_r), 500 samples each:**
 
-| Joint | Expected | Actual (mean ± std) |
-|-------|----------|---------------------|
-| FFJ3 (index MCP) | ~0 (extended) | 0.71 ± 0.15 |
-| MFJ3 (middle MCP) | >0.8 (flexed) | 0.96 ± 0.09 |
-| RFJ3 (ring MCP) | >0.8 (flexed) | 0.98 ± 0.09 |
+| Joint | Index Ext (type=2) | Large Diam (type=5) | Expected for index ext |
+|-------|-------------------|---------------------|----------------------|
+| FFJ3 (index MCP) | 0.561 ± 0.224 | 0.532 ± 0.252 | ~0 (extended) |
+| MFJ3 (middle MCP) | 0.814 ± 0.236 | 0.762 ± 0.219 | >0.8 (flexed) |
+| RFJ3 (ring MCP) | 0.899 ± 0.219 | 0.831 ± 0.205 | >0.8 (flexed) |
+| THJ4 (thumb flex) | 0.719 ± 0.136 | 0.596 ± 0.168 | varied |
 
-All fingers flexed. Index should be extended (FFJ3 ≈ 0) but comes out as flexed (FFJ3 = 0.71). Wrong.
+Index Ext and Large Diam produce nearly identical robot output (FFJ3 diff = 0.029). Both show all fingers flexed. FFJ3 should be ~0 for index extension but outputs 0.561.
 
-For comparison, grasp_type=5 (Large Diameter) output: FFJ3=0.24-0.27, MFJ3=0.50-0.62, RFJ3=0.64-0.87 — less flexed across the board, which is also wrong for index extension.
+**Conclusion B**: E_h barely distinguishes Index Extension from Large Diameter (between/within = 1.16x). Alignment is broken at the source — z_h for index extension lands in essentially the same region of the shared space as z_h for large diameter. D_X and D_r correctly decode whatever z_h they receive, but z_h is not in the right place.
 
-**Conclusion B**: E_h distinguishes grasps (z_h vectors differ by 91.5% of norm). But the z_h for Index Finger Extension lands in a robot pose region where ALL fingers are flexed. The z_h vector is in the wrong place in the shared space — it is NOT aligned with the robot z_r that corresponds to index extension.
-
-### Combined diagnosis
+### Combined diagnosis (2026-05-06)
 
 | Component | Status | Evidence |
 |-----------|--------|----------|
-| D_r (robot decoder) | OK | 0.004 rad reconstruction, can produce index extension |
-| E_h (human encoder) | Distinguishes, but misaligned | 91.5% relative z_h distance, but output is wrong |
-| L_cont alignment | BROKEN | z_h for Index Extension → all fingers flexed |
+| D_r (robot decoder) | OK | 0.0085 rad reconstruction, produces index extension from z_r |
+| E_h (human encoder) | Near-collapsed | between/within ratio 1.16x for Index Ext vs Large Diam |
+| L_cont alignment | BROKEN | z_h for index extension = z_h for large diameter (output diff = 0.029 on FFJ3) |
 
-Root cause: L_cont (triplet contrastive) is not sufficient to align z_h with the correct z_r region. z_h for "index extension" is far from z_r for "index extension" in the shared space. More training steps with the same L_cont will not fix this — the supervision signal does not connect human pose identity to robot pose identity at the semantic level.
+Root cause: L_cont triplet loss uses S_k = D_joints + D_ahg as similarity, which does not encode the semantic identity of the grasp type. Two very different human grasp poses (index pointing vs full grip) produce z_h vectors that differ only 1.16x more than two instances of the same grasp. The shared space has no concept of "finger identity" — it just mirrors the prior distribution of robot poses (semi-flexed).
 
-Direct fix needed: loss that explicitly maps human grasp type to robot grasp type (e.g., supervised contrastive on Feix labels, or direct h↔r paired loss).
+More steps with this L_cont will not fix this. Fix requires direct h-to-r semantic alignment: either supervised contrastive on Feix labels, or explicit paired (z_h, z_r) loss where the pairing is by grasp type, not by kinematics similarity alone.
