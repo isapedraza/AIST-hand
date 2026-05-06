@@ -3855,3 +3855,24 @@ D_joints rationale:
 **Validated**: Smoke-tested with Shadow Hand, Allegro Hand, and LEAP Hand. All three produce correct `chain_h_sub`/`chain_r_sub` shapes with automatic finger subspace filtering via `common_fingers`.
 
 **Status**: Implemented. D_ahg (inter-joint angles normalized by hand_length) pending as additional S_k term.
+
+---
+
+## Entry 67 -- 2026-05-05: Run 10 config and S_k final formula
+
+**S_k final**: `S_k = D_R + D_joints + D_ahg`
+
+- **D_R**: Dong quaternion distance. `1 - dot(q_i, q_j)^2` averaged over common joints. Same as before.
+- **D_joints**: Replaces D_ee. Mean L2 distance over all 4 chain positions per common finger (MCP, PIP, DIP, TIP), normalized by hand_length. `(chain_a - chain_b).norm(dim=-1).mean(dim=(-2,-1))`.
+- **D_ahg**: AHG-style angle distance. For each joint j, compute angle at wrist to each critical joint c (bases = chain[:,0,:] and tips = chain[:,3,:] of common fingers). Compare angle matrices between two configs via mean absolute difference. Scale-invariant (unit vectors, no hand_length dependence). Robot-agnostic: critical joints = common fingers only.
+
+**How it affects the loss**: S_k is used only to assign positive/negative in L_cont triplets. Richer S_k → better triplet ranking → less contradictory gradients → stronger L_cont convergence → z_h closer to z_r for same grasp type → D_r decodes human embeddings correctly. L_rec, L_ltc, L_temp unchanged.
+
+**Run 10 config**:
+- Fresh start (no resume) -- S_k changed, old checkpoint incompatible
+- B=50000, N_STEPS=40000, margin=0.05
+- lambda_c=10, lambda_rec=5, lambda_ltc=1, lambda_tmp=0.1
+- T_0=2000 (CosineAnnealingWarmRestarts), lr_warmup=500
+- valid_poses_path=valid_robot_poses_eigengrasp.npz (10M eigengrasp poses)
+- extra_human_ratio=0.10 (HaGRID open/fist anchors)
+- log_metric_stats=True (logs D_R, D_joints, D_ahg, S_mean/std/min/max per subspace)
