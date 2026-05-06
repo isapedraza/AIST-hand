@@ -349,7 +349,7 @@ class GraspsClass(InMemoryDataset):
             return [f'{csv_stem}_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}{euler_tag}.pt']
         if self.add_dong_quats:
             return [f'hograspnet_dong_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{dongq_tag}{xyz_tag}{normxyz_tag}{euler_tag}.pt']
-        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{normxyz_tag}{euler_tag}.pt']
+        return [f'hograspnet_{self.split}_{cls_tag}{flex_tag}{bone_tag}{vel_tag}{pose_tag}{swing_tag}{ahga_tag}{ahgd_tag}{xyz_tag}{normxyz_tag}{euler_tag}.pt']
 
     # ------------------------------------------------------------------
     def _usecols(self):
