@@ -3876,3 +3876,19 @@ D_joints rationale:
 - valid_poses_path=valid_robot_poses_eigengrasp.npz (10M eigengrasp poses)
 - extra_human_ratio=0.10 (HaGRID open/fist anchors)
 - log_metric_stats=True (logs D_R, D_joints, D_ahg, S_mean/std/min/max per subspace)
+
+---
+
+## Entry 68 -- 2026-05-05: Run 11 checkpoint evaluation -- alignment confirmed as bottleneck
+
+**Checkpoint tested**: `stage1_best_total_NEW.pt` (Run 11, ~step 5000/40000, resumed from Run 10).
+
+**Live demo result**: Behavior nearly identical to Run 10. Fingers still move as a block; independent finger extension (index, tip pinch) not visible.
+
+**Why not surprising at step 5000**: Run 10 trained E_h for ~10k steps into a specific basin. Run 11 resumes from that basin; 5k new steps with margin=0.2 are insufficient to reshape E_h significantly. The warm restarts (T_0=2000) need more cycles to push weights out of the Run 10 basin.
+
+**D_r reconstruction confirmed**: Testing D_r directly from the robot path (eigengrasp NPZ q -> E_r -> E_X -> D_X -> D_r -> q_hat) gives error ~0.004 rad per joint (L2 norm ~0.024). This matches the `rec` value reported during training. D_r has correctly memorized the robot pose distribution including independent finger poses.
+
+**Definitive conclusion**: D_r is not the problem. The bottleneck is 100% alignment -- z_h is not landing in the same latent region as z_r for the same grasp type. More steps are needed because L_cont requires more time to align the precision and support subspaces.
+
+**Next decision point**: Evaluate step 15000-20000 checkpoint. If behavior unchanged, Run 12 fresh start with margin=0.2 and lambda_ahg=2.0 (instead of resuming from Run 10 basin).
