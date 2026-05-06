@@ -3990,43 +3990,53 @@ Picked first matching pose. Pipeline: q_r → E_r → E_X → D_X → D_r → q_
 #### Prueba B -- E_h isolation (2026-05-06, executed)
 
 Checkpoint: `stage1_best_total_NEW.pt` (step 6269).
+CSV grasp_type = raw Feix IDs.
 
 Human groups (random sample, seed=42):
-- Group 1: grasp_type=2 (Index Finger Extension) — 33,257 total, 500 sampled
-- Group 2: grasp_type=5 (Large Diameter) — 123,974 total, 500 sampled
+- Group 1: grasp_type=17 (Index Extension, Feix 17) — 78,132 total, 500 sampled
+- Group 2: grasp_type=1 (Large Diameter, Feix 1) — 32,037 total, 500 sampled
+
+Note: a previous run of this test used grasp_type=2 and grasp_type=5 (Feix 2 and Feix 5 — wrong pair). Those numbers were discarded.
 
 **z_h distances:**
-- Individual z_h norm (mean): 2.364
-- Mean z_h (Index Ext) norm: 2.088
-- Mean z_h (Large Diam) norm: 2.069
-- L2 between mean z_h vectors: **0.496** (23.9% of z_h norm)
-- Pairwise cross-group L2 (200 random pairs): **1.720** (72.8% of z_h norm)
-- Pairwise within-group L2 (Index Ext vs Index Ext): **1.488**
-- **Between/within ratio: 1.16x**
-
-A good discriminative embedding has between/within >> 1. At 1.16x, E_h barely separates Index Extension from Large Diameter more than it separates two Index Extension poses from each other. E_h is near-collapsed for this pair.
+- z_h norm (mean): 2.344
+- Pairwise cross-group L2: **2.369** (101.1% of z_h norm)
+- Pairwise within Index Ext: **1.529**
+- Pairwise within Large Diam: **1.670**
+- **Between/within ratio: 1.55x (vs Index Ext), 1.42x (vs Large Diam)**
 
 **Pipeline output (z_h → D_X → D_r), 500 samples each:**
 
-| Joint | Index Ext (type=2) | Large Diam (type=5) | Expected for index ext |
-|-------|-------------------|---------------------|----------------------|
-| FFJ3 (index MCP) | 0.561 ± 0.224 | 0.532 ± 0.252 | ~0 (extended) |
-| MFJ3 (middle MCP) | 0.814 ± 0.236 | 0.762 ± 0.219 | >0.8 (flexed) |
-| RFJ3 (ring MCP) | 0.899 ± 0.219 | 0.831 ± 0.205 | >0.8 (flexed) |
-| THJ4 (thumb flex) | 0.719 ± 0.136 | 0.596 ± 0.168 | varied |
+| Joint | Large Diam (Feix 1) | Index Ext (Feix 17) | diff |
+|-------|---------------------|---------------------|------|
+| FFJ3 (index MCP) | 0.206 ± 0.256 | 0.127 ± 0.212 | 0.078 |
+| MFJ3 (middle MCP) | 0.312 ± 0.335 | 0.521 ± 0.202 | 0.209 |
+| RFJ3 (ring MCP) | 0.317 ± 0.298 | 0.766 ± 0.211 | 0.449 |
+| RFJ1 (ring DIP) | 0.504 ± 0.108 | 1.006 ± 0.297 | 0.502 |
 
-Index Ext and Large Diam produce nearly identical robot output (FFJ3 diff = 0.029). Both show all fingers flexed. FFJ3 should be ~0 for index extension but outputs 0.561.
+The joint ordering is correct: for Index Extension, FFJ3 (index) is lower than MFJ3 and RFJ3 (index more extended than others). The differences are in the right direction across all joints.
 
-**Conclusion B**: E_h barely distinguishes Index Extension from Large Diameter (between/within = 1.16x). Alignment is broken at the source — z_h for index extension lands in essentially the same region of the shared space as z_h for large diameter. D_X and D_r correctly decode whatever z_h they receive, but z_h is not in the right place.
+What is unknown: whether the absolute magnitudes are correct. No ground-truth Shadow Hand reference pose for Index Extension was used to define target values — "expected" values were not established a priori.
+
+**Conclusion B**: E_h distinguishes Large Diameter from Index Extension (1.55x between/within). The robot output shows correct ordering (FFJ3 < MFJ3 < RFJ3 for Index Extension). The signal is in the right direction but the magnitude of separation is moderate. This is not complete alignment failure — it is a signal-strength problem.
+
+### Additional test: Open vs Fist (HaGRID anchors)
+
+Same methodology, using `hagrid_dong.csv` (anchor_label = open_hand / closed_fist).
+
+- Between/within (open): **2.15x**
+- FFJ3: open=0.118, fist=0.286. Direction correct.
+- MFJ3: open=0.428, fist=0.692. Direction correct.
+- RFJ3: open=0.484, fist=0.831. Direction correct.
+
+E_h separates open vs fist better (2.15x) than Large Diam vs Index Ext (1.55x). Both show correct directional output. Open/fist were trained as explicit HaGRID anchors in the batch, which may explain slightly stronger separation.
 
 ### Combined diagnosis (2026-05-06)
 
 | Component | Status | Evidence |
 |-----------|--------|----------|
 | D_r (robot decoder) | OK | 0.0085 rad reconstruction, produces index extension from z_r |
-| E_h (human encoder) | Near-collapsed | between/within ratio 1.16x for Index Ext vs Large Diam |
-| L_cont alignment | BROKEN | z_h for index extension = z_h for large diameter (output diff = 0.029 on FFJ3) |
+| E_h (human encoder) | Partial signal | 1.55x between/within for Feix 1 vs 17, correct directional output |
+| L_cont alignment | Partial | Correct direction, insufficient magnitude |
 
-Root cause: L_cont triplet loss uses S_k = D_joints + D_ahg as similarity, which does not encode the semantic identity of the grasp type. Two very different human grasp poses (index pointing vs full grip) produce z_h vectors that differ only 1.16x more than two instances of the same grasp. The shared space has no concept of "finger identity" — it just mirrors the prior distribution of robot poses (semi-flexed).
-
-More steps with this L_cont will not fix this. Fix requires direct h-to-r semantic alignment: either supervised contrastive on Feix labels, or explicit paired (z_h, z_r) loss where the pairing is by grasp type, not by kinematics similarity alone.
+The model shows the right gradient but not enough of it. D_r receives a z_h that encodes "slightly more index-extended" relative to large diameter, but the difference is small enough that D_r output stays close to the prior (semi-flexed).
