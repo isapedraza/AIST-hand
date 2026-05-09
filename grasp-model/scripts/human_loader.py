@@ -129,11 +129,20 @@ class HumanLoader:
         df = df.sort_values(_TRIAL_COLS + ["frame_id"]).reset_index(drop=True)
         print(f"[HumanLoader] {len(df):,} frames after split filter.")
 
-        # Compute hand_length per subject (median of wrist->middle_tip distance)
-        # Tips are already root-relative (wrist=origin), so ||middle_tip|| = distance
-        middle_tip = df[_MIDDLE_TIP_COLS].values  # [N, 3]
-        hand_length_per_frame = np.linalg.norm(middle_tip, axis=1)
-        subject_hl = pd.Series(hand_length_per_frame, index=df.index).groupby(df["subject_id"]).median()
+        # Compute hand_length per subject as sum of middle finger segment lengths.
+        # Segments: WRIST(origin)→MCP + MCP→PIP + PIP→DIP + DIP→TIP.
+        # Pose-invariant: segment lengths = bone lengths, unaffected by flexion.
+        mcp = df[["MIDDLE_FINGER_MCP_x", "MIDDLE_FINGER_MCP_y", "MIDDLE_FINGER_MCP_z"]].values
+        pip = df[["MIDDLE_FINGER_PIP_x", "MIDDLE_FINGER_PIP_y", "MIDDLE_FINGER_PIP_z"]].values
+        dip = df[["MIDDLE_FINGER_DIP_x", "MIDDLE_FINGER_DIP_y", "MIDDLE_FINGER_DIP_z"]].values
+        tip_m = df[["MIDDLE_FINGER_TIP_x", "MIDDLE_FINGER_TIP_y", "MIDDLE_FINGER_TIP_z"]].values
+        seg_lengths = (
+            np.linalg.norm(mcp, axis=1)
+            + np.linalg.norm(pip - mcp, axis=1)
+            + np.linalg.norm(dip - pip, axis=1)
+            + np.linalg.norm(tip_m - dip, axis=1)
+        )
+        subject_hl = pd.Series(seg_lengths, index=df.index).groupby(df["subject_id"]).median()
         hl_per_frame = df["subject_id"].map(subject_hl).values.astype(np.float32)
 
         # Quaternions: [N, 20, 4]
@@ -248,11 +257,26 @@ class StaticHumanAnchorLoader:
             raise ValueError(f"{csv_path} must include a grasp_type column")
 
         quats_np = df[_QUAT_COLS].values.astype(np.float32).reshape(-1, 20, 4)
-        tips_np = df[_TIP_COLS].values.astype(np.float32).reshape(-1, 5, 3)
         labels_np = df["grasp_type"].values.astype(np.int64)
 
+        # Normalize per sample by middle finger segment sum (same definition as HumanLoader).
+        # HaGRID has no fixed subjects, so per-sample normalization is correct.
+        mcp = df[["MIDDLE_FINGER_MCP_x", "MIDDLE_FINGER_MCP_y", "MIDDLE_FINGER_MCP_z"]].values
+        pip = df[["MIDDLE_FINGER_PIP_x", "MIDDLE_FINGER_PIP_y", "MIDDLE_FINGER_PIP_z"]].values
+        dip = df[["MIDDLE_FINGER_DIP_x", "MIDDLE_FINGER_DIP_y", "MIDDLE_FINGER_DIP_z"]].values
+        tip_m = df[["MIDDLE_FINGER_TIP_x", "MIDDLE_FINGER_TIP_y", "MIDDLE_FINGER_TIP_z"]].values
+        hl = (
+            np.linalg.norm(mcp, axis=1)
+            + np.linalg.norm(pip - mcp, axis=1)
+            + np.linalg.norm(dip - pip, axis=1)
+            + np.linalg.norm(tip_m - dip, axis=1)
+        ).astype(np.float32)  # [N]
+        hl = hl[:, None, None]  # [N, 1, 1] for broadcasting
+
+        tips_np = df[_TIP_COLS].values.astype(np.float32).reshape(-1, 5, 3) / hl
+
         if all(c in df.columns for c in _CHAIN_COLS):
-            chain_np = df[_CHAIN_COLS].values.astype(np.float32).reshape(-1, 5, 4, 3)
+            chain_np = df[_CHAIN_COLS].values.astype(np.float32).reshape(-1, 5, 4, 3) / hl[:, :, None, :]
         else:
             chain_np = np.repeat(tips_np[:, :, None, :], 4, axis=2)
 

@@ -4076,3 +4076,94 @@ Robots sin pinky (Allegro, LEAP): pinky no aparece en `common_fingers` del YAML 
 - L_cont debe bajar más lento al inicio (más triplets activos con margin=0.1 y nueva arquitectura sin precalentamiento)
 - L_ltc más alto al inicio (x10) pero debe converger
 - En demo: índice debe moverse más independiente de middle/ring/pinky
+
+---
+
+## Entry 73 -- 2026-05-08: Run 14 resultados de inferencia + diagnóstico final del loop actual
+
+### Runs ejecutados
+
+**Run 14a** (fresh start, ~7550 steps, sesión Colab cortada por timeout):
+- Losses finales: total=2.22, cont=0.165, rec=0.061, ltc=0.023, temp=0.330
+
+**Run 14b** (resume desde step 7550, 10k steps adicionales, ~17.5k total):
+- Losses finales al resume: total≈1.82 (best_total en step ~3950 del resume)
+- Optimizer reseteado -- Adam arranca desde LR=1e-3 con pesos ya entrenados
+
+### Resultados de inferencia online (live_retarget.py, MediaPipe + MuJoCo)
+
+**Run 14a (step ~7550)**:
+- Primera evidencia de control per-dedo: índice+medio se quedan arriba, anular+meñique bajan para signo de paz
+- Puntas de dedos permanentemente flexionadas
+- Thumb peor que runs anteriores (3 subespacios)
+- Más cercano a Index Finger Extension que cualquier run previo, pero no llega
+
+**Run 14b (~17.5k steps total)**:
+- Comportamiento esencialmente igual a Run 14a
+- Algunos aspectos peores: más steps reforzaron comportamiento errático
+- Control individual levemente mejor en algunos dedos
+- Thumb sigue peor que runs anteriores
+- Permanece el problema de puntas permanentemente flexionadas
+- Conclusión: más steps con misma arquitectura no mejoran el modelo
+
+### Por qué más steps no ayudan
+
+Random triplet selection en L_cont: conforme cont baja, mayoría de triplets ya satisfacen el margen → gradiente ≈ 0. El problema de fondo es que D_r nunca recibe gradiente del path humano durante training. Path de inferencia (`E_h → E_X → D_X → D_r`) nunca se optimiza directamente. D_r extrapola a prior semi-flexed al recibir z fuera de distribución.
+
+### Nota de compatibilidad
+
+Run 14 (N_SUBSPACES=5) es incompatible con checkpoints de Runs 1-13 (N_SUBSPACES=3). `Retargeter` en inferencia falla al cargar checkpoints viejos. No se implementó backward compat -- no justifica esfuerzo dado que Runs 1-13 tienen el mismo problema raíz.
+
+### Estado de hipótesis
+
+Todas las hipótesis del loop actual han sido exploradas:
+
+| Hipótesis | Resultado |
+|-----------|-----------|
+| Más steps | No ayuda -- gradiente L_cont → 0, random triplets no generan señal nueva |
+| Más batch (50k) | Sin mejora vs 20k |
+| Per-finger subspaces (Run 14) | Mejora visible pero insuficiente -- control per-dedo aparece, pero magnitud baja y prior semi-flexed persiste |
+| lambda_ltc=10 | No resolvió el problema raíz |
+| Eigengrasp sampler | Mejora diversidad de robot poses, condición necesaria pero no suficiente |
+| HaGRID anchors | Inyecta open/fist, ayuda pero no resuelve |
+
+El modelo muestra mejora observable en Run 14 vs runs anteriores (control per-dedo visible por primera vez). La hipótesis más fuerte para explicar el gap restante es que D_r no recibe gradiente del path humano -- pero esto no ha sido verificado experimentalmente.
+
+### Hipótesis pendiente
+
+**L_cross** (propuesta, no confirmada): dar gradiente directo del path humano a D_r via nearest-neighbor continuo en el batch. Es la hipótesis más directa para el problema raíz identificado, pero no está garantizado que funcione dado que la calidad del matching depende de qué tan discriminativo es S_k en el workspace de dedos (centímetros, no metros como en Yan et al.).
+
+**Status**: Propuesto -- pendiente evaluación y decisión
+
+### Posible inconsistencia en normalización de chain positions (no confirmada)
+
+Robot `hand_length` = suma de segmentos a lo largo del dedo medio a q=0 (pose-invariant).
+Human `hand_length` = `median(||middle_tip||)` por sujeto, donde `middle_tip` es posición wrist-local del tip (distancia recta, varía con flexión).
+
+Si las definiciones difieren en escala, D_joints cross-modal (anchor humano vs candidato robot) estaría sesgado. D_R y D_ahg son independientes de escala física y podrían dominar S_k, atenuando el efecto. Pendiente verificar si esto afecta el ordering de triplets en la práctica.
+
+---
+
+## Entry 74 -- 2026-05-09: Fix normalización hand_length humano + HaGRID
+
+**Context**: Al revisar el código se encontró que `HumanLoader` calculaba `hand_length` como `median(||wrist→middle_tip||)` por sujeto -- distancia en línea recta desde muñeca hasta punta del dedo medio. En HOGraspNet los sujetos siempre están agarrando objetos (dedos doblados), así que esta distancia subestimaba sistemáticamente la longitud anatómica real del dedo. El robot usaba suma de longitudes de segmentos a q=0 (longitud anatómica real). Las dos definiciones eran incompatibles: "1.0" en espacio normalizado no significaba lo mismo para humano y robot, sesgando D_joints cross-modal en S_k.
+
+Adicionalmente, `precompute_hagrid_dong.py` pre-normalizaba los tips por `||wrist→middle_tip||` y los guardaba en el CSV, mientras que el chain (MCP/PIP/DIP) se guardaba sin normalizar. `StaticHumanAnchorLoader` cargaba tips pre-normalizados (mal) y chain sin normalizar -- inconsistente internamente y con HOGraspNet.
+
+**Decision**:
+
+1. `HumanLoader`: `hand_length` = `median(||wrist→MCP|| + ||MCP→PIP|| + ||PIP→DIP|| + ||DIP→TIP||)` por sujeto. Pose-invariante porque mide longitudes de huesos, no distancia recta.
+
+2. `precompute_hagrid_dong.py`: eliminar normalización en precompute. Todo XYZ se guarda raw, igual que `hograspnet_abl11.csv`.
+
+3. `StaticHumanAnchorLoader`: normalizar tips y chain por segment sum per-sample en load time (HaGRID no tiene sujetos fijos, per-sample es correcto).
+
+4. `hagrid_dong.csv` regenerado.
+
+**Alternatives considered**: Usar `max(||wrist→middle_tip||)` por sujeto como proxy de mano extendida -- descartado, el max puede ser outlier. Usar los bone lengths calibrados de DongKinematics -- requeriría guardarlos en el CSV, innecesariamente complejo cuando el segment sum desde los XYZ da el mismo resultado.
+
+**Expected impact**: D_joints cross-modal ya no tiene bias de escala. "1.0" en espacio normalizado = longitud anatómica del dedo medio en ambos lados. S_k debería ser más discriminativo. Todos los runs anteriores (1-14) entrenaron con la definición rota -- Run 15 es el primer run con normalización correcta.
+
+**References**: Entry 73 (hipótesis de sesgo en normalización), robot_loader.py `_get_hand_length`.
+
+**Status**: Implemented

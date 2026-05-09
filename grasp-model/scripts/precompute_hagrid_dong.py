@@ -128,13 +128,6 @@ def main():
 
         q = np.array([res["quaternions"][j] for j in res["joint_order"]])  # [20, 4]
 
-        # Tips from landmark positions (normalized by hand_length = wrist-to-middle-tip)
-        hand_length = np.linalg.norm(pts[12] - pts[0])
-        if hand_length < 1e-6:
-            failed += 1
-            continue
-        tips_norm = np.stack([pts[idx] / hand_length for idx in TIP_IDX.values()])  # [5, 3]
-
         source_label, grasp_type, anchor_label = HAGRID_LABELS[int(row.label)]
         r = {
             "source":     "hagrid",
@@ -149,7 +142,7 @@ def main():
             "frame_id":   0,
         }
 
-        # XYZ landmarks
+        # XYZ landmarks -- raw, NOT normalized (normalization done in StaticHumanAnchorLoader)
         for j, name in enumerate(MP_NAMES):
             for k, ax in enumerate(("x", "y", "z")):
                 r[f"{name}_{ax}"] = pts[j, k]
@@ -158,11 +151,6 @@ def main():
         for j in range(20):
             for k, c in enumerate(("w", "x", "y", "z")):
                 r[f"q{j+1}_{c}"] = q[j, k]
-
-        # Tip positions (normalized)
-        for j, name in enumerate(TIP_IDX):
-            for k, ax in enumerate(("x", "y", "z")):
-                r[f"{name}_{ax}"] = tips_norm[j, k]
 
         rows.append(r)
 
