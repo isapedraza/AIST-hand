@@ -168,6 +168,19 @@ def main():
     }
     sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
 
+    # D_joints per-segment weights: w_j = (1/sigma_j) / sum(1/sigma)
+    # sigma_j = std(||chain_j_a - chain_j_b||) over HOGraspNet train pairs, human only.
+    # Order per subspace: [mcp, pip, dip, tip]. MCP highest weight (least variation).
+    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
+    _sk_wj = {
+        "thumb":  [0.4499, 0.2534, 0.1484, 0.1484],
+        "index":  [0.5282, 0.2435, 0.1381, 0.0902],
+        "middle": [0.5630, 0.2259, 0.1267, 0.0844],
+        "ring":   [0.5743, 0.2364, 0.1134, 0.0759],
+        "pinky":  [0.5459, 0.2465, 0.1241, 0.0835],
+    }
+    sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
+
     # ---------------------------------------------------------------------------
     # Training loop
     # ---------------------------------------------------------------------------
@@ -261,8 +274,9 @@ def main():
             _w_dr      = sk_weights_dr[sub]                          # [Jk]
             D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
             D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
-            D_joints_a = (chain_a - chain_ca).flatten(start_dim=-2).norm(dim=-1)
-            D_joints_b = (chain_a - chain_cb).flatten(start_dim=-2).norm(dim=-1)
+            _w_joints  = sk_weights_joints[sub]                      # [4]
+            D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
+            D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
 
             # D_ahg: AHG-style angles at wrist between each joint and critical joints
             # Critical joints = bases (chain[:,0,:]) + tips (chain[:,3,:]) of common fingers
