@@ -241,10 +241,10 @@ def main():
 
             dot_a      = (qa * q_ca).sum(-1)
             dot_b      = (qa * q_cb).sum(-1)
-            D_R_a      = (1 - dot_a ** 2).mean(dim=-1)
-            D_R_b      = (1 - dot_b ** 2).mean(dim=-1)
-            D_joints_a = (chain_a - chain_ca).norm(dim=-1).mean(dim=(-2, -1))
-            D_joints_b = (chain_a - chain_cb).norm(dim=-1).mean(dim=(-2, -1))
+            D_R_a      = (1 - dot_a ** 2).sum(dim=-1)
+            D_R_b      = (1 - dot_b ** 2).sum(dim=-1)
+            D_joints_a = (chain_a - chain_ca).flatten(start_dim=-2).norm(dim=-1)
+            D_joints_b = (chain_a - chain_cb).flatten(start_dim=-2).norm(dim=-1)
 
             # D_ahg: AHG-style angles at wrist between each joint and critical joints
             # Critical joints = bases (chain[:,0,:]) + tips (chain[:,3,:]) of common fingers
@@ -265,7 +265,7 @@ def main():
                 u_c2 = critical2 / critical2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
                 cos2 = torch.bmm(u_j2, u_c2.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
                 ang2 = torch.acos(cos2)
-                return (ang1 - ang2).abs().mean(dim=(-2, -1))              # [n]
+                return (ang1 - ang2).abs().sum(dim=(-2, -1))               # [n]
             D_ahg_a = _ahg(chain_a, chain_ca)
             D_ahg_b = _ahg(chain_a, chain_cb)
 
