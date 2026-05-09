@@ -154,36 +154,19 @@ def main():
     )
 
     # ---------------------------------------------------------------------------
-    # Precompute S_k per-joint weights  (Jarque-Bou 1/sigma style)
-    # w_j = (1/sigma_j) / sum(1/sigma),  sigma_j = std(1 - dot_j^2) over human pairs
-    # Computed once from human data only; stored as {sub: tensor[Jk]} constants.
+    # D_R per-joint weights: w_j = (1/sigma_j) / sum(1/sigma)
+    # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
+    # Order per subspace: [mcp, pip, dip, tip]. tip=0 (always identity in Dong).
+    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
     # ---------------------------------------------------------------------------
-    print("Precomputing S_k weights from human data...")
-    _probe = sampler.get_batch_temporal(5000)
-    _quats_h_sub  = _probe["quats_h_sub"]    # [5000, K, 4]
-    _common_labels = _probe["common_labels"]
-    sk_weights_dr: dict[str, torch.Tensor] = {}
-    for _k, _sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
-        _prefixes = SUBSPACE_LABEL_PREFIX[_sub]
-        _jidx = [i for i, l in enumerate(_common_labels) if l.startswith(_prefixes)]
-        if not _jidx:
-            continue
-        _q   = _quats_h_sub[:, _jidx, :].to(DEVICE)   # [5000, Jk, 4]
-        _B   = _q.shape[0]
-        _n   = min(50_000, _B * (_B - 1) // 2)
-        _ia  = torch.randint(0, _B, (_n,), device=DEVICE)
-        _ib  = torch.randint(0, _B, (_n,), device=DEVICE)
-        _ok  = _ia != _ib
-        _ia, _ib = _ia[_ok], _ib[_ok]
-        _d   = 1 - (_q[_ia] * _q[_ib]).sum(-1) ** 2   # [n_valid, Jk]
-        _sig = _d.std(dim=0).clamp(min=1e-6)            # [Jk]
-        _w   = (1.0 / _sig)
-        _w   = _w / _w.sum()
-        sk_weights_dr[_sub] = _w
-        _labs = [_common_labels[i] for i in _jidx]
-        print(f"  {_sub}: {dict(zip(_labs, [f'{v:.3f}' for v in _w.tolist()]))}")
-    del _probe, _quats_h_sub
-    print("S_k weights ready.")
+    _sk_w = {
+        "thumb":  [0.2578, 0.5435, 0.1986, 0.0],
+        "index":  [0.3288, 0.3252, 0.3459, 0.0],
+        "middle": [0.1875, 0.3618, 0.4508, 0.0],
+        "ring":   [0.2381, 0.3574, 0.4045, 0.0],
+        "pinky":  [0.1974, 0.4050, 0.3977, 0.0],
+    }
+    sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
 
     # ---------------------------------------------------------------------------
     # Training loop
