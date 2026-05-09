@@ -4167,3 +4167,47 @@ Adicionalmente, `precompute_hagrid_dong.py` pre-normalizaba los tips por `||wris
 **References**: Entry 73 (hipótesis de sesgo en normalización), robot_loader.py `_get_hand_length`.
 
 **Status**: Implemented
+
+---
+
+## Entry 75 -- 2026-05-09: Run 15 -- fixes acumulados + pesos explícitos en S_k
+
+**Context**: Run 14 expuso varios bugs acumulados desde Run 1. Run 15 es fresh start incorporando todos los fixes y mejoras de S_k.
+
+**Fixes incluidos en Run 15 (vs todos los runs anteriores):**
+
+1. **hand_length segment sum** (Entry 74): `HumanLoader` ahora usa suma de segmentos del dedo medio, no distancia recta wrist→tip. Normalización humano/robot ahora compatible.
+
+2. **S_k mean→sum**: D_R, D_joints y D_ahg usaban `.mean()` en lugar de `.sum()`. Desviación de Yan et al. corregida.
+
+3. **HaGRID normalización**: `precompute_hagrid_dong.py` ahora guarda XYZ raw. `StaticHumanAnchorLoader` normaliza por segment sum per-sample en load time. `hagrid_dong.csv` regenerado (4000 samples, 0 failures).
+
+4. **D_joints como L2 flatten**: cambio de suma de normas individuales a `flatten().norm()` -- distancia L2 real en R^(Fk×4×3).
+
+**Cambios de arquitectura S_k:**
+
+5. **Pesos explícitos por componente**: `S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg`. Args `--w_r`, `--w_joints`, `--w_ahg` (default=1.0). Reemplaza `--lambda_ahg`.
+
+6. **Pesos per-joint en D_R (Jarque-Bou style)**: `D_R = Σ_j w_j*(1 - dot_j²)` donde `w_j = (1/σ_j) / Σ(1/σ)`. σ_j = std(1 - dot_j²) sobre 50k pares aleatorios de HOGraspNet train (human only). Joints con menor variabilidad reciben mayor peso -- captura importancia biomecánica. Tips excluidos (siempre identity en Dong, σ=0).
+
+**Pesos D_R precomputados offline:**
+
+| Subespacio | mcp | pip | dip | tip |
+|---|---|---|---|---|
+| thumb | 0.258 | 0.544 | 0.199 | 0.0 |
+| index | 0.329 | 0.325 | 0.346 | 0.0 |
+| middle | 0.188 | 0.362 | 0.451 | 0.0 |
+| ring | 0.238 | 0.357 | 0.405 | 0.0 |
+| pinky | 0.197 | 0.405 | 0.398 | 0.0 |
+
+Thumb pip domina (w=0.544, σ=0.020): segmento más constrained en HOGraspNet. MCP consistentemente menor peso (mayor variación entre poses → menos discriminativo por unidad de diferencia).
+
+**Config Run 15:**
+- B=50000, N_STEPS=15000, z_dim=16, shared_dim=1024
+- lambda_c=10, lambda_rec=5, lambda_ltc=1, lambda_tmp=0.1
+- w_r=1.0, w_joints=1.0, w_ahg=1.0, margin=0.1, T_0=2000
+- extra_human_ratio=0.10, RESUME_CKPT=None (fresh start)
+
+**Expected impact**: S_k más discriminativo por fixes de normalización y pesos per-joint. Primera run sin bugs de normalización -- baseline limpio.
+
+**Status**: Pendiente ejecución en Colab
