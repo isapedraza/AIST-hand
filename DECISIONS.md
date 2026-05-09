@@ -4211,3 +4211,60 @@ Thumb pip domina (w=0.544, σ=0.020): segmento más constrained en HOGraspNet. M
 **Expected impact**: S_k más discriminativo por fixes de normalización y pesos per-joint. Primera run sin bugs de normalización -- baseline limpio.
 
 **Status**: Pendiente ejecución en Colab
+
+---
+
+## Entry 76 -- 2026-05-09: Pesos per-segmento en D_joints (1/sigma, MCP-dominante)
+
+**Context**: D_joints en S_k usaba `flatten().norm()` -- suma plana de todas las diferencias de posición 3D sin distinción por segmento. MCP (base del dedo, determina dirección del agarre) y tip (punta, acumula error de toda la cadena) contribuían sin peso diferenciado.
+
+**Motivación**: En una cadena cinemática, tip varía más en posición 3D que MCP porque acumula las rotaciones de todos los segmentos anteriores. Con suma plana, tip domina D_joints implícitamente. El objetivo es que MCP tenga más peso: la dirección de la base del dedo define mejor el tipo de agarre que la posición exacta de la punta.
+
+**Procedimiento** (análogo a Entry 75 para D_R):
+1. Cargar 10,000 frames HOGraspNet train split
+2. Por cada dedo (thumb/index/middle/ring/pinky), extraer posiciones 3D de los 4 segmentos (mcp, pip, dip, tip) normalizadas por hand_length
+3. Samplear 50,000 pares aleatorios de frames
+4. Calcular `delta_j = ||chain_j_a - chain_j_b||` (distancia euclidiana 3D del segmento j entre pares)
+5. `sigma_j = std(delta_j)` sobre los pares
+6. `w_j = (1/sigma_j) / sum(1/sigma)`, normalizado a suma=1 por dedo
+
+**Diferencia con D_R**: tip NO se excluye -- tiene posición 3D real y variación genuina (a diferencia de quaternion tip que es siempre identity). Con 1/sigma, tip recibe el menor peso naturalmente por tener mayor variación.
+
+**Resultados (sigma, w):**
+
+| Dedo | segmento | sigma | w |
+|---|---|---|---|
+| thumb | mcp | 0.0316 | 0.450 |
+| thumb | pip | 0.0561 | 0.253 |
+| thumb | dip | 0.0958 | 0.148 |
+| thumb | tip | 0.0958 | 0.148 |
+| index | mcp | 0.0238 | 0.528 |
+| index | pip | 0.0517 | 0.244 |
+| index | dip | 0.0912 | 0.138 |
+| index | tip | 0.1396 | 0.090 |
+| middle | mcp | 0.0243 | 0.563 |
+| middle | pip | 0.0607 | 0.226 |
+| middle | dip | 0.1082 | 0.127 |
+| middle | tip | 0.1624 | 0.084 |
+| ring | mcp | 0.0220 | 0.574 |
+| ring | pip | 0.0536 | 0.236 |
+| ring | dip | 0.1116 | 0.113 |
+| ring | tip | 0.1668 | 0.076 |
+| pinky | mcp | 0.0207 | 0.546 |
+| pinky | pip | 0.0459 | 0.247 |
+| pinky | dip | 0.0912 | 0.124 |
+| pinky | tip | 0.1356 | 0.084 |
+
+**Observaciones**:
+- MCP dominante en todos los dedos (w ~0.45-0.57): base del dedo varía poco en posición 3D entre poses de agarre
+- Tip con menor peso (w ~0.08-0.15): acumula variación de toda la cadena
+- Thumb dip y tip tienen sigma idéntica (0.0958) -- posiblemente degeneración en HOGraspNet para ese dedo
+- Gradiente de sigma claro: mcp < pip < dip < tip en todos los dedos
+
+**Formula implementada**:
+```
+D_joints = sum_j( w_j * ||chain_a_j - chain_ca_j|| )
+```
+Suma ponderada de normas euclidianas por segmento (no L2 global flatten).
+
+**Status**: Implementado, hardcodeado en train_cross_emb.py. Incluido en Run 15.
