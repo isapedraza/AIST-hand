@@ -483,50 +483,6 @@ class RobotLoader:
             self._hand_length = diffs.norm(dim=-1).sum().item()
         return self._hand_length
 
-    def run_dong_tips_only(
-        self,
-        fk_out: dict[str, torch.Tensor],
-        hand_config_path: str | Path,
-    ) -> tuple[torch.Tensor, list[str]]:
-        """
-        Lightweight Dong path for L_temp: compute only fingertip positions in
-        wrist-local frame (normalized by hand_length). Skips block3 rotations
-        and `_dong_mat_to_quat` calls done by `run_dong_stage2`.
-
-        Math identical to taking `run_dong_stage2(fk_out, ...)` and reading
-        `meta["tips"]`. Verified by parity test.
-
-        Returns:
-            tips       : Tensor[B, F, 3]
-            tip_labels : list[str]   len F
-        """
-        config = _load_hand_config(hand_config_path)
-
-        def pos(link: str) -> torch.Tensor:
-            return fk_out[link][:, :3, 3]
-
-        wrist_pos  = pos(config["wrist_link"])
-        index_mcp  = pos(config["frame_index_mcp"])
-        middle_mcp = pos(config["frame_middle_mcp"])
-        ring_mcp   = pos(config["frame_ring_mcp"])
-        R_wrist = _dong_block1_wrist_frame(wrist_pos, index_mcp, middle_mcp, ring_mcp)
-
-        tips_list: list[torch.Tensor] = []
-        tip_labels: list[str] = []
-        for finger_name, finger_cfg in config["fingers"].items():
-            chain = finger_cfg["chain"]
-            if len(chain) < 2:
-                continue
-            tip_world = pos(chain[-1])
-            tip_local = _dong_world_to_local(tip_world, wrist_pos, R_wrist)
-            tips_list.append(tip_local)
-            tip_labels.append(finger_name)
-
-        tips = torch.stack(tips_list, dim=1)            # [B, F, 3] wrist-local
-        hand_length = self._get_hand_length(config)
-        tips = tips / hand_length
-        return tips, tip_labels
-
     def run_dong_stage2(
         self,
         fk_out: dict[str, torch.Tensor],

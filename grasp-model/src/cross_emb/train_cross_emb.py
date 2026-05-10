@@ -377,16 +377,15 @@ def main():
 
         # Fuse the t and t+1 FK calls into one batched forward, then split.
         # Halves pytorch-kinematics launch / Python overhead; identical math.
-        # L_temp only needs fingertip positions, so use the lightweight
-        # `run_dong_tips_only` path (skip block3 + mat_to_quat).
         B_fk = q_r_hat_fk.shape[0]
-        q_combined    = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)    # [2B, J]
-        fk_combined   = sampler.robot_rnd.run_fk(q_combined)
-        tips_all, tip_labels = sampler.robot_rnd.run_dong_tips_only(fk_combined, HAND_CONFIG)
+        q_combined  = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)      # [2B, J]
+        fk_combined = sampler.robot_rnd.run_fk(q_combined)
+        _, _, meta_combined = sampler.robot_rnd.run_dong_stage2(fk_combined, HAND_CONFIG)
+        tip_labels    = meta_combined["tip_labels"]
         common_idx_r  = [tip_labels.index(f) for f in common_fingers]
         human_labels  = ["thumb", "index", "middle", "ring", "pinky"]
         common_idx_h  = [human_labels.index(f) for f in common_fingers]
-        tips_r_all    = tips_all.to(DEVICE)[:, common_idx_r, :]          # [2B, Fc, 3]
+        tips_r_all    = meta_combined["tips"].to(DEVICE)[:, common_idx_r, :]   # [2B, Fc, 3]
         tips_r_t_sub  = tips_r_all[:B_fk]
         tips_r_t1_sub = tips_r_all[B_fk:]
         tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
