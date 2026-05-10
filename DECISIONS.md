@@ -4337,4 +4337,6 @@ Pesos uniformes en D_R (mcp=pip=dip=1/3, tip=0) y en D_joints (mcp=pip=dip=tip=0
 
 Abduccion sigue siendo un problema estructural no resuelto en Run 16. Requiere descomponer quaternion MCP en Run 17+.
 
-**Status**: Diagnosticado. Fix parcial (uniformes) propuesto para Run 16.
+**Posible fix futuro (Run 17+)**: Descomponer el quaternion MCP en dos ejes ortogonales (flexion y abduccion) antes de calcular D_R. Dong ya opera en frame wrist-local, por lo que los ejes de flexion y abduccion son bien definidos por dedo. Cada componente recibiria su propio escalar y su propio peso en D_R, permitiendo compensar la abduccion diminuta sin afectar la señal de flexion. Solo necesario si Run 16 (uniformes) no resuelve MCP o si la abduccion sigue sin capturarse.
+
+**Status**: Diagnosticado. Fix parcial (uniformes) implementado en Run 16. Descomposicion de ejes pendiente para Run 17+ si es necesario.
