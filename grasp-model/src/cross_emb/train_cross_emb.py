@@ -94,13 +94,6 @@ def _parse_args() -> argparse.Namespace:
         help="Enable fp16 autocast + GradScaler on CUDA. MLP forward/loss in fp16; FK and Dong stage2 stay fp32. Auto-disabled on CPU.",
     )
     p.add_argument(
-        "--compile",
-        dest="compile",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Wrap E_h/E_r/E_X/D_X/D_r with torch.compile(mode='reduce-overhead'). Auto-disabled on CPU and on torch < 2.0.",
-    )
-    p.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -185,25 +178,6 @@ def main():
         print(f"Resumed weights from {args.resume_ckpt} (step {ckpt.get('step', '?')})")
         print("Optimizer and scheduler reset fresh.")
 
-    # torch.compile MUST run AFTER state_dict load: compiling traces the forward
-    # graph; loading weights afterwards into the wrapped module is supported but
-    # avoiding the recompile is cleaner. Compile only on CUDA -- CPU compile
-    # works but yields little gain and slows first step heavily.
-    use_compile = bool(args.compile) and DEVICE == "cuda" and hasattr(torch, "compile")
-    if use_compile:
-        try:
-            E_h = torch.compile(E_h, mode="reduce-overhead")
-            E_r = torch.compile(E_r, mode="reduce-overhead")
-            E_X = torch.compile(E_X, mode="reduce-overhead")
-            D_X = torch.compile(D_X, mode="reduce-overhead")
-            D_r = torch.compile(D_r, mode="reduce-overhead")
-            print("torch.compile: enabled (mode=reduce-overhead) on E_h/E_r/E_X/D_X/D_r")
-        except Exception as e:
-            print(f"torch.compile failed ({e}); falling back to eager.")
-            use_compile = False
-    else:
-        print("torch.compile: disabled")
-
     optimizer = torch.optim.Adam(
         list(E_h.parameters()) + list(E_r.parameters()) +
         list(E_X.parameters()) + list(D_X.parameters()) +
@@ -245,12 +219,6 @@ def main():
         "pinky":  [0.5459, 0.2465, 0.1241, 0.0835],
     }
     sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
-
-    def _sd(m: torch.nn.Module) -> dict:
-        # Strip the OptimizedModule wrapper from torch.compile so saved keys
-        # match a bare (uncompiled) module. Loading is unaffected -- callers
-        # always load into bare modules before compile.
-        return getattr(m, "_orig_mod", m).state_dict()
 
     # ---------------------------------------------------------------------------
     # Training loop
@@ -460,11 +428,11 @@ def main():
         ckpt_payload = {
             "step": step,
             "seed": args.seed,
-            "E_h":  _sd(E_h),
-            "E_r":  _sd(E_r),
-            "E_X":  _sd(E_X),
-            "D_X":  _sd(D_X),
-            "D_r":  _sd(D_r),
+            "E_h":  E_h.state_dict(),
+            "E_r":  E_r.state_dict(),
+            "E_X":  E_X.state_dict(),
+            "D_X":  D_X.state_dict(),
+            "D_r":  D_r.state_dict(),
             "zero_wrj": args.zero_wrj,
             "losses": {
                 "total": L_total.item(),
@@ -502,11 +470,11 @@ def main():
         if step % args.ckpt_every == 0:
             torch.save({
                 "step": step,
-                "E_h":  _sd(E_h),
-                "E_r":  _sd(E_r),
-                "E_X":  _sd(E_X),
-                "D_X":  _sd(D_X),
-                "D_r":  _sd(D_r),
+                "E_h":  E_h.state_dict(),
+                "E_r":  E_r.state_dict(),
+                "E_X":  E_X.state_dict(),
+                "D_X":  D_X.state_dict(),
+                "D_r":  D_r.state_dict(),
                 "zero_wrj": args.zero_wrj,
                 "losses": {
                     "total": L_total.item(),
