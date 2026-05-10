@@ -271,10 +271,15 @@ def main():
 
             dot_a      = (qa * q_ca).sum(-1)
             dot_b      = (qa * q_cb).sum(-1)
-            _w_dr      = sk_weights_dr[sub]                          # [Jk]
+            _seg_order = ["mcp", "pip", "dip", "tip"]
+            _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
+            _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
+            _w_dr      = sk_weights_dr[sub][_dr_idx]
+            _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
             D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
             D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
-            _w_joints  = sk_weights_joints[sub]                      # [4]
+            _w_joints  = sk_weights_joints[sub][_dr_idx]
+            _w_joints  = _w_joints / _w_joints.sum().clamp(min=1e-8)
             D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
             D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
 
