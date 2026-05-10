@@ -227,18 +227,9 @@ def _dong_run_stage2(
     return quats, labels, meta
 
 
-_HAND_CONFIG_CACHE: dict[str, dict] = {}
-
-
 def _load_hand_config(path: str | Path) -> dict:
-    key = str(Path(path).expanduser().resolve())
-    cached = _HAND_CONFIG_CACHE.get(key)
-    if cached is not None:
-        return cached
     with open(path) as f:
-        cfg = yaml.safe_load(f)
-    _HAND_CONFIG_CACHE[key] = cfg
-    return cfg
+        return yaml.safe_load(f)
 
 
 @dataclass

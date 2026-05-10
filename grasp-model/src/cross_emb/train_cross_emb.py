@@ -291,76 +291,70 @@ def main():
                 cand_b[same] += (cand_b[same] == anchors[same]).long()
                 cand_b[same] %= B2
 
-            # Triplet selection metrics (D_R / D_joints / D_ahg) only feed the
-            # hard `S_a <= S_b` mask. Gradient flows exclusively through
-            # z_all_k below, so this whole block is no_grad — saves graph
-            # allocation and autograd bookkeeping over n=2B anchors x 5 subs.
-            with torch.no_grad():
-                qa       = q_all_k[anchors]
-                chain_a  = chain_all_k[anchors]              # [n, Fk, 4, 3]
-                q_ca     = q_all_k[cand_a]
-                q_cb     = q_all_k[cand_b]
-                chain_ca = chain_all_k[cand_a]
-                chain_cb = chain_all_k[cand_b]
+            qa       = q_all_k[anchors]
+            chain_a  = chain_all_k[anchors]              # [n, Fk, 4, 3]
+            q_ca     = q_all_k[cand_a]
+            q_cb     = q_all_k[cand_b]
+            chain_ca = chain_all_k[cand_a]
+            chain_cb = chain_all_k[cand_b]
 
-                dot_a      = (qa * q_ca).sum(-1)
-                dot_b      = (qa * q_cb).sum(-1)
-                _seg_order = ["mcp", "pip", "dip", "tip"]
-                _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
-                _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
-                _w_dr      = sk_weights_dr[sub][_dr_idx]
-                _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
-                D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
-                D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
-                _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
-                D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
-                D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
+            dot_a      = (qa * q_ca).sum(-1)
+            dot_b      = (qa * q_cb).sum(-1)
+            _seg_order = ["mcp", "pip", "dip", "tip"]
+            _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
+            _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
+            _w_dr      = sk_weights_dr[sub][_dr_idx]
+            _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
+            D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
+            D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
+            _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
+            D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
+            D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
 
-                # D_ahg: AHG-style angles at wrist between each joint and critical joints
-                # Critical joints = bases (chain[:,0,:]) + tips (chain[:,3,:]) of common fingers
-                # All positions are wrist-local -> wrist = origin -> v_j = chain_j directly
-                def _ahg(c1, c2):
-                    # c1, c2: [n, Fk, 4, 3]
-                    n_s = c1.shape[0]
-                    Fk  = c1.shape[1]
-                    joints   = c1.view(n_s, Fk * 4, 3)                        # [n, Fk*4, 3]
-                    critical = torch.cat([c1[:, :, 0, :], c1[:, :, 3, :]], dim=1)  # [n, 2*Fk, 3]
-                    u_j = joints   / joints.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    u_c = critical / critical.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    cos = torch.bmm(u_j, u_c.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
-                    ang1 = torch.acos(cos)                                      # [n, Fk*4, 2*Fk]
-                    joints2   = c2.view(n_s, Fk * 4, 3)
-                    critical2 = torch.cat([c2[:, :, 0, :], c2[:, :, 3, :]], dim=1)
-                    u_j2 = joints2   / joints2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    u_c2 = critical2 / critical2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    cos2 = torch.bmm(u_j2, u_c2.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
-                    ang2 = torch.acos(cos2)
-                    return (ang1 - ang2).abs().sum(dim=(-2, -1))               # [n]
-                D_ahg_a = _ahg(chain_a, chain_ca)
-                D_ahg_b = _ahg(chain_a, chain_cb)
+            # D_ahg: AHG-style angles at wrist between each joint and critical joints
+            # Critical joints = bases (chain[:,0,:]) + tips (chain[:,3,:]) of common fingers
+            # All positions are wrist-local -> wrist = origin -> v_j = chain_j directly
+            def _ahg(c1, c2):
+                # c1, c2: [n, Fk, 4, 3]
+                n_s = c1.shape[0]
+                Fk  = c1.shape[1]
+                joints   = c1.view(n_s, Fk * 4, 3)                        # [n, Fk*4, 3]
+                critical = torch.cat([c1[:, :, 0, :], c1[:, :, 3, :]], dim=1)  # [n, 2*Fk, 3]
+                u_j = joints   / joints.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+                u_c = critical / critical.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+                cos = torch.bmm(u_j, u_c.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
+                ang1 = torch.acos(cos)                                      # [n, Fk*4, 2*Fk]
+                joints2   = c2.view(n_s, Fk * 4, 3)
+                critical2 = torch.cat([c2[:, :, 0, :], c2[:, :, 3, :]], dim=1)
+                u_j2 = joints2   / joints2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+                u_c2 = critical2 / critical2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+                cos2 = torch.bmm(u_j2, u_c2.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
+                ang2 = torch.acos(cos2)
+                return (ang1 - ang2).abs().sum(dim=(-2, -1))               # [n]
+            D_ahg_a = _ahg(chain_a, chain_ca)
+            D_ahg_b = _ahg(chain_a, chain_cb)
 
-                S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
-                S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
+            S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
+            S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
 
-                if args.log_metric_stats:
-                    D_R_pairs      = torch.cat([D_R_a, D_R_b])
-                    D_joints_pairs = torch.cat([D_joints_a, D_joints_b])
-                    D_ahg_pairs    = torch.cat([D_ahg_a, D_ahg_b])
-                    S_pairs        = torch.cat([S_a, S_b])
-                    metric_stats[sub] = (
-                        D_R_pairs.mean().item(),
-                        D_joints_pairs.mean().item(),
-                        D_ahg_pairs.mean().item(),
-                        S_pairs.mean().item(),
-                        S_pairs.std().item(),
-                        S_pairs.min().item(),
-                        S_pairs.max().item(),
-                    )
+            if args.log_metric_stats:
+                D_R_pairs      = torch.cat([D_R_a, D_R_b])
+                D_joints_pairs = torch.cat([D_joints_a, D_joints_b])
+                D_ahg_pairs    = torch.cat([D_ahg_a, D_ahg_b])
+                S_pairs        = torch.cat([S_a, S_b])
+                metric_stats[sub] = (
+                    D_R_pairs.mean().item(),
+                    D_joints_pairs.mean().item(),
+                    D_ahg_pairs.mean().item(),
+                    S_pairs.mean().item(),
+                    S_pairs.std().item(),
+                    S_pairs.min().item(),
+                    S_pairs.max().item(),
+                )
 
-                a_closer = S_a <= S_b
-                pos_idx = torch.where(a_closer, cand_a, cand_b)
-                neg_idx = torch.where(a_closer, cand_b, cand_a)
-
+            a_closer = S_a <= S_b
+            pos_idx = torch.where(a_closer, cand_a, cand_b)
+            neg_idx = torch.where(a_closer, cand_b, cand_a)
             L_cont  = L_cont + torch.relu(
                 (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
                 - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
@@ -375,19 +369,15 @@ def main():
             q_r_hat_fk[:, 0:2] = 0.0
             q_r_hat_t1_fk[:, 0:2] = 0.0
 
-        # Fuse the t and t+1 FK calls into one batched forward, then split.
-        # Halves pytorch-kinematics launch / Python overhead; identical math.
-        B_fk = q_r_hat_fk.shape[0]
-        q_combined  = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)      # [2B, J]
-        fk_combined = sampler.robot_rnd.run_fk(q_combined)
-        _, _, meta_combined = sampler.robot_rnd.run_dong_stage2(fk_combined, HAND_CONFIG)
-        tip_labels    = meta_combined["tip_labels"]
+        fk_t,  fk_t1  = sampler.robot_rnd.run_fk(q_r_hat_fk), sampler.robot_rnd.run_fk(q_r_hat_t1_fk)
+        _, _, meta_t  = sampler.robot_rnd.run_dong_stage2(fk_t,  HAND_CONFIG)
+        _, _, meta_t1 = sampler.robot_rnd.run_dong_stage2(fk_t1, HAND_CONFIG)
+        tip_labels    = meta_t["tip_labels"]
         common_idx_r  = [tip_labels.index(f) for f in common_fingers]
         human_labels  = ["thumb", "index", "middle", "ring", "pinky"]
         common_idx_h  = [human_labels.index(f) for f in common_fingers]
-        tips_r_all    = meta_combined["tips"].to(DEVICE)[:, common_idx_r, :]   # [2B, Fc, 3]
-        tips_r_t_sub  = tips_r_all[:B_fk]
-        tips_r_t1_sub = tips_r_all[B_fk:]
+        tips_r_t_sub  = meta_t["tips"].to(DEVICE)[:, common_idx_r, :]
+        tips_r_t1_sub = meta_t1["tips"].to(DEVICE)[:, common_idx_r, :]
         tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
         L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
 

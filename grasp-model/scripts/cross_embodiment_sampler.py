@@ -215,12 +215,9 @@ class CrossEmbodimentSampler:
         extra_human_count: int = 0,
         extra_human_by_class: dict[int, int] | None = None,
     ) -> dict:
-        # Robot sample is input data for the training step. No gradients flow
-        # through q_r / quats_r / chain / tips, so skip autograd graph build.
-        with torch.no_grad():
-            q_r, quats_r, labels_r, meta_r = self.robot_rnd.sample_dong(
-                B, self.hand_config_path, seed=seed
-            )
+        q_r, quats_r, labels_r, meta_r = self.robot_rnd.sample_dong(
+            B, self.hand_config_path, seed=seed
+        )
 
         quats_h_sub, quats_r_sub, tips_h_sub, tips_r_sub, common_labels, common_fingers = filter_to_subspace(
             quats_h, labels,
