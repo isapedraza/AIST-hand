@@ -278,8 +278,7 @@ def main():
             _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
             D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
             D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
-            _w_joints  = sk_weights_joints[sub][_dr_idx]
-            _w_joints  = _w_joints / _w_joints.sum().clamp(min=1e-8)
+            _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
             D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
             D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
 
