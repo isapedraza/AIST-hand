@@ -71,6 +71,12 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument("--resume_ckpt", default=None, help="Path to checkpoint to resume from. Loads model weights only; optimizer and scheduler reset fresh.")
     p.add_argument("--T_0", type=int, default=2000, help="CosineAnnealingWarmRestarts period (steps). LR resets to --lr every T_0 steps.")
+    p.add_argument(
+        "--amp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable fp16 autocast + GradScaler on CUDA. MLP forward/loss in fp16; FK and Dong stage2 stay fp32. Auto-disabled on CPU.",
+    )
     return p.parse_args()
 
 
@@ -153,6 +159,10 @@ def main():
         optimizer, T_0=args.T_0, eta_min=1e-5
     )
 
+    use_amp = bool(args.amp) and DEVICE == "cuda"
+    scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
+    print(f"AMP: {'enabled (fp16)' if use_amp else 'disabled'}")
+
     # ---------------------------------------------------------------------------
     # D_R per-joint weights: w_j = (1/sigma_j) / sum(1/sigma)
     # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
@@ -208,16 +218,17 @@ def main():
         extra_human_count = batch.get("extra_human_count", 0)
         extra_human_by_class = batch.get("extra_human_by_class", {})
 
-        z_t  = E_h(quats_h)       # [B, 5*z_dim]
-        z_t1 = E_h(quats_h_t1)
-        z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
+        with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+            z_t  = E_h(quats_h)       # [B, 5*z_dim]
+            z_t1 = E_h(quats_h_t1)
+            z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
 
-        q_r_hat    = D_r(D_X(z_r))
-        z_h_rt     = E_X(D_X(z_t))
-        q_r_hat_t1 = D_r(D_X(z_t1))
+            q_r_hat    = D_r(D_X(z_r))
+            z_h_rt     = E_X(D_X(z_t))
+            q_r_hat_t1 = D_r(D_X(z_t1))
 
-        L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
-        L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
+            L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
+            L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
 
         # --- Per-subspace contrastive loss (Yan et al. 2026) ---
         z_t_subs = z_t.chunk(5, dim=-1)   # (z_thumb, z_index, z_middle, z_ring, z_pinky) each [B, z_dim]
@@ -338,11 +349,14 @@ def main():
                 + args.margin
             ).mean()
 
-        q_r_hat_fk = q_r_hat
-        q_r_hat_t1_fk = q_r_hat_t1
+        # FK + run_dong_tips_only run in fp32 (pytorch-kinematics not validated
+        # for fp16). `q_r_hat`/`q_r_hat_t1` may be fp16 under AMP autocast --
+        # `.float()` upcasts and preserves the autograd path back to MLPs.
+        q_r_hat_fk    = q_r_hat.float()
+        q_r_hat_t1_fk = q_r_hat_t1.float()
         if args.zero_wrj:
-            q_r_hat_fk = q_r_hat.clone()
-            q_r_hat_t1_fk = q_r_hat_t1.clone()
+            q_r_hat_fk    = q_r_hat_fk.clone()
+            q_r_hat_t1_fk = q_r_hat_t1_fk.clone()
             q_r_hat_fk[:, 0:2] = 0.0
             q_r_hat_t1_fk[:, 0:2] = 0.0
 
@@ -366,14 +380,18 @@ def main():
         L_total = args.lambda_c * L_cont + args.lambda_rec * L_rec + args.lambda_ltc * L_ltc + args.lambda_tmp * L_temp
 
         optimizer.zero_grad()
-        L_total.backward()
+        # GradScaler scales loss before backward to keep fp16 grads in range,
+        # then unscales before clip+step. With AMP off, scaler is a no-op.
+        scaler.scale(L_total).backward()
+        scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(
             list(E_h.parameters()) + list(E_r.parameters()) +
             list(E_X.parameters()) + list(D_X.parameters()) +
             list(D_r.parameters()),
             max_norm=1.0,
         )
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
 
         if step > args.lr_warmup:
             scheduler.step(step - args.lr_warmup)
