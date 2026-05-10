@@ -4268,3 +4268,73 @@ D_joints = sum_j( w_j * ||chain_a_j - chain_ca_j|| )
 Suma ponderada de normas euclidianas por segmento (no L2 global flatten).
 
 **Status**: Implementado, hardcodeado en train_cross_emb.py. Incluido en Run 15.
+
+---
+
+## Entry 77 -- 2026-05-09: Run 15 -- resultados de inferencia visual
+
+**Context**: Evaluacion visual de Run 15 (stage1_best_total(4).pt, ~5000 steps, 125 epocas equivalentes) via live_retarget.py con camara. Comparacion contra runs anteriores (Run 11 = stage1_best_total_NEW.pt y otros).
+
+**Observaciones**:
+
+- Primera vez en todos los runs que los dedos se abren de forma diferenciada. V sign (indice + medio extendidos) replicada correctamente por el robot.
+- Primera vez que se replica un pinch/OK (pulgar e indice juntos, demas extendidos). Para lograrlo se requirio exagerar el gesto mas alla de los limites reales.
+- Pulgar se mueve pero con rango muy limitado, no cierra suficiente.
+- Dedos restantes intentan seguir el movimiento pero no cierran suficiente.
+- Algunas colisiones entre dedos al intentar cerrarse (sin collision avoidance en Stage 1).
+- MCPs sub-actuados: flexion desde la base insuficiente en todos los dedos. Comportamiento consistente en todos los modelos hasta ahora, independiente de hiperparametros.
+- El indice muestra mas flexion MCP que los demas dedos -- consistente con que su peso D_R MCP (0.3288) es el mas alto entre los cuatro dedos no-pulgar.
+
+**Diagnostico**:
+
+1. MCP sub-actuado es sistematico (todos los modelos). Causa probable: pesos D_R para MCP son bajos en middle (0.1875), ring (0.2381), pinky (0.1974) vs indice (0.3288). El contrastivo entrena el encoder a separar grasps por PIP/DIP mas que por MCP en esos dedos. El indice tiene mas peso MCP y efectivamente se mueve mas.
+
+2. Magnitud insuficiente en general: el robot no alcanza los extremos del rango joint. El decoder output se queda en la zona central.
+
+3. Colisiones: sin penalty de colision en Stage 1, el decoder puede producir poses invalidas al intentar cerrar.
+
+**Conclusion**: Run 15 es el mejor modelo hasta ahora. Diferenciacion por dedo funciona por primera vez. Los problemas restantes (MCP, magnitud, colisiones) son el objetivo de Run 16.
+
+**Status**: Evaluado.
+
+---
+
+## Entry 78 -- 2026-05-09: Run 16 -- plan
+
+**Context**: Basado en diagnostico de Run 15 (Entry 77). Objetivo: mejorar flexion MCP y amplitud de movimiento general.
+
+**Cambios propuestos**:
+
+A decidir con el usuario.
+
+---
+
+## Entry 79 -- 2026-05-09: Diagnostico -- pesos 1/sigma en S_k suprimen MCP flexion y abduccion
+
+**Context**: Analisis post-Run 15. MCP sub-actuado es sistematico en todos los modelos. Se identifico el mecanismo por el que los pesos 1/sigma en D_R y D_joints suprimen la señal de MCP.
+
+**Problema en D_R**:
+
+El quaternion MCP mezcla dos DoF: flexion (rango grande) y abduccion (rango pequeño). La distancia cuaterniónica `1 - dot(q_a, q_b)²` queda dominada por flexion porque tiene mayor magnitud angular. La varianza del quaternion MCP en HOGraspNet es alta porque la flexion MCP varia mucho entre los 28 tipos de agarre. Con pesos 1/sigma, MCP recibe peso bajo (alta sigma → baja 1/sigma).
+
+Consecuencia directa: el contrastivo no aprende a separar grasps por estado MCP → encoder no codifica bien flexion MCP → decoder no mueve FFJ3/MFJ3/RFJ3/LFJ3.
+
+Evidencia: en Run 15, el indice MCP se mueve mas que los demas. Su peso D_R MCP (0.3288) es el mas alto entre los cuatro dedos no-pulgar. Middle (0.1875), ring (0.2381), pinky (0.1974) se mueven menos.
+
+**Problema en D_joints**:
+
+La posicion 3D del punto MCP en frame wrist-local tiene sigma baja (MCP esta pegado a la palma, varia poco en posicion). Con 1/sigma, recibe peso alto (~0.52-0.57). Pero la flexion MCP no mueve el punto MCP -- mueve PIP/DIP/TIP. Esos segmentos reciben peso bajo por tener sigma alta.
+
+Consecuencia: D_joints tampoco captura bien la flexion MCP. El contrastivo aprende similitud de posicion MCP (cuasi-constante) y penaliza diferencias en PIP/DIP/TIP que son las que realmente reflejan cierre del dedo.
+
+**Paradoja de la abduccion**:
+
+La abduccion MCP es pequeña en magnitud angular → su contribucion a la distancia cuaterniónica `1 - dot²` es diminuta comparada con la flexion. Incluso si subiéramos el peso MCP, la señal de abduccion seguiría siendo invisible dentro del quaternion MCP porque queda ahogada por la flexion. Para capturar abduccion correctamente se necesitaria descomponer el quaternion MCP en sus dos ejes (flexion y abduccion) y pesarlos por separado.
+
+**Solucion propuesta para Run 16**:
+
+Pesos uniformes en D_R (mcp=pip=dip=1/3, tip=0) y en D_joints (mcp=pip=dip=tip=0.25). Elimina el sesgo 1/sigma que suprime MCP. MCP flexion recibe igual peso que PIP/DIP → encoder aprende a codificarla → decoder la reproduce.
+
+Abduccion sigue siendo un problema estructural no resuelto en Run 16. Requiere descomponer quaternion MCP en Run 17+.
+
+**Status**: Diagnosticado. Fix parcial (uniformes) propuesto para Run 16.

@@ -160,11 +160,11 @@ def main():
     # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
     # ---------------------------------------------------------------------------
     _sk_w = {
-        "thumb":  [0.2578, 0.5435, 0.1986, 0.0],
-        "index":  [0.3288, 0.3252, 0.3459, 0.0],
-        "middle": [0.1875, 0.3618, 0.4508, 0.0],
-        "ring":   [0.2381, 0.3574, 0.4045, 0.0],
-        "pinky":  [0.1974, 0.4050, 0.3977, 0.0],
+        "thumb":  [1.0, 1.0, 1.0, 0.0],
+        "index":  [1.0, 1.0, 1.0, 0.0],
+        "middle": [1.0, 1.0, 1.0, 0.0],
+        "ring":   [1.0, 1.0, 1.0, 0.0],
+        "pinky":  [1.0, 1.0, 1.0, 0.0],
     }
     sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
 
