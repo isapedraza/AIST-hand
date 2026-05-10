@@ -4340,3 +4340,57 @@ Abduccion sigue siendo un problema estructural no resuelto en Run 16. Requiere d
 **Posible fix futuro (Run 17+)**: Descomponer el quaternion MCP en dos ejes ortogonales (flexion y abduccion) antes de calcular D_R. Dong ya opera en frame wrist-local, por lo que los ejes de flexion y abduccion son bien definidos por dedo. Cada componente recibiria su propio escalar y su propio peso en D_R, permitiendo compensar la abduccion diminuta sin afectar la señal de flexion. Solo necesario si Run 16 (uniformes) no resuelve MCP o si la abduccion sigue sin capturarse.
 
 **Status**: Diagnosticado. Fix parcial (uniformes) implementado en Run 16. Descomposicion de ejes pendiente para Run 17+ si es necesario.
+
+---
+
+## Entry 80 -- 2026-05-09: Plan de optimizacion de velocidad de training Stage 1
+
+**Context**: Run 15 tomo ~3 horas en Colab T4 con B=50000 y 10000 steps. Sesiones Colab tienen tiempo limite, cada hora perdida es costosa. Objetivo: reducir tiempo por step sin alterar la logica matematica del entrenamiento. Diagnostico de bottlenecks via lectura de `train_cross_emb.py`, `cross_embodiment_sampler.py`, `robot_loader.py`, modulos `human_modules.py`/`shared_modules.py`/`robot_modules.py`.
+
+**Bottlenecks identificados**:
+
+1. **3 FK + Dong stage2 por step**: `sample_dong` para `q_r` (input, no necesita grad) + `run_fk(q_r_hat)` + `run_fk(q_r_hat_t1)` para L_temp (necesitan grad). pytorch-kinematics tiene overhead de Python por launch.
+2. **L_cont construye grafo autograd innecesario**: D_R, D_joints y D_ahg sobre n=2*B=100k anchors x 5 subspaces solo alimentan la seleccion `S_a <= S_b` (mascara dura via `torch.where`). El gradiente fluye unicamente a traves de `z_all_k`. Toda la cadena bmm/acos/norms aloca grafo que se descarta.
+3. **`_load_hand_config` lee YAML del disco cada step**: 3 veces (una por `run_dong_stage2`/`sample_dong`).
+4. **`run_dong_stage2` calcula mat_to_quat x 20 + block3_pip_dip por dedo aunque L_temp solo usa `tips`**: trabajo desperdiciado en el path temporal.
+5. **MLPs grandes (E_X y D_X 8 capas 256d) en fp32**: T4 tiene tensor cores fp16 sin uso.
+6. **Sin fusion de kernels**: PyTorch eager mode lanza ops una a una.
+
+**Plan en 5 commits incrementales** (cada uno revertible, testear antes de seguir):
+
+| Commit | Cambio | Archivos | Riesgo |
+|--------|--------|----------|--------|
+| A | (#1) `torch.no_grad()` envolviendo el bloque D_R/D_joints/D_ahg en L_cont. (#2) Fusionar `fk_t`+`fk_t1` en un solo `run_fk(cat([q_r_hat, q_r_hat_t1]))` y splittear el output. (#3) `torch.no_grad()` envolviendo `sample_dong` en sampler. (#5) Memoizar `_load_hand_config` por path. | `train_cross_emb.py`, `robot_loader.py`, `cross_embodiment_sampler.py` | Cero. Misma matematica. |
+| B | Script nuevo `precompute_robot_dong.py`: lee NPZ existente (`q [10M, 24]`), corre `run_fk` + `run_dong_stage2` en batches, guarda nuevo NPZ con `q` (byte-identico al original) + `quats_r` + `chain_positions` + `tips`. Extender sampler para detectar campos extra y saltar `sample_dong` runtime. NPZ original intacto. | nuevo script + `cross_embodiment_sampler.py` + `robot_loader.py` | Bajo. NPZ original intacto. Fallback con `--valid_poses_path` viejo. |
+| C | (#6) Funcion nueva `run_dong_tips_only(fk_out, config)` separada -- solo wrist frame + tips locales, sin block3 ni mat_to_quat. Usar en path L_temp donde `meta["tips"]` es lo unico leido. | `robot_loader.py`, `train_cross_emb.py` | Bajo. Funcion nueva, no modifica `run_dong_stage2`. Verificar tip math identico. |
+| D | (#7) AMP fp16 con `GradScaler`. Autocast solo MLPs (E_h, E_r, E_X, D_X, D_r). FK y Dong stage2 quedan en fp32 (pytorch-kinematics no testea bien fp16). `acos` ya clampeado a `[-1+1e-6, 1-1e-6]` -> sin riesgo de NaN. | `train_cross_emb.py` | Medio. AMP es estandar pero requiere validar que la perdida converge igual. |
+| E | (#8) `torch.compile(mode="reduce-overhead")` en E_h, E_r, E_X, D_X, D_r. Shapes estaticos garantizados (B fijo por flag, dims robot determinadas por instancia de modulo). | `train_cross_emb.py` | Bajo. Si rompe, borrar 5 lineas y volver a eager. |
+
+**Sobre regeneracion de NPZ (Commit B)**:
+
+No es regeneracion de poses. NPZ activo es `valid_robot_poses_eigengrasp.npz` (10M poses, 782 MB, solo `q [10M, 24] float32`). El script nuevo lee `q` tal cual y solo agrega columnas derivadas. Garantias:
+
+- `q` byte-identico al original. Mismo orden, mismo indice.
+- Sampler con seed=X devuelve mismas poses que antes.
+- Dong features nuevos = exactamente lo que `sample_dong` calculaba runtime, solo cacheado.
+- Si algo huele raro, cambiar `--valid_poses_path` y volver al comportamiento previo.
+- Storage estimado: q (1 GB) + quats (3.2 GB) + chain (2.4 GB) + tips (0.6 GB) ~ 7 GB para 10M poses. Si grande, sampleamos a 1M (~700 MB).
+
+**Sobre AMP y torch.compile en arquitectura multi-robot (futuro)**:
+
+- E_h, E_X, D_X son robot-agnostic (shapes `[B, 1024]`, `[B, 80]`, etc. independientes de J). Mismo compile sirve para todos los robots.
+- E_r, D_r son robot-specific (J difiere). Cada robot tiene su propia instancia -> cada instancia se compila una vez con su propio J. No hay conflicto entre robots.
+- Por run de Stage 1 actual: un solo robot (Shadow Hand). Sin problema.
+
+**Estimaciones de tiempo para 10k steps a B=50k en T4**:
+
+- Baseline (Run 15): 3h
+- Despues Commit A: ~1.7h
+- Despues Commit B: ~1.2h
+- Despues Commit C: ~1.0h
+- Despues Commit D: ~0.6h
+- Despues Commit E: ~0.5h
+
+**Garantia general**: ningun commit modifica la formulacion de las losses (L_rec, L_ltc, L_cont, L_temp), pesos `lambda_*`, hyperparams, ordenes de operacion, ni la matematica de FK/Dong. Solo elimina trabajo redundante o usa precision/compilacion equivalentes.
+
+**Status**: Plan aprobado. Pendiente ejecutar Commit A.
