@@ -4394,3 +4394,68 @@ No es regeneracion de poses. NPZ activo es `valid_robot_poses_eigengrasp.npz` (1
 **Garantia general**: ningun commit modifica la formulacion de las losses (L_rec, L_ltc, L_cont, L_temp), pesos `lambda_*`, hyperparams, ordenes de operacion, ni la matematica de FK/Dong. Solo elimina trabajo redundante o usa precision/compilacion equivalentes.
 
 **Status**: Plan aprobado. Pendiente ejecutar Commit A.
+
+---
+
+## Entry 81 -- 2026-05-09: Stage 1 speed optimization -- commits A-E aplicados
+
+**Context**: Plan de Entry 80 ejecutado en 5 commits incrementales. Cada commit verificado con smoke test local CPU (B=32, 3 steps) + parity tests donde aplicaba. Run 16 lanzado en Colab T4 con NPZ Dong precomputado.
+
+**Commits realizados** (todos en `origin/main`):
+
+1. **Commit A** -- `Stage 1 speed optimization commit A: no_grad blocks, FK fusion, config cache`
+   - `train_cross_emb.py`: bloque D_R/D_joints/D_ahg en L_cont envuelto en `torch.no_grad()`. FK de L_temp fusionado: `run_fk(cat([q_r_hat, q_r_hat_t1]))` + split.
+   - `cross_embodiment_sampler.py`: `torch.no_grad()` envolviendo `sample_dong`.
+   - `robot_loader.py`: `_load_hand_config` memoizado por path resuelto.
+
+2. **Commit B** -- `Stage 1 speed optimization commit B: precomputed robot Dong cache`
+   - Script nuevo `grasp-model/scripts/precompute_robot_dong.py`. Lee NPZ q-only, corre FK + stage2 en batches GPU, guarda nuevo NPZ con `q` + `quats` + `chain` + `tips` + `joint_labels` + `tip_labels` + `hand_config` + `hand_length`. Original NPZ intacto.
+   - `robot_loader.py`: detecta campos extra al cargar NPZ -> modo `DONG_CACHE`. `sample_dong` indexa cache si presente, fallback a runtime FK si no.
+   - Notebook nuevo `grasp-model/notebooks/precompute_dong_colab.ipynb` para ejecutar precompute en Colab T4.
+   - Verificacion: parity 0.0 (byte-identico) entre cached y runtime sobre 8 poses random.
+
+3. **Commit C** -- `Stage 1 speed optimization commit C: lightweight tips-only Dong for L_temp`
+   - `robot_loader.py`: nueva `run_dong_tips_only(fk_out, hand_config_path)`. Solo wrist frame + tips locales normalizados. Skip `mat_to_quat` x 15 + block3 calls + chain stack.
+   - `train_cross_emb.py`: path L_temp usa `run_dong_tips_only` en vez de `run_dong_stage2`.
+   - Verificacion: parity 0.0 vs `run_dong_stage2["tips"]` sobre 16 poses random.
+
+4. **Commit D** -- `Stage 1 speed optimization commit D: AMP fp16 + GradScaler`
+   - `train_cross_emb.py`: flag `--amp/--no-amp` (default true en CUDA, auto-disabled en CPU). `torch.cuda.amp.autocast(dtype=fp16)` envuelve E_h/E_r/E_X/D_X/D_r forward + L_rec + L_ltc. `q_r_hat.float()` explicito antes de FK (FK queda en fp32). Backward con `GradScaler.scale().backward() -> unscale_ -> clip -> step -> update`.
+
+5. **Commit E** -- `Stage 1 speed optimization commit E: torch.compile on MLP modules`
+   - `train_cross_emb.py`: flag `--compile/--no-compile` (default true en CUDA). `torch.compile(mode='reduce-overhead')` aplicado a E_h/E_r/E_X/D_X/D_r despues de load de `resume_ckpt`. Helper `_sd(m) = getattr(m, '_orig_mod', m).state_dict()` para guardar checkpoints sin prefijo OptimizedModule. Resume desde checkpoint compilado a eager (y viceversa) funciona.
+
+**Bonus commit** (notebook stage1):
+- `Stage 1 colab notebook: point to precomputed Dong NPZ`
+- `train_stage1_colab.ipynb`: `VALID_POSES_PATH` apunta a `valid_robot_poses_eigengrasp_dong.npz` en vez del NPZ q-only.
+
+**Generacion del NPZ Dong en Colab T4**:
+- Input: `valid_robot_poses_eigengrasp.npz` (10M poses, 745 MB).
+- Output: `valid_robot_poses_eigengrasp_dong.npz` (5.92 GiB / 6.36 GB decimal).
+- Tiempo: 4.2 min en T4 con `batch_size=50000`.
+- Parity test post-generacion: 0.0 en quats/tips/chain (todos los dedos).
+
+**Resultados Run 16 parciales** (en curso al momento de escribir):
+- Logs muestran `[RobotLoader] mode=DONG_CACHE`, `AMP: enabled (fp16)`, `torch.compile: enabled (mode=reduce-overhead)`. Las tres optimizaciones activas.
+- Step 800 a ~9m 22s elapsed (incluye setup ~2-3 min). Training puro ~0.4-0.5 sec/step estimado.
+- Run 15 baseline: 1.08 sec/step. Speedup observado ~50-60%.
+- Proyeccion 10k steps: ~80-90 min vs Run 15 = 180 min. Ahorra ~1.5h por run.
+- Losses sanos: cont=0.13, rec=0.2-0.3, ltc=0.2, temp=0.3. Sin NaN/Inf, sin divergencia.
+
+**Lo que NO cambio**:
+- Formulacion de losses (L_rec, L_ltc, L_cont, L_temp).
+- Hyperparams (lambda_*, w_*, margin, lr, T_0, etc.).
+- Arquitectura de los modulos (E_h CAM-GNN, E_r/D_r linear, E_X/D_X 8 capas 256d).
+- Sampling de batches (humano random + robot eigengrasp).
+- Seeds determinismo (cuando se setean).
+
+**Flags de escape** disponibles si AMP o compile dan problema:
+- `--no-amp` desactiva fp16, vuelve a fp32 puro.
+- `--no-compile` desactiva torch.compile, vuelve a eager.
+- Apuntar `--valid_poses_path` al NPZ q-only viejo desactiva DONG_CACHE.
+
+**Documentos relacionados**:
+- Plan completo: Entry 80.
+- Pointer en memoria: `project_stage1_speed_plan.md` indexado en MEMORY.md.
+
+**Status**: Implementado y pusheado. Run 16 corriendo en Colab al momento de escribir, on track para completar 10k steps en ~80-90 min.
