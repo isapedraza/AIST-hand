@@ -276,11 +276,6 @@ class RobotLoader:
         self.specs_in_chain_order = self._build_specs_in_chain_order()
 
         # Sampling mode: NPZ pool or random uniform.
-        # If NPZ also contains precomputed Dong fields (quats / chain / tips +
-        # joint_labels / tip_labels), enter DONG_CACHE mode and skip runtime
-        # FK/stage2 in sample_dong. Generate that NPZ via
-        # `precompute_robot_dong.py` from an existing q-only NPZ.
-        self._dong_cache: dict | None = None
         if valid_poses_path is not None:
             p = Path(valid_poses_path).expanduser().resolve()
             if not p.exists():
@@ -290,30 +285,7 @@ class RobotLoader:
                 )
             data = np.load(p)
             self._valid_poses = torch.from_numpy(data["q"]).to(self.device)
-            cache_keys = ("quats", "chain", "tips", "joint_labels", "tip_labels")
-            if all(k in data.files for k in cache_keys):
-                quats_np  = data["quats"]
-                chain_np  = data["chain"]
-                tips_np   = data["tips"]
-                joint_labels = [str(s) for s in data["joint_labels"]]
-                tip_labels   = [str(s) for s in data["tip_labels"]]
-                cached_cfg = str(data["hand_config"]) if "hand_config" in data.files else None
-                self._dong_cache = {
-                    "quats": torch.from_numpy(quats_np).to(self.device),
-                    "chain": torch.from_numpy(chain_np).to(self.device),
-                    "tips":  torch.from_numpy(tips_np).to(self.device),
-                    "joint_labels": joint_labels,
-                    "tip_labels":   tip_labels,
-                    "hand_config":  cached_cfg,
-                }
-                print(
-                    f"[RobotLoader] mode=DONG_CACHE  path={p}  n_poses={len(self._valid_poses):,}  "
-                    f"quats={tuple(quats_np.shape)} chain={tuple(chain_np.shape)} tips={tuple(tips_np.shape)}"
-                )
-                if cached_cfg is not None:
-                    print(f"[RobotLoader] cached hand_config={cached_cfg}")
-            else:
-                print(f"[RobotLoader] mode=VALID_NPZ  path={p}  n_poses={len(self._valid_poses):,}")
+            print(f"[RobotLoader] mode=VALID_NPZ  path={p}  n_poses={len(self._valid_poses):,}")
         else:
             self._valid_poses = None
             print(f"[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)")
@@ -524,25 +496,8 @@ class RobotLoader:
             q            : Tensor[B, J]    sampled joint angles
             quats        : Tensor[B, N, 4] Dong quaternions (wxyz, w>=0)
             joint_labels : list[str]
-            meta         : dict (tips [B,F,3] normalized, tip_labels, chain_positions)
+            meta         : dict (R_wrist, tips [B,F,3] normalized, hand_length, tip_labels)
         """
-        if self._dong_cache is not None and self._valid_poses is not None:
-            if seed is not None:
-                torch.manual_seed(int(seed))
-            idx = torch.randint(0, len(self._valid_poses), (num_samples,), device=self.device)
-            q     = self._valid_poses[idx]
-            quats = self._dong_cache["quats"][idx]
-            chain = self._dong_cache["chain"][idx]                       # [B, F, 4, 3]
-            tips  = self._dong_cache["tips"][idx]                        # [B, F, 3]
-            tip_labels = self._dong_cache["tip_labels"]
-            chain_positions = {f: chain[:, fi] for fi, f in enumerate(tip_labels)}
-            meta = {
-                "tips":            tips,
-                "tip_labels":      tip_labels,
-                "chain_positions": chain_positions,
-            }
-            return q, quats, self._dong_cache["joint_labels"], meta
-
         q, _ = self.sample_q(num_samples, seed)
         fk_out = self.run_fk(q)
         config = _load_hand_config(hand_config_path)
