@@ -18,10 +18,26 @@ Usage (Colab):
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from pathlib import Path
 
+import numpy as np
 import torch
+
+
+def _set_seed(seed: int) -> None:
+    """Fix all RNG sources used by the training pipeline.
+
+    Covers: python random, numpy, torch CPU, torch CUDA (all devices).
+    Sampler uses torch.randint/torch.rand -> respects torch global RNG.
+    cudnn determinism intentionally not forced (MLP-only forward, no convs).
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 # ---------------------------------------------------------------------------
 # Args
@@ -84,11 +100,24 @@ def _parse_args() -> argparse.Namespace:
         default=True,
         help="Wrap E_h/E_r/E_X/D_X/D_r with torch.compile(mode='reduce-overhead'). Auto-disabled on CPU and on torch < 2.0.",
     )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Global seed. Fixes torch/numpy/python RNG. Sampler uses torch.randint/torch.rand so it's covered.",
+    )
     return p.parse_args()
 
 
 def main():
     args = p = _parse_args()
+
+    # Fix RNG before anything that consumes it: sampler instantiation,
+    # model weight init, batch sampling, autograd-side noise. Must run
+    # before `from cross_embodiment_sampler import ...` triggers any
+    # module-level randomness too (currently none, but cheap insurance).
+    _set_seed(args.seed)
+    print(f"Seed: {args.seed}")
 
     REPO_ROOT = Path(args.repo_root)
     DEX_ROOT  = Path(args.dex_root)
@@ -430,6 +459,7 @@ def main():
 
         ckpt_payload = {
             "step": step,
+            "seed": args.seed,
             "E_h":  _sd(E_h),
             "E_r":  _sd(E_r),
             "E_X":  _sd(E_X),
