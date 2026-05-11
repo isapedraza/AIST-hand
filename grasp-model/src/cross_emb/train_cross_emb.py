@@ -137,7 +137,7 @@ def main():
         f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} "
         f"| triplets={triplet_mode} | margin={args.margin}"
     )
-    print(f"zero_wrj={args.zero_wrj} | scheduler=CosineWarmRestarts(T_0={args.T_0}) | resume={args.resume_ckpt or 'none'}")
+    print(f"zero_wrj={args.zero_wrj} | scheduler=none (Yan-pure, constant lr={args.lr}) | resume={args.resume_ckpt or 'none'}")
 
     # Add scripts to path
     sys.path.insert(0, str(REPO_ROOT / "grasp-model/scripts"))
@@ -210,9 +210,9 @@ def main():
         list(D_r.parameters()),
         lr=args.lr,
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-        optimizer, T_0=args.T_0, eta_min=1e-5
-    )
+    # Yan et al. (2026) replication: Adam with constant LR, no scheduler.
+    # Tanh saturation at latent output provides implicit late-stage damping.
+    # `--T_0` and `--lr_warmup` flags retained for backward compat but unused.
 
     use_amp = bool(args.amp) and DEVICE == "cuda"
     scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
@@ -454,8 +454,7 @@ def main():
         scaler.step(optimizer)
         scaler.update()
 
-        if step > args.lr_warmup:
-            scheduler.step(step - args.lr_warmup)
+        # Constant LR: no scheduler.step().
 
         ckpt_payload = {
             "step": step,
