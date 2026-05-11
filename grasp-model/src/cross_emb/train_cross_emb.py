@@ -459,6 +459,7 @@ def main():
         ckpt_payload = {
             "step": step,
             "seed": args.seed,
+            "config": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
             "E_h":  _sd(E_h),
             "E_r":  _sd(E_r),
             "E_X":  _sd(E_X),
