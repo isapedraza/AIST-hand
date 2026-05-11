@@ -106,6 +106,24 @@ def _parse_args() -> argparse.Namespace:
         default=42,
         help="Global seed. Fixes torch/numpy/python RNG. Sampler uses torch.randint/torch.rand so it's covered.",
     )
+    p.add_argument(
+        "--val_every",
+        type=int,
+        default=500,
+        help="Evaluate on val split every N steps. 0 disables val. Best-by-val ckpt saved separately.",
+    )
+    p.add_argument(
+        "--n_eval_batches",
+        type=int,
+        default=20,
+        help="Number of batches to sample per eval pass.",
+    )
+    p.add_argument(
+        "--b_eval",
+        type=int,
+        default=5000,
+        help="Batch size for eval (val/test). Smaller than train --b for speed.",
+    )
     return p.parse_args()
 
 
@@ -165,6 +183,24 @@ def main():
     _probe = sampler.get_batch_temporal(1)
     J      = _probe["q_r"].shape[1]
     print(f"Robot joints J={J}")
+
+    # ---------------------------------------------------------------------------
+    # Val sampler (HOGraspNet S1 split: subjects 1-10, held out for selection).
+    # Mid-training eval saves best-by-val ckpt without touching test split.
+    # ---------------------------------------------------------------------------
+    val_sampler = None
+    if args.val_every and args.val_every > 0:
+        val_sampler = CrossEmbodimentSampler(
+            csv_path         = CSV_PATH,
+            urdf_path        = URDF_PATH,
+            hand_config_path = HAND_CONFIG,
+            split            = "val",
+            device           = DEVICE,
+            valid_poses_path = args.valid_poses_path,
+            extra_human_csv  = None,           # HaGRID anchors are train-only
+            extra_human_ratio= 0.0,
+        )
+        print(f"Val sampler: split=val, eval every {args.val_every} steps over {args.n_eval_batches} batches of B={args.b_eval}.")
 
     # ---------------------------------------------------------------------------
     # Models
@@ -253,11 +289,128 @@ def main():
         return getattr(m, "_orig_mod", m).state_dict()
 
     # ---------------------------------------------------------------------------
+    # Eval helper -- runs retargeting on val/test split and returns RS/NDS/NVS.
+    #
+    # Metrics (adapted from Yan et al. 2026 Sec. 4.3.1 for hand domain):
+    #   RS  = sum_j (1 - <q_h_j, q_r_j>^2)        (D_R, per-joint quaternion sim)
+    #   NDS = sum over (Fc, 4) of ||p_h - p_r||   (D_joints over chain, not just EE)
+    #   NVS = ||v_h_tips - v_r_tips||_2           (per-fingertip velocity diff)
+    #
+    # Differences vs Yan:
+    #   - RS uses uniform sum (no Jarque-Bou weights here -- weights are for the
+    #     contrastive triplet selection during training, not for eval comparison).
+    #   - NDS uses 4 chain positions per finger (mcp,pip,dip,tip) instead of 1 EE.
+    #   - NVS averages over 5 fingertips instead of 1 hand EE.
+    #
+    # No gradient. Compatible with torch.compile-wrapped modules via _orig_mod.
+    # ---------------------------------------------------------------------------
+    def _compute_eval_metrics(eval_sampler, n_batches: int, b_eval: int) -> dict | None:
+        if eval_sampler is None:
+            return None
+        E_h_ = getattr(E_h, "_orig_mod", E_h)
+        E_r_ = getattr(E_r, "_orig_mod", E_r)
+        E_X_ = getattr(E_X, "_orig_mod", E_X)
+        D_X_ = getattr(D_X, "_orig_mod", D_X)
+        D_r_ = getattr(D_r, "_orig_mod", D_r)
+        rs_sum = nds_sum = nvs_sum = 0.0
+        rec_sum = 0.0
+        n_done = 0
+        human_labels_global = ["thumb", "index", "middle", "ring", "pinky"]
+        for m in (E_h_, E_r_, E_X_, D_X_, D_r_):
+            m.eval()
+        with torch.no_grad():
+            for _ in range(n_batches):
+                batch = eval_sampler.get_batch_temporal(b_eval)
+                quats_h        = batch["quats_h"]
+                quats_h_t1     = batch["quats_h_t1"]
+                quats_h_sub    = batch["quats_h_sub"]
+                chain_h_sub    = batch["chain_h_sub"]
+                tips_h_sub     = batch["tips_h_sub"]
+                tips_h_t1      = batch["tips_h_t1"]
+                q_r_data       = batch["q_r"]
+                common_fingers = batch["common_fingers"]
+                common_labels  = batch["common_labels"]
+
+                # Retarget: human Dong -> latent -> robot joint angles.
+                z_t        = E_h_(quats_h)
+                z_t1       = E_h_(quats_h_t1)
+                q_r_hat    = D_r_(D_X_(z_t)).float()
+                q_r_hat_t1 = D_r_(D_X_(z_t1)).float()
+                if args.zero_wrj:
+                    q_r_hat    = q_r_hat.clone();    q_r_hat[:, 0:2]    = 0.0
+                    q_r_hat_t1 = q_r_hat_t1.clone(); q_r_hat_t1[:, 0:2] = 0.0
+
+                # FK + full Dong stage2 for both timesteps (need quats+chain+tips).
+                B = q_r_hat.shape[0]
+                q_combined = torch.cat([q_r_hat, q_r_hat_t1], dim=0)
+                fk_combined = eval_sampler.robot_rnd.run_fk(q_combined)
+                quats_r_all, joint_labels_r, meta_r = eval_sampler.robot_rnd.run_dong_stage2(
+                    fk_combined, HAND_CONFIG
+                )
+
+                # Subset robot Dong outputs to common joints/fingers.
+                joint_idx_r = [joint_labels_r.index(l) for l in common_labels]
+                quats_r_sub_t = quats_r_all[:B, joint_idx_r]                  # [B, Jk, 4]
+                # Align hemispheres (w>=0 not guaranteed match per pair).
+                sign = torch.sign((quats_h_sub * quats_r_sub_t).sum(-1, keepdim=True))
+                sign = torch.where(sign == 0, torch.ones_like(sign), sign)
+                quats_r_sub_t = quats_r_sub_t * sign
+
+                # RS: D_R uniform sum (Yan eq 1).
+                dot = (quats_h_sub * quats_r_sub_t).sum(-1)                    # [B, Jk]
+                rs  = (1 - dot ** 2).sum(-1).mean().item()
+
+                # NDS: chain L2 over 4 positions per finger (hand domain adaptation).
+                chain_r_dict = meta_r["chain_positions"]
+                chain_r_t = torch.stack(
+                    [chain_r_dict[f][:B] for f in common_fingers], dim=1
+                )                                                              # [B, Fc, 4, 3]
+                nds = (chain_h_sub - chain_r_t).norm(dim=-1).sum(dim=(-2, -1)).mean().item()
+
+                # NVS: per-fingertip velocity diff.
+                tips_r_all = meta_r["tips"]                                    # [2B, F, 3]
+                tip_labels_r = meta_r["tip_labels"]
+                tip_idx_r  = [tip_labels_r.index(f) for f in common_fingers]
+                tip_idx_h  = [human_labels_global.index(f) for f in common_fingers]
+                tips_r_t   = tips_r_all[:B, tip_idx_r]
+                tips_r_t1  = tips_r_all[B:, tip_idx_r]
+                tips_h_t1_sub = tips_h_t1[:, tip_idx_h]
+                v_h = tips_h_t1_sub - tips_h_sub
+                v_r = tips_r_t1   - tips_r_t
+                nvs = (v_h - v_r).norm(dim=-1).mean().item()
+
+                # L_rec on data pair: how well does the decoder reconstruct sampled q_r?
+                z_r_       = E_X_(E_r_(q_r_data))
+                q_r_hat_rd = D_r_(D_X_(z_r_))
+                rec        = (q_r_data - q_r_hat_rd).norm(dim=-1).mean().item()
+
+                rs_sum  += rs
+                nds_sum += nds
+                nvs_sum += nvs
+                rec_sum += rec
+                n_done  += 1
+        for m in (E_h_, E_r_, E_X_, D_X_, D_r_):
+            m.train()
+        if n_done == 0:
+            return None
+        return {
+            "rs":  rs_sum  / n_done,
+            "nds": nds_sum / n_done,
+            "nvs": nvs_sum / n_done,
+            "rec": rec_sum / n_done,
+            "n_batches": n_done,
+            "b_eval": b_eval,
+        }
+
+    # ---------------------------------------------------------------------------
     # Training loop
     # ---------------------------------------------------------------------------
     CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
     BEST_TOTAL_PATH = CKPT_PATH.parent / "stage1_best_total.pt"
-    best_total = float("inf")
+    BEST_VAL_PATH   = CKPT_PATH.parent / "stage1_best_val.pt"
+    best_total      = float("inf")
+    best_val_score  = float("inf")
+    last_val_metrics: dict | None = None
 
     for step in range(args.n_steps):
 
@@ -479,6 +632,31 @@ def main():
             best_total = L_total.item()
             torch.save(ckpt_payload, BEST_TOTAL_PATH)
 
+        # Val eval: every `args.val_every` steps (skip step 0).
+        if val_sampler is not None and step > 0 and step % args.val_every == 0:
+            last_val_metrics = _compute_eval_metrics(
+                val_sampler, args.n_eval_batches, args.b_eval
+            )
+            if last_val_metrics is not None:
+                # Combined score: RS + NDS + λ_tmp * NVS. Lower is better.
+                score = (
+                    last_val_metrics["rs"]
+                    + last_val_metrics["nds"]
+                    + args.lambda_tmp * last_val_metrics["nvs"]
+                )
+                print(
+                    f"[step {step:05d}] VAL rs={last_val_metrics['rs']:.4f} "
+                    f"nds={last_val_metrics['nds']:.4f} nvs={last_val_metrics['nvs']:.4f} "
+                    f"rec={last_val_metrics['rec']:.4f} score={score:.4f}"
+                    f"{' *best_val' if score < best_val_score else ''}"
+                )
+                if score < best_val_score:
+                    best_val_score = score
+                    val_payload = dict(ckpt_payload)
+                    val_payload["val_metrics"] = last_val_metrics
+                    val_payload["val_score"]   = score
+                    torch.save(val_payload, BEST_VAL_PATH)
+
         if step % args.log_every == 0:
             lr_now = optimizer.param_groups[0]["lr"]
             best_flag = " *best_total" if L_total.item() == best_total else ""
@@ -517,6 +695,44 @@ def main():
                 },
                 "optimizer": optimizer.state_dict(),
             }, CKPT_PATH)
+
+    # ---------------------------------------------------------------------------
+    # Final test eval (HOGraspNet S1 split, subjects 74-99, held out for reporting).
+    # Computed once after training. Saved alongside the best-val checkpoint.
+    # ---------------------------------------------------------------------------
+    print("\n=== Final test eval (subjects 74-99) ===")
+    test_sampler = CrossEmbodimentSampler(
+        csv_path         = CSV_PATH,
+        urdf_path        = URDF_PATH,
+        hand_config_path = HAND_CONFIG,
+        split            = "test",
+        device           = DEVICE,
+        valid_poses_path = args.valid_poses_path,
+        extra_human_csv  = None,
+        extra_human_ratio= 0.0,
+    )
+    test_metrics = _compute_eval_metrics(test_sampler, args.n_eval_batches, args.b_eval)
+    if test_metrics is not None:
+        score = test_metrics["rs"] + test_metrics["nds"] + args.lambda_tmp * test_metrics["nvs"]
+        print(
+            f"TEST rs={test_metrics['rs']:.4f} nds={test_metrics['nds']:.4f} "
+            f"nvs={test_metrics['nvs']:.4f} rec={test_metrics['rec']:.4f} score={score:.4f}"
+        )
+
+        # Annotate best-val ckpt with test metrics for final reporting.
+        if BEST_VAL_PATH.exists():
+            ck = torch.load(BEST_VAL_PATH, map_location="cpu", weights_only=False)
+            ck["test_metrics"] = test_metrics
+            ck["test_score"]   = score
+            torch.save(ck, BEST_VAL_PATH)
+            print(f"Test metrics annotated on {BEST_VAL_PATH}.")
+        # Also annotate best-total ckpt.
+        if BEST_TOTAL_PATH.exists():
+            ck = torch.load(BEST_TOTAL_PATH, map_location="cpu", weights_only=False)
+            ck["test_metrics"] = test_metrics
+            ck["test_score"]   = score
+            torch.save(ck, BEST_TOTAL_PATH)
+            print(f"Test metrics annotated on {BEST_TOTAL_PATH}.")
 
     print("done")
 
