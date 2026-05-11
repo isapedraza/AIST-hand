@@ -190,14 +190,20 @@ def main():
     # ---------------------------------------------------------------------------
     val_sampler = None
     if args.val_every and args.val_every > 0:
+        # Val sampler: skip valid_poses NPZ to avoid loading the ~6 GB DONG_CACHE
+        # tensor into GPU memory twice (train sampler already has it). RobotLoader
+        # falls back to mode=RANDOM_UNIFORM for robot anchor poses. The metrics
+        # (rs/nds/nvs) only depend on human poses + retargeted robot FK -- the
+        # robot anchor distribution does not affect them. Only `rec` (reconstruction
+        # of sampled q_r) is mildly affected.
         val_sampler = CrossEmbodimentSampler(
             csv_path         = CSV_PATH,
             urdf_path        = URDF_PATH,
             hand_config_path = HAND_CONFIG,
             split            = "val",
             device           = DEVICE,
-            valid_poses_path = args.valid_poses_path,
-            extra_human_csv  = None,           # HaGRID anchors are train-only
+            valid_poses_path = None,
+            extra_human_csv  = None,
             extra_human_ratio= 0.0,
         )
         print(f"Val sampler: split=val, eval every {args.val_every} steps over {args.n_eval_batches} batches of B={args.b_eval}.")
@@ -707,7 +713,7 @@ def main():
         hand_config_path = HAND_CONFIG,
         split            = "test",
         device           = DEVICE,
-        valid_poses_path = args.valid_poses_path,
+        valid_poses_path = None,           # avoid GPU OOM from double DONG_CACHE
         extra_human_csv  = None,
         extra_human_ratio= 0.0,
     )
