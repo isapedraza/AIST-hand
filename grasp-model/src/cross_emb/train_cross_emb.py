@@ -103,8 +103,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="Global seed. Fixes torch/numpy/python RNG. Sampler uses torch.randint/torch.rand so it's covered.",
+        default=-1,
+        help="Global seed. -1 (default) picks a random seed and logs it. Fixes torch/numpy/python RNG.",
     )
     p.add_argument(
         "--val_every",
@@ -134,8 +134,13 @@ def main():
     # model weight init, batch sampling, autograd-side noise. Must run
     # before `from cross_embodiment_sampler import ...` triggers any
     # module-level randomness too (currently none, but cheap insurance).
+    # seed=-1 -> pick random seed and log it for reproducibility.
+    if args.seed < 0:
+        args.seed = random.randint(0, 99_999)
+        print(f"Seed: {args.seed} (auto-generated)")
+    else:
+        print(f"Seed: {args.seed}")
     _set_seed(args.seed)
-    print(f"Seed: {args.seed}")
 
     REPO_ROOT = Path(args.repo_root)
     DEX_ROOT  = Path(args.dex_root)
