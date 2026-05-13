@@ -1,234 +1,216 @@
-# HANDOFF — Stage 1 Retargeter
+# HANDOFF -- Stage 1 Retargeter
 
-Last updated: 2026-05-12
+Last updated: 2026-05-13
 Author: Yahel + Claude session
-Current branch: `run19-yan-pure` (pushed to origin)
+Current branch: `experimental` (pushed to origin, ahead of main)
 Para Modelo 2 (retargeter). Para Modelo 1 (clasificador) ver `HANDOFF.md`.
 
 ---
 
 ## Problema original (no resuelto)
 
-**MCP no cierra correctamente** ni siquiera en el mejor modelo (`Run 20`).
-Los dedos no logran flexion completa en la articulacion metacarpofalangica.
-Persiste desde Run 14. Documented en DECISIONS.md Entry 79.
+**MCP no cierra correctamente** en ningun run (1-20).
+Persiste como problema estructural de D_R formulation.
+Ver DECISIONS.md Entry 79.
 
-Causa hipotetica (no confirmada): D_R formulation usa quaternion completo
-sin separar eje de flexion vs eje de abduccion. Decoder satisface D_R via
-abduccion (rango chico, facil) en vez de flexion (rango grande, dificil).
-
-Fix propuesto pendiente: **MCP axis decomposition** -- descomponer quaternion
-MCP en `q_flex` + `q_abd` antes de calcular D_R. Cada eje recibe escalar
-y peso propio. Ver DECISIONS.md Entry 79 (final del entry).
+Causa hipotetica (en investigacion): D_R con quaternion completo mezcla
+eje de flexion + eje de abduccion. Decoder satisface D_R via abduccion
+(rango chico) en vez de flexion (rango grande).
 
 ---
 
-## Que se intento (Runs 17 -> 20)
+## Mejor modelo actual: Run 20
 
-### Punto inicial
-- Run 15b: mejor modelo cualitativo. Coordinacion entre dedos suave, pero MCP no cierra.
-- Run 15b entreno con random seed (no logged), config 1/sigma D_R + speed opts off + CosineWarmRestarts.
-
-### Secuencia ejecutada
-
-| Run | Cambios | Resultado |
-|-----|---------|-----------|
-| 17 | Revert D_R a 1/sigma + speed opts on, seed=none | Decente |
-| 18 | + seed=42 fijo | Dedos separados (indice+medio vs anular+meñique) |
-| 18b | Speed opts revertidos, seed=42 | Identico a Run 18 (speed opts safe) |
-| 19 | Yan-pure constant LR + speed opts, seed=42 | Pulgar mejor, dedos siguen mal |
-| **20** | Yan-pure + seed=-1 (random) | **MEJOR MODELO. Seed=21266, step=11k. Mano abierta, puno, seguimiento, abduccion.** |
-
-### Conclusiones consolidadas (DECISIONS.md Entry 82-83)
-
-1. **Speed opts A-E confirmados math-safe**. Cache Dong NPZ bit-exact vs runtime (0.0 diff sobre 500 poses). AMP fp16 + torch.compile no afectan basin.
-2. **Indexing fix (84c820050 + 7981d9c4f) en todos Run 15+**. No es variable.
-3. **CosineWarmRestarts no era unica causa**. Run 19 sin restarts sigue malo con seed=42.
-4. **Seed=42 cae en mal basin**. Tres configuraciones diferentes, mismo failure.
-5. **Run 15b fue init aleatorio afortunado**, no merito del codigo. No reproducible (seed nunca loggeada).
-6. **MCP problem es ortogonal**. Persiste en TODOS los runs, buen o mal basin. Es problema estructural de D_R formulation, no de seed/scheduler/speed.
-7. **Seed variance CONFIRMADA (Entry 83)**. Run 20 seed=21266 produce mejor modelo cualitativo de todos los runs: mano abierta, puno cerrado, seguimiento open/close, abduccion de dedos.
+- Seed: 21266, step: 11000
+- Branch: `run19-yan-pure` (mergeado a main, a su vez a experimental)
+- Metricas test: RS=0.320, NDS=2.261, NVS=0.088
+- Cualitativo: mano abierta, puno cerrado, seguimiento open/close, abduccion dedos
+- Ckpt: `~/Downloads/stage1_best_total(4).pt` (o el nombre que descargaste de Colab)
+- REPRODUCIBLE: seed=21266 fija
 
 ---
 
-## Estado actual del codigo
+## Lo que se hizo en esta sesion (2026-05-13)
 
-### Branch `run19-yan-pure` en origin
+### Branch `experimental`
 
-Pipeline consolidado:
-- **Adam constant lr=1e-3** (Yan-pure, sin scheduler ni warmup)
-- **Speed opts activos** (AMP fp16 + torch.compile + Dong NPZ cache)
-- **Seed flag** `--seed -1` (random, default) | `--seed N` (fijo)
-- **Seed loggeado** en `ckpt['seed']`
-- **Config completo** en `ckpt['config']` (todos hyperparams)
-- **Val mid-training** cada 500 steps (subjects 1-10, S1 split). Best por val score.
-- **Test al final** (subjects 74-99). Anotado en ambos best_total y best_val.
-- **Metrics**: RS (rotation similarity), NDS (normalized distance), NVS (normalized velocity). Adaptadas Yan eq 1/2/loss_v para dominio mano.
+`experimental` = `main` + todo lo siguiente. Es donde trabajamos ahora.
 
-Files clave:
-- `grasp-model/src/cross_emb/train_cross_emb.py`: training script
-- `grasp-model/scripts/cross_embodiment_sampler.py`: sampler con split support
-- `grasp-model/scripts/human_loader.py`: HOGraspNet loader con S1 split
-- `grasp-model/scripts/robot_loader.py`: RobotLoader con DONG_CACHE / RANDOM_UNIFORM modes
-- `grasp-model/notebooks/train_stage1_colab.ipynb`: notebook Colab, auto-checkout branch
+### Run 21 (listo para correr)
 
-### Commits relevantes en `run19-yan-pure`
+Config en `train_stage1_colab.ipynb` con `RUN = 21`:
+- CSV: `hograspnet_abl11.csv`
+- NPZ: `valid_robot_poses_eigengrasp_dong.npz` (el viejo, ya en Drive)
+- MCP D_R weight = 0.5 (boost manual vs 1/sigma baseline)
+- Seed: 21266 (fija)
+- 15k steps, B=50k
 
+### Run 22 (infraestructura lista, esperando NPZ)
+
+**Idea**: reemplazar D_R quaternion por D_R basado en angulos Dong Eq.24.
+En vez de `1 - dot^2`, usar `|beta_a - beta_b|` y `|gamma_a - gamma_b|`
+ponderados por 1/sigma calculado desde abl13.
+
+**Implementado** (todos commits en `experimental`, pusheados):
+
+| Commit | Que hace |
+|--------|----------|
+| `3e7850b8a` | Agrega extraccion de angulos MCP/PIP/DIP en `robot_loader._dong_run_stage2` y `precompute_robot_dong.py` |
+| `73f6fa938` | `compute_sk_weights_euler.py`: calcula pesos 1/sigma desde abl13 |
+| `fb8f5d984` | DECISIONS Entry 84: plan Run 21 + Run 22 |
+| `5a74bdf84` | Training code completo: `human_loader`, `robot_loader`, `cross_embodiment_sampler`, `train_cross_emb` |
+| `3a311aee3` | Fix notebook precompute: clona `experimental` no `main` |
+| `8402e6baa` | Validacion en `precompute_robot_dong.py`: crashea + borra NPZ si faltan angle keys |
+| `350350308` | Validacion en notebook cell-16: idem |
+
+**Archivos modificados para Run 22**:
+
+- `grasp-model/scripts/human_loader.py`: carga columnas `beta*_deg/gamma*_deg` de abl13. Si no existen (abl11), `_has_euler=False` (backward compat). Expone `mcp_angles [B,5,2]`, `pip_angles [B,5]`, `dip_angles [B,5]` en batch.
+- `grasp-model/scripts/robot_loader.py`: carga angle arrays de `_dong_euler.npz` si existen. Expone en meta de `sample_dong`.
+- `grasp-model/scripts/cross_embodiment_sampler.py`: pasa angle arrays en batch output si ambos lados (human + robot) los tienen. Extra-human (HaGRID) recibe zeros.
+- `grasp-model/src/cross_emb/train_cross_emb.py`: auto-detecta euler mode (`"mcp_angles_h" in batch`). Si True: D_R = suma de `|angle_a - angle_b|` ponderada. Si False: fallback a D_R quaternion (Run 21 / abl11).
+- `grasp-model/notebooks/train_stage1_colab.ipynb`: selector `RUN = 21` o `RUN = 22` en cell-12.
+- `grasp-model/notebooks/precompute_dong_colab.ipynb`: clona `experimental`, verifica angle keys en output.
+
+**Pesos _sk_w_euler** (precomputados desde abl13 train split, ya hardcodeados en `train_cross_emb.py`):
+```python
+_sk_w_euler = {
+    "thumb":  dict(mcp_flex=0.2940, mcp_abd=0.2355, pip=0.2953, dip=0.1753),
+    "index":  dict(mcp_flex=0.2159, mcp_abd=0.4193, pip=0.1774, dip=0.1874),
+    "middle": dict(mcp_flex=0.2510, mcp_abd=0.2209, pip=0.2453, dip=0.2827),
+    "ring":   dict(mcp_flex=0.2798, mcp_abd=0.2344, pip=0.2328, dip=0.2531),
+    "pinky":  dict(mcp_flex=0.3130, mcp_abd=0.1853, pip=0.2477, dip=0.2540),
+}
 ```
-da4275f6d Add DECISIONS Entry 82: Stage 1 pipeline consolidation
-b88625925 Add --seed -1 (random) default; notebook SEED=-1
-af4722207 Fix OOM: val/test samplers skip valid_poses NPZ
-681abc9a9 Notebook: pass eval flags
-9351d1978 Add val/test eval with RS/NDS/NVS metrics
-56826db24 Save full args config in checkpoint payload
-847459f28 Run 19: remove scheduler (Yan-pure constant LR)
-```
 
-### Modelos disponibles en `~/Downloads/`
+**RIESGO DOCUMENTADO (Entry 84)**: D_R_euler magnitudes ~5x mayores que D_R_quat
+(angulos en [0,pi] vs 1-dot^2 en [0,1]). Con w_r=1.0, D_R podria dominar S_k y
+hacer D_joints irrelevante para seleccion de triplets. Primera corrida con w_r=1.0.
+Si D_R domina, probar w_r=0.2 en follow-up.
 
-| Ckpt | Step | Seed | Calidad |
-|------|------|------|---------|
-| **`stage1_best_run20.pt`** | **11000** | **21266** | **MEJOR. Mano abierta, puno, seguimiento, abduccion. REPRODUCIBLE.** RS=0.320 test. |
-| `stage1_best_run15b.pt` | ~10k | aleatorio (no logged) | Segundo mejor. Tip pinch/OK aproximado (solo con gesto exagerado). NO reproducible. |
-| `stage1_best_run19_seed42.pt` | ~15k | 42 | Constant LR, pulgar mejor, coordinacion mala. |
-| `stage1_best_run18b_15k.pt` | ~15k | 42 | Mas responsivo pero dedos separados. |
-| `stage1_best_run18b_10k.pt` | 10463 | 42 | Identico a Run 18 sin speed opts. |
-| `stage1_best_run18.pt` | 14462 | 42 | Dedos separados. |
+### Problema encontrado con NPZ existente
+
+`valid_robot_poses_eigengrasp_dong_euler.npz` en `/media/yareeez/.../processed/`
+NO tiene angle arrays. Fue generado con script viejo (antes de agregar angulos).
+El nombre `_euler` fue puesto por el notebook pero el codigo en ese momento no
+guardaba angulos todavia.
+
+**Fix aplicado**: notebook ahora clona `experimental` explicitamente. Verificacion
+double: script crashea + notebook crashea si faltan angle keys.
 
 ---
 
-## Que falta hacer
-
-### Estado actual (2026-05-12)
-
-**Seed variance CONFIRMADA. Baseline reproducible establecido.**
-
-- Run 20 seed=21266: mejor modelo cualitativo de todos los runs.
-- Mano abierta + puno cerrado + seguimiento + abduccion.
-- MCP problem persiste (estructural, ortogonal a seed).
+## Que falta hacer ahora
 
 ### Inmediato
 
-**Run 21 con seed=21266 + MCP axis decomposition**:
+1. **Regenerar `_dong_euler.npz`** en Colab:
+   - Abrir `precompute_dong_colab.ipynb` desde branch `experimental`
+   - `INPUT_NPZ = valid_robot_poses_eigengrasp.npz` (el q-only, 746 MB, ya en `/media/...`)
+   - Subirlo a Drive si no esta ya
+   - Correr notebook. Output: `_dong_euler.npz` con 11 arrays incluyendo mcp/pip/dip_angles
+   - Cell-16 verifica automaticamente. Si falla, es un error real.
 
-1. Modificar `_dong_run_stage2` en sampler / S_k: separar quaternion MCP en componente flex y componente abd.
-2. Aplicar peso distinto a cada eje en D_R (flex pesa mas que abd).
-3. Correr Colab con `SEED=21266` (fijo) y cambio MCP.
-4. Live retarget. Comparar coordinacion vs Run 20.
-5. Si mejor -> baseline final. Si peor o igual -> MCP fix no era el bottleneck.
+2. **Correr Run 21** (no necesita nuevo NPZ, usa abl11 + dong viejo):
+   - `train_stage1_colab.ipynb`, `RUN = 21`, `SEED = 21266`
+   - Comparar con Run 20 (mismo seed, misma config excepto MCP weight=0.5)
+   - Live retarget y comparar MCP flexion
 
-Ver DECISIONS.md Entry 79 para diagnostico completo y propuesta de implementacion.
+3. **Correr Run 22** (despues de tener NPZ regenerado):
+   - `train_stage1_colab.ipynb`, `RUN = 22`, `SEED = 21266`
+   - Mismo SEED que Run 20/21 para comparacion limpia
+   - Observar si D_R_euler mejora MCP
 
 ### Mediano plazo
 
-1. **Multi-seed final** (para tesis):
-   - 3-5 seeds con config final elegida.
-   - Reportar mean +- std de RS/NDS/NVS en test.
+- Si Run 21 o Run 22 mejoran MCP: multi-seed final (3-5 seeds) para tesis.
+- Reportar RS/NDS/NVS mean +- std en test split.
+- Si ninguno mejora MCP: replantear hipotesis (ver opciones en DECISIONS.md Entry 79).
 
-2. **Si MCP fix no mejora**: opciones de ataque a investigar:
-   - Permutation invariance en init: 5 finger encoders empiezan con misma weight.
-   - Auxiliary loss enforzando coordinacion entre subspaces.
-   - z_dim reducido (16 -> 8) -> menos basins.
+---
 
-### Largo plazo (tesis)
+## Archivos de datos relevantes (local)
 
-- Documentar pipeline final en seccion methodology.
-- Reportar metrics RS/NDS/NVS en test split como Yan, justificando adaptaciones de mano (chain 4-points, 5 fingertips).
-- Speed opts como contribucion (validados safe, ~6x speedup en T4).
-- Bug indexing encontrado/corregido (transparencia).
-- Seed variance como limitacion conocida + future work.
+```
+/media/yareeez/94649A33649A1856/DATOS DE TESIS/AIST-hand_grasp-model_data_cache/processed/
+  hograspnet_abl11.csv                            # Run 21 (y todos los runs anteriores)
+  hograspnet_abl13.csv                            # Run 22+ (abl11 + columnas beta/gamma deg)
+  valid_robot_poses_eigengrasp.npz                # q-only, 746 MB. Input del precompute.
+  valid_robot_poses_eigengrasp_dong_euler.npz     # MALO (sin angle arrays). Regenerar.
+```
+
+---
+
+## Estado del codigo (branch `experimental`)
+
+Pipeline completo y testeado en human side. Robot side esperando NPZ regenerado.
+
+- Euler mode se activa automaticamente cuando el batch tiene `mcp_angles_h`.
+- Si el NPZ no tiene angulos (formato viejo), el training cae silenciosamente a quat D_R.
+- No hay flag que forzar: auto-deteccion por contenido del batch.
+
+### Smoke test ejecutado (2026-05-13)
+
+- Human loader: OK. `has_euler=True`. `mcp_angles=(1015342, 5, 2)`.
+- Robot loader: NPZ sin angulos -> `mcp_angles_all` ausente en meta.
+- Sampler: batch sin `mcp_angles_h/r` -> `_use_euler_dr=False` -> quat fallback.
+- Conclusion: Run 21 funciona ahora mismo. Run 22 bloquea en NPZ.
 
 ---
 
 ## Comandos clave
 
-### Correr Run en Colab
-
-URL notebook:
-```
-github.com/isapedraza/AIST-hand/blob/run19-yan-pure/grasp-model/notebooks/train_stage1_colab.ipynb
-```
-
-Open in Colab -> Restart runtime -> Run all.
-
-Cell 12 default: `SEED = -1` (random). Cambia a numero fijo para reproducir.
-
 ### Live retarget
-
 ```bash
 cd /home/yareeez/AIST-hand/grasp-model && \
 /home/yareeez/AIST-hand/.venv/bin/python scripts/live_retarget.py \
-  --ckpt /home/yareeez/Downloads/<ckpt_name>.pt
+  --ckpt '/home/yareeez/Downloads/stage1_best_total(4).pt'
 ```
 
-### Inspect ckpt
+### Smoke test sampler (verifica euler mode)
+```bash
+cd /home/yareeez/AIST-hand && \
+/home/yareeez/AIST-hand/.venv/bin/python - <<'EOF'
+import sys
+sys.path.insert(0, "grasp-model/scripts")
+DATA = "/media/yareeez/94649A33649A1856/DATOS DE TESIS/AIST-hand_grasp-model_data_cache/processed"
+from cross_embodiment_sampler import CrossEmbodimentSampler
+cs = CrossEmbodimentSampler(
+    f"{DATA}/hograspnet_abl13.csv",
+    "/home/yareeez/dex-urdf/robots/hands/shadow_hand/shadow_hand_right.urdf",
+    "grasp-model/data/hand_configs/shadow_hand_right.yaml",
+    split="train", device="cpu",
+    valid_poses_path=f"{DATA}/valid_robot_poses_eigengrasp_dong_euler.npz"
+)
+batch = cs.get_batch_temporal(32)
+print("euler mode:", "mcp_angles_h" in batch)
+EOF
+```
+Debe imprimir `euler mode: True` despues de regenerar el NPZ.
 
+### Inspect ckpt
 ```bash
 /home/yareeez/AIST-hand/.venv/bin/python -c "
 import torch
-c = torch.load('/home/yareeez/Downloads/<ckpt>.pt', map_location='cpu', weights_only=False)
+c = torch.load('/home/yareeez/Downloads/stage1_best_total(4).pt', map_location='cpu', weights_only=False)
 print('step:', c.get('step'), 'seed:', c.get('seed'))
-print('losses:', c.get('losses'))
-print('val_metrics:', c.get('val_metrics'))
 print('test_metrics:', c.get('test_metrics'))
-print('config sample:', {k: c['config'][k] for k in ['lr','b','margin','w_r','w_joints','w_ahg']} if c.get('config') else 'no config')
+print('config:', {k: c['config'][k] for k in ['lr','b','margin','w_r','w_joints','w_ahg']} if c.get('config') else 'no config')
 "
 ```
-
-### Volver a main
-
-```bash
-git checkout main
-# Run 19 branch sigue viva en origin, no se pierde
-```
-
-### Drive issues en Colab
-
-Si error 107 (transport endpoint not connected) -- causa: internet inestable rompe FUSE mount de Drive:
-
-1. Restart runtime: Runtime -> Restart session
-2. Re-run cell 4 (drive.mount)
-3. Verificar: `!ls /content/drive/MyDrive/AIST-hand/hograspnet_abl11.csv`
-4. Re-run training cells
-
-Mitigacion permanente si red mala -- copiar archivos a `/content/` antes de training para que lecturas sean SSD local (sin red):
-
-```python
-!cp /content/drive/MyDrive/AIST-hand/hograspnet_abl11.csv /content/
-!cp /content/drive/MyDrive/AIST-hand/valid_robot_poses_eigengrasp_dong.npz /content/
-!cp /content/drive/MyDrive/AIST-hand/shadow_hand_right.yaml /content/
-!cp /content/drive/MyDrive/AIST-hand/data/processed/hagrid_dong.csv /content/
-```
-
-Y apuntar paths en cell 12 a `/content/...` en vez de `/content/drive/MyDrive/AIST-hand/...`.
 
 ---
 
 ## Contexto para otro LLM
 
-Si retomas esta tesis con otro LLM, lee en orden:
+Lee en orden:
 
-1. `~/.claude/projects/-home-yareeez-AIST-hand/memory/MEMORY.md`: contexto general. Stage 1 retargeter, dominio mano, framework Yan.
-2. `DECISIONS.md` Entry 82: estado consolidado del pipeline.
-3. `DECISIONS.md` Entry 79: diagnostico MCP (problema original).
-4. Este archivo (`HANDOFF_STAGE1.md`): donde quedamos, que sigue.
-5. `knowledge/yan2026/main.tex`: paper de referencia. Yan reporta constant LR + Adam + lr=1e-3, MLPs 8 capas 256d, z_dim=16. Eqs 1/2/loss_v para metrics.
+1. `~/.claude/projects/-home-yareeez-AIST-hand/memory/MEMORY.md`: contexto general.
+2. `DECISIONS.md` Entry 84: plan Run 21 + Run 22. Documenta scale risk.
+3. `DECISIONS.md` Entry 82-83: estado pipeline + seed variance.
+4. `DECISIONS.md` Entry 79: diagnostico MCP original.
+5. Este archivo: donde quedamos, que sigue.
 
-Estado mental: pipeline consolidado, MCP problem unresolved, seed variance hipotetica pendiente de testear.
-Proximo paso operacional: Run 20 con random seed.
-
----
-
-## Decisiones pendientes que Yahel debe tomar
-
-1. **¿Implementar MCP axis decomp en Run 21 o primero multi-seed con config actual?** Sugerido: MCP en Run 21 con seed=21266 fija.
-2. **¿Pagar Colab Pro temporal o copiar archivos local en cada session?** Decision tuya.
-
----
-
-## Resumen TL;DR
-
-- Pipeline en `run19-yan-pure` listo y testeado.
-- **Run 20 (seed=21266) = mejor modelo. Mano abierta, puno, seguimiento, abduccion. REPRODUCIBLE.**
-- MCP problem sigue abierto (Entry 79). Fix propuesto: axis decomposition.
-- Proximo paso: Run 21 con seed=21266 + MCP axis decomp. Comparar vs Run 20.
+**Estado mental actual**: Run 22 infraestructura 100% implementada. Bloqueado
+en regenerar NPZ con angulos euler. Run 21 puede correr YA con la config actual.
+MCP problem sigue abierto. Seed=21266 es el buen basin.
