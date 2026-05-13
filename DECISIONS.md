@@ -4590,18 +4590,30 @@ Test offline confirmo cache `_dong.npz` produce mismos valores que runtime path 
 **Evaluacion cualitativa (live retarget)**:
 
 - **Mano abierta**: lograda. Sigue apertura humana.
-- **Puno cerrado**: logrado. Sigue cierre humano.
-- **Seguimiento open/close**: fluido, reactivo.
-- **Abduccion de dedos**: visible y correcta.
-- **Comparacion vs Run 15b**: Run 20 superior en comportamiento general. Run 15b ligeramente mejor en un aspecto especifico (tip pinch / OK aproximado), pero solo cuando el gesto se exageraba. Run 20 gana en cobertura global del workspace.
-- **Limitacion persistente**: MCP no cierra completamente. Problema estructural de D_R formulation (Entry 79), ortogonal a seed.
+- **Puno cerrado**: logrado. PRIMERO en todos los runs. Ningun modelo anterior podia cerrar puno.
+- **Seguimiento open/close**: fluido, reactivo. Dedos siguen apertura/cierre de izquierda a derecha.
+- **Abduccion de dedos**: excelente. Mejor comportamiento de todos los runs.
+- **Comparacion vs Run 15b**: Run 20 superior en comportamiento general. Run 15b ligeramente mejor en tip pinch / OK aproximado (solo con gesto exagerado). Run 20 gana en cobertura global del workspace.
+
+**Comportamientos imperfectos observados (live retarget, 2026-05-12)**:
+
+Categoria modelo (candidatos a mejorar con Run 21):
+- Thumb no logra posicionarse sobre los otros dedos en puno. THJ5 (oposicion) insuficiente -- S_k probablemente no discrimina bien esa configuracion especifica.
+- MCP no baja en poses no-puno. Solo el puno (pose extrema) vence esa resistencia. Poses intermedias siguen con MCP semi-extendido.
+
+Categoria sensor + ausencia de loop de control (no atribuible al modelo):
+- Dedos se van de lado abruptamente. Causa probable: MediaPipe pierde landmarks momentaneamente → outlier en input → spike de abduccion en output. Cada frame es independiente (no hay suavizado ni memoria de estado).
+- Colisiones ocasionales entre dedos. Modelo predice qpos sin collision avoidance -- output directo sin post-procesamiento.
+- Comportamiento mejora cuando usuario aprieta o estabiliza la mano -- sensor mas estable → landmarks mas precisos → mejor input al modelo.
+
+Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consistente con Yan et al. (mismo esquema). Suavizado temporal y collision avoidance son future work / pipeline de robot, no limitacion del modelo en si.
 
 **Conclusion**: Hipotesis de seed variance CONFIRMADA. Seed=42 era mal basin, no problema de arquitectura ni de codigo. Seed=21266 produce modelo cualitativamente superior a todos los runs anteriores.
 
 **Baseline reproducible establecido**: `--seed 21266` con config Run 20 = punto de partida para iteraciones futuras.
 
-**Proximo paso**: Run 21 con seed=21266 fija + cambio incremental (candidato: MCP axis decomposition de Entry 79). Comparacion directa vs Run 20 aislara impacto del cambio.
+**Proximo paso**: definir Run 21. Candidatos: (a) pesos uniformes en D_R + D_joints con seed=21266 (re-test limpio de lo que Run 16 intento sin seed controlada), (b) MCP axis decomposition (Entry 79). Nota: problema MCP no es exclusivo de runs con 1/sigma -- existia desde Run 1. Los pesos pueden empeorar la señal pero no son causa raiz.
 
 **Documentos relacionados**:
 - Entry 82: pipeline consolidado, runs 17-19.
-- Entry 79: diagnostico MCP, propuesta axis decomposition (fix pendiente).
+- Entry 79: diagnostico MCP, propuesta axis decomposition.
