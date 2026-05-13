@@ -4793,3 +4793,68 @@ Run 22 tiene potencial real pero necesita balance abd. Opciones:
 - (c) Combinacion: mantener euler pero ajustar pesos abd per-finger manualmente.
 
 **Dato clave para tesis**: Run 22 produce movimiento mas fluido que Run 20 y Run 21. La calidad cinematica del movimiento mejora con euler. El problema es de configuracion de pesos, no del enfoque en si. Euler > quat para D_R en terminos de calidad de movimiento.
+
+---
+
+### Analisis de proporciones S_k -- Run 22 (logs paso 14700-14950)
+
+S_k = 1.0*D_R + 1.2*D_joints + 0.07*D_ahg
+
+| Dedo | w_r·D_R | w_j·D_joints | w_ahg·D_ahg | D_R% | D_joints% | D_ahg% |
+|------|---------|-------------|-------------|------|-----------|--------|
+| thumb  | 0.338 | 0.251 | 0.070 | 51% | 38% | 11% |
+| index  | 0.303 | 0.190 | 0.056 | 55% | 35% | 10% |
+| middle | 0.409 | 0.199 | 0.059 | 61% | 30% |  9% |
+| ring   | 0.430 | 0.205 | 0.062 | 62% | 29% |  9% |
+| pinky  | 0.456 | 0.216 | 0.059 | 62% | 30% |  8% |
+
+**Diagnostico**: middle/ring/pinky tienen D_R dominando ~62% de S_k. D_joints solo 29-30%.
+La señal de separacion espacial (chain positions) es casi invisible para esos dedos.
+Thumb esta mas balanceado (51/38) -- coincide con que thumb funciona mejor en Run 22.
+Hipotesis: la falta de separacion lateral en middle/ring/pinky viene de D_joints insuficiente
+en S_k para contrarrestar el D_R_euler que es ~5x mayor en magnitud que D_R_quat.
+
+---
+
+### Run 23 -- Opciones a probar (por orden de preferencia)
+
+**Opcion A -- `w_r=0.5` (recomendada primero)**
+
+Un solo parametro, cambio limpio.
+
+Con w_r=0.5, proporcion estimada:
+| Dedo | D_R% | D_joints% |
+|------|------|-----------|
+| middle | 44% | 43% |
+| ring   | 45% | 43% |
+| pinky  | 46% | 42% |
+
+D_joints recupera influencia. Chain positions vuelven a guiar separacion espacial.
+Euler benefits se preservan (D_R sigue siendo ~45% del signal).
+Riesgo: si D_R_euler baja demasiado, se pierde la mejora de pulgar de Run 22.
+
+Config: `W_R = 0.5` en notebook, todo lo demas igual que Run 22.
+
+---
+
+**Opcion B -- subir `mcp_abd` para middle/ring/pinky**
+
+Ajuste fino de pesos internos euler. Mantiene w_r=1.0.
+Logica: pesos 1/sigma de abl13 reflejan varianza humana, no necesariamente lo que
+el robot necesita para separacion lateral. Subir abd explicita la señal de separacion.
+
+Propuesta de pesos (renormalizados, suma=1):
+```python
+# Actual → Propuesto
+"middle": dict(mcp_flex=0.2510, mcp_abd=0.2209, ...) → mcp_abd=0.30, renorm resto
+"ring":   dict(mcp_flex=0.2798, mcp_abd=0.2344, ...) → mcp_abd=0.30, renorm resto
+"pinky":  dict(mcp_flex=0.3130, mcp_abd=0.1853, ...) → mcp_abd=0.28, renorm resto
+```
+Riesgo: sobre-correccion → dedos se abren demasiado lateralmente.
+
+---
+
+**Opcion C -- combinacion A+B**
+
+w_r=0.5 + abd boosteado. Mas parametros cambiando simultaneamente.
+Reservar para si A y B individualmente no resuelven el colapso.
