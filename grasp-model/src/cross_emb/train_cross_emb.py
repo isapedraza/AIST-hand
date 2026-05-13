@@ -79,6 +79,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
+    p.add_argument("--require_euler_dr", action="store_true", help="Crash at startup if euler angle arrays are not detected in the batch (abl13 + _dong_euler.npz required). Use for Run 22+.")
     p.add_argument(
         "--zero_wrj",
         action=argparse.BooleanOptionalAction,
@@ -188,6 +189,15 @@ def main():
     _probe = sampler.get_batch_temporal(1)
     J      = _probe["q_r"].shape[1]
     print(f"Robot joints J={J}")
+
+    _euler_active = "mcp_angles_h" in _probe
+    print(f"Euler D_R mode: {'ACTIVE' if _euler_active else 'INACTIVE (quat fallback)'}")
+    if args.require_euler_dr and not _euler_active:
+        raise RuntimeError(
+            "--require_euler_dr set but euler angles not detected in batch.\n"
+            "Check: (1) CSV is hograspnet_abl13.csv (needs beta*/gamma*_deg columns), "
+            "(2) valid_poses_path is _dong_euler.npz (needs mcp/pip/dip_angles keys)."
+        )
 
     # ---------------------------------------------------------------------------
     # Val sampler (HOGraspNet S1 split: subjects 1-10, held out for selection).
