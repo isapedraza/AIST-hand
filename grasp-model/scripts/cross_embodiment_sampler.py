@@ -156,6 +156,11 @@ class CrossEmbodimentSampler:
                 int(k.item()): int(v.item())
                 for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
             }
+            if "mcp_angles" in hb:
+                dev = hb["mcp_angles"].device
+                hb["mcp_angles"] = torch.cat([hb["mcp_angles"], torch.zeros(B_extra, 5, 2, device=dev)], dim=0)
+                hb["pip_angles"]  = torch.cat([hb["pip_angles"],  torch.zeros(B_extra, 5, device=dev)],    dim=0)
+                hb["dip_angles"]  = torch.cat([hb["dip_angles"],  torch.zeros(B_extra, 5, device=dev)],    dim=0)
         return self._assemble(
             quats_h=hb["quats"],
             tips_h=hb["tips"],
@@ -166,6 +171,9 @@ class CrossEmbodimentSampler:
             seed=seed,
             extra_human_count=B_extra,
             extra_human_by_class=extra_counts,
+            mcp_angles_h=hb.get("mcp_angles"),
+            pip_angles_h=hb.get("pip_angles"),
+            dip_angles_h=hb.get("dip_angles"),
         )
 
     def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
@@ -188,6 +196,11 @@ class CrossEmbodimentSampler:
                 int(k.item()): int(v.item())
                 for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
             }
+            if "mcp_angles" in hb:
+                dev = hb["mcp_angles"].device
+                hb["mcp_angles"] = torch.cat([hb["mcp_angles"], torch.zeros(B_extra, 5, 2, device=dev)], dim=0)
+                hb["pip_angles"]  = torch.cat([hb["pip_angles"],  torch.zeros(B_extra, 5, device=dev)],    dim=0)
+                hb["dip_angles"]  = torch.cat([hb["dip_angles"],  torch.zeros(B_extra, 5, device=dev)],    dim=0)
         out = self._assemble(
             quats_h=hb["quats_t"],
             tips_h=hb["tips_t"],
@@ -198,6 +211,9 @@ class CrossEmbodimentSampler:
             seed=seed,
             extra_human_count=B_extra,
             extra_human_by_class=extra_counts,
+            mcp_angles_h=hb.get("mcp_angles"),
+            pip_angles_h=hb.get("pip_angles"),
+            dip_angles_h=hb.get("dip_angles"),
         )
         out["quats_h_t1"] = hb["quats_t1"]  # [B, Nh, 4] -> L_temporal
         out["tips_h_t1"]  = hb["tips_t1"]   # [B, Fh, 3] -> v_H^hand velocity
@@ -214,6 +230,9 @@ class CrossEmbodimentSampler:
         seed: int | None,
         extra_human_count: int = 0,
         extra_human_by_class: dict[int, int] | None = None,
+        mcp_angles_h: torch.Tensor | None = None,  # [B, 5, 2] radians (abl13+)
+        pip_angles_h: torch.Tensor | None = None,  # [B, 5]
+        dip_angles_h: torch.Tensor | None = None,  # [B, 5]
     ) -> dict:
         # Robot sample is input data for the training step. No gradients flow
         # through q_r / quats_r / chain / tips, so skip autograd graph build.
@@ -237,7 +256,7 @@ class CrossEmbodimentSampler:
             [meta_r["chain_positions"][f] for f in common_fingers], dim=1
         )  # [B, Fc, 4, 3]
 
-        return {
+        out = {
             "q_r":            q_r,
             "quats_h":        quats_h,
             "quats_h_sub":    quats_h_sub,
@@ -251,3 +270,12 @@ class CrossEmbodimentSampler:
             "extra_human_count": extra_human_count,
             "extra_human_by_class": extra_human_by_class or {},
         }
+        # Euler angles for D_R (Run 22+): enabled when abl13 CSV + _dong_euler.npz are used.
+        if mcp_angles_h is not None and "mcp_angles_all" in meta_r:
+            out["mcp_angles_h"] = mcp_angles_h             # [B, 5, 2]
+            out["pip_angles_h"] = pip_angles_h             # [B, 5]
+            out["dip_angles_h"] = dip_angles_h             # [B, 5]
+            out["mcp_angles_r"] = meta_r["mcp_angles_all"] # [B, 5, 2]
+            out["pip_angles_r"] = meta_r["pip_angles_all"] # [B, 5]
+            out["dip_angles_r"] = meta_r["dip_angles_all"] # [B, 5]
+        return out

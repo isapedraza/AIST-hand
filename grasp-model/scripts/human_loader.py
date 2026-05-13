@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+_DEG2RAD = np.pi / 180.0
 
 # S1 subject split of HOGraspNet (by subject_id number)
 _SPLIT_SUBJECTS: dict[str, tuple[int, int]] = {
@@ -66,6 +67,16 @@ _TIP_COLS: list[str] = [
 _MIDDLE_TIP_COLS: list[str] = [
     "MIDDLE_FINGER_TIP_x", "MIDDLE_FINGER_TIP_y", "MIDDLE_FINGER_TIP_z"
 ]
+
+# Euler angle columns present in abl13 (not in abl11). Degrees -> radians on load.
+# Finger order matches TIP_LABELS: thumb=1, index=5, middle=9, ring=13, pinky=17
+_EULER_ANGLE_COLS: dict[str, tuple[str, str, str, str]] = {
+    "thumb":  ("beta1_deg",  "gamma1_deg",  "beta2_deg",  "beta3_deg"),
+    "index":  ("beta5_deg",  "gamma5_deg",  "beta6_deg",  "beta7_deg"),
+    "middle": ("beta9_deg",  "gamma9_deg",  "beta10_deg", "beta11_deg"),
+    "ring":   ("beta13_deg", "gamma13_deg", "beta14_deg", "beta15_deg"),
+    "pinky":  ("beta17_deg", "gamma17_deg", "beta18_deg", "beta19_deg"),
+}
 
 # Full chain positions per finger: [MCP, PIP, DIP, TIP] x [x, y, z]
 # Ordered to match TIP_LABELS: thumb, index, middle, ring, pinky
@@ -166,6 +177,32 @@ class HumanLoader:
         self._chain = torch.from_numpy(chain_np).to(self.device)   # [N, 5, 4, 3]
         self._N = len(df)
 
+        # Euler angles (abl13+): mcp_angles [N,5,2], pip_angles [N,5], dip_angles [N,5].
+        # abl11 lacks these columns; fall back to None for backward compat.
+        self._mcp_angles: torch.Tensor | None = None
+        self._pip_angles: torch.Tensor | None = None
+        self._dip_angles: torch.Tensor | None = None
+        self._has_euler = False
+        if _EULER_ANGLE_COLS["thumb"][0] in df.columns:
+            mcp_np = np.stack([
+                np.stack([
+                    df[_EULER_ANGLE_COLS[f][0]].values * _DEG2RAD,
+                    df[_EULER_ANGLE_COLS[f][1]].values * _DEG2RAD,
+                ], axis=-1)
+                for f in TIP_LABELS
+            ], axis=1).astype(np.float32)  # [N, 5, 2]
+            pip_np = np.stack([
+                df[_EULER_ANGLE_COLS[f][2]].values * _DEG2RAD for f in TIP_LABELS
+            ], axis=1).astype(np.float32)  # [N, 5]
+            dip_np = np.stack([
+                df[_EULER_ANGLE_COLS[f][3]].values * _DEG2RAD for f in TIP_LABELS
+            ], axis=1).astype(np.float32)  # [N, 5]
+            self._mcp_angles = torch.from_numpy(mcp_np).to(self.device)
+            self._pip_angles = torch.from_numpy(pip_np).to(self.device)
+            self._dip_angles = torch.from_numpy(dip_np).to(self.device)
+            self._has_euler = True
+            print(f"[HumanLoader] Euler angles loaded (abl13 mode): mcp={tuple(mcp_np.shape)}")
+
         # Build next_idx: for each frame i, next_idx[i] = i+1 if same trial, else -1
         # Two consecutive rows are in the same trial iff all _TRIAL_COLS match
         trial_keys = df[_TRIAL_COLS].values  # [N, 5]
@@ -195,13 +232,18 @@ class HumanLoader:
         if seed is not None:
             torch.manual_seed(seed)
         idx = torch.randint(0, self._N, (B,), device=self.device)
-        return {
+        out = {
             "quats":      self._quats[idx],
             "labels":     self.labels,
             "tips":       self._tips[idx],
             "tip_labels": self.tip_labels,
             "chain":      self._chain[idx],
         }
+        if self._has_euler:
+            out["mcp_angles"] = self._mcp_angles[idx]  # [B, 5, 2]
+            out["pip_angles"] = self._pip_angles[idx]  # [B, 5]
+            out["dip_angles"] = self._dip_angles[idx]  # [B, 5]
+        return out
 
     def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
         """
@@ -221,7 +263,7 @@ class HumanLoader:
         pos = torch.randint(0, self._valid_idx.shape[0], (B,), device=self.device)
         idx_t  = self._valid_idx[pos]
         idx_t1 = self._next_idx[idx_t]
-        return {
+        out = {
             "quats_t":    self._quats[idx_t],
             "quats_t1":   self._quats[idx_t1],
             "tips_t":     self._tips[idx_t],
@@ -231,6 +273,11 @@ class HumanLoader:
             "chain_t":    self._chain[idx_t],
             "chain_t1":   self._chain[idx_t1],
         }
+        if self._has_euler:
+            out["mcp_angles"] = self._mcp_angles[idx_t]  # [B, 5, 2]  (frame t only)
+            out["pip_angles"] = self._pip_angles[idx_t]  # [B, 5]
+            out["dip_angles"] = self._dip_angles[idx_t]  # [B, 5]
+        return out
 
 
 class StaticHumanAnchorLoader:

@@ -266,10 +266,11 @@ def main():
     print(f"AMP: {'enabled (fp16)' if use_amp else 'disabled'}")
 
     # ---------------------------------------------------------------------------
-    # D_R per-joint weights: w_j = (1/sigma_j) / sum(1/sigma)
+    # D_R per-joint weights (quaternion mode): w_j = (1/sigma_j) / sum(1/sigma)
     # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
     # Order per subspace: [mcp, pip, dip, tip]. tip=0 (always identity in Dong).
     # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
+    # Used when batch lacks euler angle arrays (abl11 / old _dong.npz).
     # ---------------------------------------------------------------------------
     _sk_w = {
         "thumb":  [0.5, 0.544, 0.199, 0.0],
@@ -279,6 +280,23 @@ def main():
         "pinky":  [0.5, 0.405, 0.398, 0.0],
     }
     sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
+
+    # D_R euler weights (Run 22+): replace quaternion D_R with angle-based D_R.
+    # Components per finger: mcp_flex (beta_mcp), mcp_abd (gamma_mcp), pip, dip.
+    # w_j = (1/sigma_j) / sum(1/sigma), sigma from |angle_a - angle_b| in radians.
+    # Precomputed offline via scripts/compute_sk_weights_euler.py from hograspnet_abl13.csv.
+    #
+    # SCALE RISK: D_R_euler magnitudes are ~5x larger than D_R_quat (angles in [0,pi]
+    # vs 1-dot^2 in [0,1]). If w_r*D_R_euler >> w_joints*D_joints in S_k, the chain
+    # positions become irrelevant for triplet selection. Run 22 uses w_r=1.0 as a
+    # first test; if D_R dominates, try w_r=0.2 in a follow-up run.
+    _sk_w_euler = {
+        "thumb":  dict(mcp_flex=0.2940, mcp_abd=0.2355, pip=0.2953, dip=0.1753),
+        "index":  dict(mcp_flex=0.2159, mcp_abd=0.4193, pip=0.1774, dip=0.1874),
+        "middle": dict(mcp_flex=0.2510, mcp_abd=0.2209, pip=0.2453, dip=0.2827),
+        "ring":   dict(mcp_flex=0.2798, mcp_abd=0.2344, pip=0.2328, dip=0.2531),
+        "pinky":  dict(mcp_flex=0.3130, mcp_abd=0.1853, pip=0.2477, dip=0.2540),
+    }
 
     # D_joints per-segment weights: w_j = (1/sigma_j) / sum(1/sigma)
     # sigma_j = std(||chain_j_a - chain_j_b||) over HOGraspNet train pairs, human only.
@@ -443,6 +461,15 @@ def main():
         extra_human_count = batch.get("extra_human_count", 0)
         extra_human_by_class = batch.get("extra_human_by_class", {})
 
+        # Euler angle arrays for D_R (Run 22+): present only when abl13 CSV + _dong_euler.npz.
+        _use_euler_dr  = "mcp_angles_h" in batch
+        _mcp_angles_h  = batch.get("mcp_angles_h")  # [B, 5, 2]
+        _pip_angles_h  = batch.get("pip_angles_h")  # [B, 5]
+        _dip_angles_h  = batch.get("dip_angles_h")  # [B, 5]
+        _mcp_angles_r  = batch.get("mcp_angles_r")
+        _pip_angles_r  = batch.get("pip_angles_r")
+        _dip_angles_r  = batch.get("dip_angles_r")
+
         with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
             z_t  = E_h(quats_h)       # [B, 5*z_dim]
             z_t1 = E_h(quats_h_t1)
@@ -510,15 +537,38 @@ def main():
                 chain_ca = chain_all_k[cand_a]
                 chain_cb = chain_all_k[cand_b]
 
-                dot_a      = (qa * q_ca).sum(-1)
-                dot_b      = (qa * q_cb).sum(-1)
-                _seg_order = ["mcp", "pip", "dip", "tip"]
-                _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
-                _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
-                _w_dr      = sk_weights_dr[sub][_dr_idx]
-                _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
-                D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
-                D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
+                if _use_euler_dr:
+                    # Run 22+: D_R from Dong Eq.24 angles (beta_mcp, gamma_mcp, beta_pip, beta_dip).
+                    # Finger index fi matches TIP_LABELS order: thumb=0 .. pinky=4.
+                    fi = ("thumb", "index", "middle", "ring", "pinky").index(sub)
+                    beta_mcp_all  = torch.cat([_mcp_angles_h[:, fi, 0], _mcp_angles_r[:, fi, 0]])  # [2B]
+                    gamma_mcp_all = torch.cat([_mcp_angles_h[:, fi, 1], _mcp_angles_r[:, fi, 1]])  # [2B]
+                    pip_all       = torch.cat([_pip_angles_h[:, fi],    _pip_angles_r[:, fi]])      # [2B]
+                    dip_all       = torch.cat([_dip_angles_h[:, fi],    _dip_angles_r[:, fi]])      # [2B]
+                    _we = _sk_w_euler[sub]
+                    D_R_a = (
+                        _we["mcp_flex"] * (beta_mcp_all[anchors]  - beta_mcp_all[cand_a]).abs()
+                      + _we["mcp_abd"]  * (gamma_mcp_all[anchors] - gamma_mcp_all[cand_a]).abs()
+                      + _we["pip"]      * (pip_all[anchors]        - pip_all[cand_a]).abs()
+                      + _we["dip"]      * (dip_all[anchors]        - dip_all[cand_a]).abs()
+                    )
+                    D_R_b = (
+                        _we["mcp_flex"] * (beta_mcp_all[anchors]  - beta_mcp_all[cand_b]).abs()
+                      + _we["mcp_abd"]  * (gamma_mcp_all[anchors] - gamma_mcp_all[cand_b]).abs()
+                      + _we["pip"]      * (pip_all[anchors]        - pip_all[cand_b]).abs()
+                      + _we["dip"]      * (dip_all[anchors]        - dip_all[cand_b]).abs()
+                    )
+                else:
+                    # Fallback: quaternion dot-product D_R (abl11 / old _dong.npz).
+                    dot_a      = (qa * q_ca).sum(-1)
+                    dot_b      = (qa * q_cb).sum(-1)
+                    _seg_order = ["mcp", "pip", "dip", "tip"]
+                    _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
+                    _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
+                    _w_dr      = sk_weights_dr[sub][_dr_idx]
+                    _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
+                    D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
+                    D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
                 _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
                 D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
                 D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
