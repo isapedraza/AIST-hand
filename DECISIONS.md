@@ -4699,3 +4699,45 @@ PIP/DIP: sin cambio (quaternion distance, mismo que ahora).
 - Entry 79: diagnostico MCP original, propuesta axis decomposition.
 - Entry 83: Run 20 resultados, baseline reproducible.
 - Entry 75/76: como se computaron pesos 1/sigma actuales.
+
+---
+
+## Entry 85 -- 2026-05-13: Run 21 resultados -- MCP mejora parcial, thumb excelente, extension regresa
+
+**Config Run 21**: abl11 + dong.npz + MCP D_R weight=0.5 (todos los dedos) + seed=21266 + 15k steps.
+
+**Resultados cualitativos (live retarget)**:
+
+| Aspecto | Run 20 | Run 21 |
+|---------|--------|--------|
+| MCP flexion global | Incompleta | Mejora notable |
+| Pulgar MCP | Malo | **Excelente (mejora increible)** |
+| MCP otros dedos | Incompleto | Mejora parcial, no cierra del todo |
+| Finger extension | Bien | **Empeora -- dedos quedan doblados** |
+| Overall | MEJOR | Segundo |
+
+**Conclusion**: Run 20 sigue siendo el mejor modelo overall.
+
+**Interpretacion**:
+
+1. La hipotesis del MCP era CORRECTA para el pulgar. Subir peso MCP a 0.5 da senal de flexion suficiente en thumb.
+2. Para el resto de dedos, mejora parcial -- 0.5 puede ser demasiado agresivo o uniforme.
+3. El costo de subir MCP: finger extension se ve afectada. El modelo ahora prefiere posiciones flexionadas (MCP domina S_k) y pierde la senal de extension completa.
+4. El tradeoff es real: mas flexion MCP ↔ peor extension.
+
+**Hipotesis para Run 22**:
+
+Run 22 usa euler angles con pesos 1/sigma de abl13. Los pesos son:
+- mcp_flex: ~0.22-0.31 (menor que 0.5 de Run 21)
+- mcp_abd separado: ~0.19-0.42
+- pip + dip: juntos ~0.47-0.56
+
+El mcp_flex euler (~0.27 promedio) es menor que el 0.5 de Run 21. Esto podria dar mejor balance:
+suficiente senal de flexion sin aplastar la extension. A confirmar.
+
+**Dato adicional de Run 21**: el hecho de que pulgar mejoro drasticamente con solo subir peso
+confirma que D_R es el mecanismo correcto para controlar comportamiento por articulacion.
+La arquitectura responde al supervision signal como se espera.
+
+**Siguiente paso**: evaluar Run 22 (euler, pesos data-driven). Si el tradeoff flexion/extension
+mejora vs Run 21, el enfoque euler es superior. Si empeora igual, replantear.
