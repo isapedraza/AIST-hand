@@ -153,6 +153,19 @@ def main() -> None:
     size_mb = out_path.stat().st_size / 1e6
     print(f"[precompute] done. size={size_mb:,.1f} MB")
 
+    # Verify euler angle arrays are present. If missing, delete the bad file and crash.
+    _verify = np.load(out_path)
+    _missing = [k for k in ("mcp_angles", "pip_angles", "dip_angles") if k not in _verify.files]
+    _verify.close()
+    if _missing:
+        out_path.unlink()
+        raise RuntimeError(
+            f"[precompute] FATAL: output NPZ missing euler angle keys {_missing}. "
+            f"File deleted. Ensure robot_loader._dong_run_stage2 returns mcp/pip/dip_angles "
+            f"(requires branch experimental, not main)."
+        )
+    print(f"[precompute] verified: mcp_angles, pip_angles, dip_angles present.")
+
 
 if __name__ == "__main__":
     main()
