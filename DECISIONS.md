@@ -4459,3 +4459,161 @@ No es regeneracion de poses. NPZ activo es `valid_robot_poses_eigengrasp.npz` (1
 - Pointer en memoria: `project_stage1_speed_plan.md` indexado en MEMORY.md.
 
 **Status**: Implementado y pusheado. Run 16 corriendo en Colab al momento de escribir, on track para completar 10k steps en ~80-90 min.
+
+---
+
+## Entry 82 -- 2026-05-11: Stage 1 pipeline consolidation -- Runs 18, 18b, 19 + seed variance findings
+
+**Context**: Despues de Run 17 (revert 1/sigma + speed opts), Run 15b seguia siendo el mejor modelo cualitativo (mas suave, mejor coordinacion entre dedos). Runs 18-19 fueron una secuencia controlada para aislar la causa: (a) speed opts dañan?, (b) scheduler causa basin instability?, (c) seed roulette? Esta entry consolida hallazgos y deja punto de partida claro para Stage 1 futuro.
+
+**Secuencia de experimentos**:
+
+1. **Run 18** (main, seed=42, todas speed opts, CosineWarmRestarts T_0=2000): dedos separados (indice+medio vs anular+meñique), peor que Run 15b.
+2. **Run 18b** (branch `run18b-no-speedopts`, seed=42, sin speed opts, CosineWarmRestarts): identico feel a Run 18. Comportamiento bit-a-bit equivalente cualitativamente.
+3. **Run 19** (branch `run19-yan-pure`, seed=42, speed opts, constant LR sin scheduler): dedos siguen separados. Pulgar mejor que Run 18/18b. Coordinacion entre dedos sigue mala.
+
+**Conclusiones consolidadas**:
+
+1. **Speed opts A-E son matematicamente safe.**
+   - Test bit-exact cache Dong NPZ vs runtime: max diff 0.0 sobre 500 poses random.
+   - Run 18 ≡ Run 18b en feel cualitativo → AMP fp16 + torch.compile + Dong cache no afectan basin final.
+   - Mantener activos por velocidad (~30min vs ~3h en T4 con B=50k, 15k steps).
+
+2. **Indexing fix (84c820050 + 7981d9c4f) esta en TODOS Run 15+.**
+   - Codigo pre-fix tiene broadcast `[4] × [n,3]` que crashea (verificado con pytorch).
+   - Run 15 entreno post-fix por window de tiempo (commits Run 15 hardcoded weights -> fix indexing -> Run 16, todo en May 9; Run 15 training tomo ~3h en Colab y completo despues del fix).
+   - No es variable explicativa entre Run 15b (bueno) y Run 18+ (malos).
+
+3. **Scheduler CosineWarmRestarts NO era la unica causa.**
+   - Run 19 (constant LR, sin restarts, seed=42) sigue con dedos separados.
+   - Hipotesis previa "restarts perturban basin" se debilita: Yan-pure no rescata el modelo.
+   - Restarts pueden contribuir pero no son la causa raiz del seed=42 malo.
+
+4. **Seed=42 cae consistentemente en mal basin.**
+   - Run 18, Run 18b, Run 19 (tres configuraciones diferentes) con seed=42 producen mismo failure mode estructural.
+   - Init + batch order determinados por seed dominan sobre perturbaciones de scheduler/precision.
+
+5. **Run 15b fue init aleatorio afortunado, no merito del codigo.**
+   - Mismo codigo que Run 18b. Diferencia operacional unica: seed (random vs 42).
+   - No reproducible — su seed nunca fue loggeado (predates seed flag).
+
+**Pipeline final consolidado en branch `run19-yan-pure`** (commits 847459f28..b88625925):
+
+| Feature | Detalle |
+|---------|---------|
+| Yan-pure constant LR | `optimizer = Adam(lr=1e-3)`, sin scheduler. Tanh saturation actua como decay implicito. `--T_0` y `--lr_warmup` retenidos para backward compat pero unused. |
+| Seed flag con random default | `--seed -1` genera seed random y loguea. `--seed N` fija N. |
+| Seed loggeado | `ckpt['seed']` en cada save. |
+| Config completo loggeado | `ckpt['config'] = vars(args)` con 32 hyperparams convertidos a serializable. |
+| Val mid-training | Cada `--val_every` steps (default 500). 20 batches × 5000 poses. Subjects 1-10 (HOGraspNet S1 val split). |
+| Test al final | 20 batches × 5000 poses. Subjects 74-99 (S1 test split). Anotado en best_total.pt y best_val.pt. |
+| Best-by-val ckpt | `stage1_best_val.pt` separado de `stage1_best_total.pt` (legacy by train L_total). |
+| Metrics RS/NDS/NVS | Adaptadas Yan eq 1/2/loss_v. RS uniform sum, NDS sobre chain 4 puntos (no solo EE), NVS sobre 5 fingertips (no solo 1 EE). |
+| OOM fix val/test | Val/test samplers usan `valid_poses_path=None` (RANDOM_UNIFORM) para no duplicar cache de 6 GB en GPU. RS/NDS/NVS no dependen del robot anchor; solo `rec` se afecta marginalmente. |
+| Speed opts activos | A (no_grad+FK fuse+config cache) + B (Dong NPZ cache) + C (tips-only Dong) + D (AMP fp16) + E (torch.compile). Validados safe. |
+
+**Modelos disponibles al momento**:
+
+| Ckpt | Step | Seed | Calidad cualitativa |
+|------|------|------|---------------------|
+| `stage1_best_run15b.pt` | ~10k | aleatorio (no logged) | **Mejor**. Suave, coordinacion entre dedos. NO reproducible. |
+| `stage1_best_run18.pt` | 14462 | 42 | Dedos separados (indice+medio vs anular+meñique). |
+| `stage1_best_run18b_10k.pt` | 10463 | 42 | Identico a Run 18 sin speed opts. |
+| `stage1_best_run18b_15k.pt` | ~15k | 42 | Mas steps, responsivo pero misma separacion. |
+| `stage1_best_run19_seed42.pt` | ~15k | 42 | Constant LR + speed. Pulgar mejor, coordinacion sigue mala. |
+
+**Hipotesis abierta a verificar**:
+
+Seed variance alta — algunos seeds dan modelos buenos, otros malos. Test natural: correr 3 veces con `SEED=-1` (random). Si al menos 1 sale bueno → confirmado. Si los 3 son malos → arch problem estructural (multi-basin landscape inherente a 5 subspaces).
+
+Si arch problem → opciones de ataque:
+- Permutation invariance en init: 5 finger encoders empiezan con misma weight.
+- Auxiliary loss enforzando coordinacion entre subspaces.
+- z_dim reducido (de 16 a 8) → menos capacidad → menos basins.
+- Encoder shared con finger_id como input (vs 5 separados).
+
+**Posibles errores de Dong precompute revisados**:
+
+Test offline confirmo cache `_dong.npz` produce mismos valores que runtime path (`run_dong_stage2`), bit-exact, 0.0 diff sobre 500 poses. Descarta hipotesis de drift en cache. Nota en `memory/project_dong_precompute_check.md` queda como salvaguarda futura.
+
+**Lo que NO se debe hacer mas**:
+
+- No mas variantes de scheduler (constant LR confirmado match Yan).
+- No mas revert/restore de speed opts (confirmados safe).
+- No mas runs con seed=42 (cae en basin malo).
+- No mas teorizar sobre indexing fix o speed opts (descartados como causas).
+
+**Para tesis** -- defendible:
+
+- Pipeline alineado con Yan: Adam, constant lr=1e-3, MLP 8 capas 256d, z_dim=16, Tanh latent.
+- Eval riguroso: val (subjects 1-10) + test (subjects 74-99), separados. Best-by-val.
+- Metrics adaptadas dominio mano (RS uniform, NDS chain 4-puntos, NVS 5 fingertips). Justifica diferencias vs Yan en seccion metrics.
+- Speed opts validados como contribucion (matematicamente equivalentes, ~6x speedup).
+- Bug indexing encontrado y corregido (transparencia).
+- Limitacion conocida: alta variance bajo init. Reportable como future work.
+
+**Proximo paso operacional**:
+
+1. Colab con `SEED=-1`. ~35 min. Anota seed logged.
+2. Live retarget. Si bueno → guardar seed.
+3. Si malo → segundo intento con otro `SEED=-1`.
+4. Hasta 3 intentos. Total ~1.5h compute.
+5. Si encuentras buen baseline → fijar seed, iterar fixes (MCP axis decomp pendiente desde Entry 79).
+6. Si los 3 fallan → arch problem confirmado, atacar como en hipotesis abierta arriba.
+
+**Documentos relacionados**:
+- Entry 75: Run 15 config base (1/sigma D_R weights, W_R/W_JOINTS/W_AHG).
+- Entry 76: D_joints per-segment weights.
+- Entry 79: Diagnostico MCP, propuesta axis decomposition.
+- Entry 80-81: Speed opts plan + ejecucion.
+- `memory/project_dong_precompute_check.md`: hipotesis cache descartada.
+- `memory/project_retargeter_diagnosis.md`: diagnostico post-Run9.
+- `memory/project_run11_status.md`: arquitectura Run 14+.
+
+**Status**: Pipeline consolidado. Punto de partida para seed search + fixes futuros.
+
+## Entry 83 -- 2026-05-12: Run 20 resultados -- seed variance confirmada, mejor modelo hasta ahora
+
+**Context**: Run 20 = Run 19 config exacta (Yan-pure constant LR, speed opts, B=50k, N_STEPS=15k) con SEED=-1 (random). Primer run con seed aleatoria post-pipeline consolidation.
+
+**Seed generada**: 21266 (loggeada en ckpt['seed']).
+
+**Checkpoint**: `stage1_best_run20.pt`, step=11000 (best-by-val antes del final).
+
+**Metricas cuantitativas**:
+
+| Split | RS | NDS | NVS | rec |
+|-------|----|-----|-----|-----|
+| Val (subj 1-10) | 0.333 | 2.208 | 0.081 | 1.287 |
+| Test (subj 74-99) | 0.320 | 2.261 | 0.088 | 1.194 |
+
+**Evaluacion cualitativa (live retarget)**:
+
+- **Mano abierta**: lograda. Sigue apertura humana.
+- **Puno cerrado**: logrado. PRIMERO en todos los runs. Ningun modelo anterior podia cerrar puno.
+- **Seguimiento open/close**: fluido, reactivo. Dedos siguen apertura/cierre de izquierda a derecha.
+- **Abduccion de dedos**: excelente. Mejor comportamiento de todos los runs.
+- **Comparacion vs Run 15b**: Run 20 superior en comportamiento general. Run 15b ligeramente mejor en tip pinch / OK aproximado (solo con gesto exagerado). Run 20 gana en cobertura global del workspace.
+
+**Comportamientos imperfectos observados (live retarget, 2026-05-12)**:
+
+Categoria modelo (candidatos a mejorar con Run 21):
+- Thumb no logra posicionarse sobre los otros dedos en puno. THJ5 (oposicion) insuficiente -- S_k probablemente no discrimina bien esa configuracion especifica.
+- MCP no baja en poses no-puno. Solo el puno (pose extrema) vence esa resistencia. Poses intermedias siguen con MCP semi-extendido.
+
+Categoria sensor + ausencia de loop de control (no atribuible al modelo):
+- Dedos se van de lado abruptamente. Causa probable: MediaPipe pierde landmarks momentaneamente → outlier en input → spike de abduccion en output. Cada frame es independiente (no hay suavizado ni memoria de estado).
+- Colisiones ocasionales entre dedos. Modelo predice qpos sin collision avoidance -- output directo sin post-procesamiento.
+- Comportamiento mejora cuando usuario aprieta o estabiliza la mano -- sensor mas estable → landmarks mas precisos → mejor input al modelo.
+
+Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consistente con Yan et al. (mismo esquema). Suavizado temporal y collision avoidance son future work / pipeline de robot, no limitacion del modelo en si.
+
+**Conclusion**: Hipotesis de seed variance CONFIRMADA. Seed=42 era mal basin, no problema de arquitectura ni de codigo. Seed=21266 produce modelo cualitativamente superior a todos los runs anteriores.
+
+**Baseline reproducible establecido**: `--seed 21266` con config Run 20 = punto de partida para iteraciones futuras.
+
+**Proximo paso**: definir Run 21. Candidatos: (a) pesos uniformes en D_R + D_joints con seed=21266 (re-test limpio de lo que Run 16 intento sin seed controlada), (b) MCP axis decomposition (Entry 79). Nota: problema MCP no es exclusivo de runs con 1/sigma -- existia desde Run 1. Los pesos pueden empeorar la señal pero no son causa raiz.
+
+**Documentos relacionados**:
+- Entry 82: pipeline consolidado, runs 17-19.
+- Entry 79: diagnostico MCP, propuesta axis decomposition.
