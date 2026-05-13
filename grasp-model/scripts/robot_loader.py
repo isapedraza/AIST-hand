@@ -137,6 +137,22 @@ def _dong_block3_pip_only(
     return _dong_rotation_y(beta_pip)
 
 
+def _dong_angles_from_R_mcp(R_mcp: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Extract Dong Eq.24 MCP angles from rotation matrix [B,3,3].
+
+    R_mcp columns = [Xi, Yi, Zi].  Eq.24: beta = arccos(Zi_z), gamma = arccos(Yi_y).
+    Returns (beta [B], gamma [B]) in radians.
+    """
+    beta  = torch.arccos(R_mcp[:, 2, 2].clamp(-1 + EPS, 1 - EPS))
+    gamma = torch.arccos(R_mcp[:, 1, 1].clamp(-1 + EPS, 1 - EPS))
+    return beta, gamma
+
+
+def _dong_angle_from_Ry(R: torch.Tensor) -> torch.Tensor:
+    """Extract beta from Ry(beta) [B,3,3]. Ry: R[0,0]=cos, R[2,0]=-sin."""
+    return torch.arctan2(-R[:, 2, 0], R[:, 0, 0])
+
+
 def _dong_run_stage2(
     fk_out: dict[str, torch.Tensor],
     config: dict,
@@ -149,7 +165,10 @@ def _dong_run_stage2(
         joint_labels : list[str]        label for each slot
         meta         : dict             R_wrist, per-finger rotations,
                                         tips [B,F,3] (wrist-local, unnormalized),
-                                        tip_labels list[str]
+                                        tip_labels list[str],
+                                        mcp_angles {finger: (beta[B], gamma[B])},
+                                        pip_angles {finger: beta[B]},
+                                        dip_angles {finger: beta[B]}
     """
     def pos(link: str) -> torch.Tensor:
         return fk_out[link][:, :3, 3]
@@ -170,6 +189,9 @@ def _dong_run_stage2(
     tips_list: list[torch.Tensor] = []
     tip_labels: list[str] = []
     chain_positions: dict[str, torch.Tensor] = {}
+    mcp_angles: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+    pip_angles: dict[str, torch.Tensor] = {}
+    dip_angles: dict[str, torch.Tensor] = {}
 
     for finger_name, finger_cfg in config["fingers"].items():
         chain = finger_cfg["chain"]
@@ -190,6 +212,7 @@ def _dong_run_stage2(
         q_mcp = _dong_mat_to_quat(R_mcp)
         quats_list.append(q_mcp)
         labels.append(f"{finger_name}_mcp")
+        mcp_angles[finger_name] = _dong_angles_from_R_mcp(R_mcp)
 
         if n == 2:
             finger_meta[finger_name] = {"R_mcp": R_mcp}
@@ -201,6 +224,8 @@ def _dong_run_stage2(
             quats_list.append(q_pip)
             labels.append(f"{finger_name}_pip")
             finger_meta[finger_name] = {"R_mcp": R_mcp, "R_pip": R_pip}
+            pip_angles[finger_name] = _dong_angle_from_Ry(R_pip)
+            dip_angles[finger_name] = torch.zeros(R_pip.shape[0], device=R_pip.device)
             continue
 
         dip_l = local(chain[2])
@@ -212,17 +237,22 @@ def _dong_run_stage2(
         quats_list.append(q_dip)
         labels.append(f"{finger_name}_dip")
         finger_meta[finger_name] = {"R_mcp": R_mcp, "R_pip": R_pip, "R_dip": R_dip}
+        pip_angles[finger_name] = _dong_angle_from_Ry(R_pip)
+        dip_angles[finger_name] = _dong_angle_from_Ry(R_dip)
 
     quats = torch.stack(quats_list, dim=1)
     tips  = torch.stack(tips_list, dim=1)
 
     meta = {
-        "R_wrist": R_wrist,
-        "fingers": finger_meta,
-        "wrist_pos": wrist_pos,
-        "tips": tips,
-        "tip_labels": tip_labels,
-        "chain_positions": chain_positions,  # {finger: [B, L, 3]} all chain links in palm frame (unnormalized)
+        "R_wrist":        R_wrist,
+        "fingers":        finger_meta,
+        "wrist_pos":      wrist_pos,
+        "tips":           tips,
+        "tip_labels":     tip_labels,
+        "chain_positions": chain_positions,
+        "mcp_angles":     mcp_angles,   # {finger: (beta[B], gamma[B])} radians, Dong Eq.24
+        "pip_angles":     pip_angles,   # {finger: beta[B]} radians
+        "dip_angles":     dip_angles,   # {finger: beta[B]} radians (0 if no DIP)
     }
     return quats, labels, meta
 
