@@ -1,6 +1,6 @@
 # HANDOFF — Stage 1 Retargeter
 
-Last updated: 2026-05-11
+Last updated: 2026-05-12
 Author: Yahel + Claude session
 Current branch: `run19-yan-pure` (pushed to origin)
 Para Modelo 2 (retargeter). Para Modelo 1 (clasificador) ver `HANDOFF.md`.
@@ -9,7 +9,7 @@ Para Modelo 2 (retargeter). Para Modelo 1 (clasificador) ver `HANDOFF.md`.
 
 ## Problema original (no resuelto)
 
-**MCP no cierra correctamente** ni siquiera en el mejor modelo (`Run 15b`).
+**MCP no cierra correctamente** ni siquiera en el mejor modelo (`Run 20`).
 Los dedos no logran flexion completa en la articulacion metacarpofalangica.
 Persiste desde Run 14. Documented en DECISIONS.md Entry 79.
 
@@ -37,9 +37,9 @@ y peso propio. Ver DECISIONS.md Entry 79 (final del entry).
 | 18 | + seed=42 fijo | Dedos separados (indice+medio vs anular+meñique) |
 | 18b | Speed opts revertidos, seed=42 | Identico a Run 18 (speed opts safe) |
 | 19 | Yan-pure constant LR + speed opts, seed=42 | Pulgar mejor, dedos siguen mal |
-| 20 | Yan-pure + seed=-1 (random) | **Pendiente correr** (esperando red estable) |
+| **20** | Yan-pure + seed=-1 (random) | **MEJOR MODELO. Seed=21266, step=11k. Mano abierta, puno, seguimiento, abduccion.** |
 
-### Conclusiones consolidadas (DECISIONS.md Entry 82)
+### Conclusiones consolidadas (DECISIONS.md Entry 82-83)
 
 1. **Speed opts A-E confirmados math-safe**. Cache Dong NPZ bit-exact vs runtime (0.0 diff sobre 500 poses). AMP fp16 + torch.compile no afectan basin.
 2. **Indexing fix (84c820050 + 7981d9c4f) en todos Run 15+**. No es variable.
@@ -47,6 +47,7 @@ y peso propio. Ver DECISIONS.md Entry 79 (final del entry).
 4. **Seed=42 cae en mal basin**. Tres configuraciones diferentes, mismo failure.
 5. **Run 15b fue init aleatorio afortunado**, no merito del codigo. No reproducible (seed nunca loggeada).
 6. **MCP problem es ortogonal**. Persiste en TODOS los runs, buen o mal basin. Es problema estructural de D_R formulation, no de seed/scheduler/speed.
+7. **Seed variance CONFIRMADA (Entry 83)**. Run 20 seed=21266 produce mejor modelo cualitativo de todos los runs: mano abierta, puno cerrado, seguimiento open/close, abduccion de dedos.
 
 ---
 
@@ -87,51 +88,47 @@ af4722207 Fix OOM: val/test samplers skip valid_poses NPZ
 
 | Ckpt | Step | Seed | Calidad |
 |------|------|------|---------|
-| `stage1_best_run15b.pt` | ~10k | aleatorio (no logged) | **Mejor cualitativo** pero MCP cerrado mal. NO reproducible. |
-| `stage1_best_run18.pt` | 14462 | 42 | Dedos separados. |
-| `stage1_best_run18b_10k.pt` | 10463 | 42 | Identico a Run 18 sin speed opts. |
-| `stage1_best_run18b_15k.pt` | ~15k | 42 | Mas responsivo pero misma separacion. |
+| **`stage1_best_run20.pt`** | **11000** | **21266** | **MEJOR. Mano abierta, puno, seguimiento, abduccion. REPRODUCIBLE.** RS=0.320 test. |
+| `stage1_best_run15b.pt` | ~10k | aleatorio (no logged) | Segundo mejor. Tip pinch/OK aproximado (solo con gesto exagerado). NO reproducible. |
 | `stage1_best_run19_seed42.pt` | ~15k | 42 | Constant LR, pulgar mejor, coordinacion mala. |
+| `stage1_best_run18b_15k.pt` | ~15k | 42 | Mas responsivo pero dedos separados. |
+| `stage1_best_run18b_10k.pt` | 10463 | 42 | Identico a Run 18 sin speed opts. |
+| `stage1_best_run18.pt` | 14462 | 42 | Dedos separados. |
 
 ---
 
 ## Que falta hacer
 
-### Inmediato (cuando tengas red estable)
+### Estado actual (2026-05-12)
 
-**Test seed variance hypothesis**:
+**Seed variance CONFIRMADA. Baseline reproducible establecido.**
 
-1. Correr Run 20 con `SEED=-1` (random). ~35 min en T4.
-2. Anotar seed del log (`Seed: <N> (auto-generated)`).
-3. Renombrar ckpt: `stage1_best_val.pt` -> `stage1_best_run20_seed<N>.pt`.
-4. Live retarget. Evaluar coordinacion.
-5. Si bueno -> **tienes baseline reproducible** (fijar seed=N para futuros runs).
-6. Si malo -> Run 21 con otro `SEED=-1`. Hasta 3 intentos.
+- Run 20 seed=21266: mejor modelo cualitativo de todos los runs.
+- Mano abierta + puno cerrado + seguimiento + abduccion.
+- MCP problem persiste (estructural, ortogonal a seed).
 
-**Decision tree**:
-- **>=1 de 3 seeds bueno** -> confirmado seed roulette. Usa ese seed.
-- **3 de 3 malos** -> arch problem estructural. Atacar arquitectura (ver abajo).
+### Inmediato
+
+**Run 21 con seed=21266 + MCP axis decomposition**:
+
+1. Modificar `_dong_run_stage2` en sampler / S_k: separar quaternion MCP en componente flex y componente abd.
+2. Aplicar peso distinto a cada eje en D_R (flex pesa mas que abd).
+3. Correr Colab con `SEED=21266` (fijo) y cambio MCP.
+4. Live retarget. Comparar coordinacion vs Run 20.
+5. Si mejor -> baseline final. Si peor o igual -> MCP fix no era el bottleneck.
+
+Ver DECISIONS.md Entry 79 para diagnostico completo y propuesta de implementacion.
 
 ### Mediano plazo
 
-**A) Si encuentras buen seed**: iterar fixes con baseline reproducible:
-
-1. **MCP axis decomposition** (ataca problema original):
-   - Modificar `_dong_run_stage2` o crear nueva D_R que separe quaternion MCP en flexion y abduccion.
-   - Aplicar peso distinto a cada eje (flex pesa mas que abd).
-   - Run con mismo seed bueno + cambio MCP. Comparar live retarget vs baseline.
-
-2. **Multi-seed final** (para tesis):
-   - 3-5 seeds, misma config final.
+1. **Multi-seed final** (para tesis):
+   - 3-5 seeds con config final elegida.
    - Reportar mean +- std de RS/NDS/NVS en test.
 
-**B) Si todos los seeds fallan** (arch problem):
-
-Opciones de ataque a investigar:
-- Permutation invariance en init: 5 finger encoders empiezan con misma weight.
-- Auxiliary loss enforzando coordinacion entre subspaces.
-- z_dim reducido (16 -> 8) -> menos capacidad -> menos basins.
-- Encoder shared con finger_id como input (vs 5 separados).
+2. **Si MCP fix no mejora**: opciones de ataque a investigar:
+   - Permutation invariance en init: 5 finger encoders empiezan con misma weight.
+   - Auxiliary loss enforzando coordinacion entre subspaces.
+   - z_dim reducido (16 -> 8) -> menos basins.
 
 ### Largo plazo (tesis)
 
@@ -224,17 +221,14 @@ Proximo paso operacional: Run 20 con random seed.
 
 ## Decisiones pendientes que Yahel debe tomar
 
-1. **¿Cuantos intentos de seed antes de declarar arch problem?** Sugerido: 3.
-2. **¿Que metric usar para "es buen modelo"?** Sugerido: live retarget cualitativo + val RS.
-3. **¿Implementar MCP axis decomp ahora o esperar buen baseline?** Sugerido: esperar baseline.
-4. **¿Pagar Colab Pro temporal o copiar archivos local en cada session?** Decision tuya.
+1. **¿Implementar MCP axis decomp en Run 21 o primero multi-seed con config actual?** Sugerido: MCP en Run 21 con seed=21266 fija.
+2. **¿Pagar Colab Pro temporal o copiar archivos local en cada session?** Decision tuya.
 
 ---
 
 ## Resumen TL;DR
 
 - Pipeline en `run19-yan-pure` listo y testeado.
-- MCP problem original sigue abierto (Entry 79 documenta fix propuesto).
-- Run 15b mejor modelo pero no reproducible.
-- Seed=42 cae mal. Probar seed random (`SEED=-1` ya configurado).
-- Cuando vuelvas: open notebook -> Run all -> anota seed -> live retarget -> decide.
+- **Run 20 (seed=21266) = mejor modelo. Mano abierta, puno, seguimiento, abduccion. REPRODUCIBLE.**
+- MCP problem sigue abierto (Entry 79). Fix propuesto: axis decomposition.
+- Proximo paso: Run 21 con seed=21266 + MCP axis decomp. Comparar vs Run 20.

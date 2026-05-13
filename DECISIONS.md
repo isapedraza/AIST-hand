@@ -4571,3 +4571,37 @@ Test offline confirmo cache `_dong.npz` produce mismos valores que runtime path 
 - `memory/project_run11_status.md`: arquitectura Run 14+.
 
 **Status**: Pipeline consolidado. Punto de partida para seed search + fixes futuros.
+
+## Entry 83 -- 2026-05-12: Run 20 resultados -- seed variance confirmada, mejor modelo hasta ahora
+
+**Context**: Run 20 = Run 19 config exacta (Yan-pure constant LR, speed opts, B=50k, N_STEPS=15k) con SEED=-1 (random). Primer run con seed aleatoria post-pipeline consolidation.
+
+**Seed generada**: 21266 (loggeada en ckpt['seed']).
+
+**Checkpoint**: `stage1_best_run20.pt`, step=11000 (best-by-val antes del final).
+
+**Metricas cuantitativas**:
+
+| Split | RS | NDS | NVS | rec |
+|-------|----|-----|-----|-----|
+| Val (subj 1-10) | 0.333 | 2.208 | 0.081 | 1.287 |
+| Test (subj 74-99) | 0.320 | 2.261 | 0.088 | 1.194 |
+
+**Evaluacion cualitativa (live retarget)**:
+
+- **Mano abierta**: lograda. Sigue apertura humana.
+- **Puno cerrado**: logrado. Sigue cierre humano.
+- **Seguimiento open/close**: fluido, reactivo.
+- **Abduccion de dedos**: visible y correcta.
+- **Comparacion vs Run 15b**: Run 20 superior en comportamiento general. Run 15b ligeramente mejor en un aspecto especifico (tip pinch / OK aproximado), pero solo cuando el gesto se exageraba. Run 20 gana en cobertura global del workspace.
+- **Limitacion persistente**: MCP no cierra completamente. Problema estructural de D_R formulation (Entry 79), ortogonal a seed.
+
+**Conclusion**: Hipotesis de seed variance CONFIRMADA. Seed=42 era mal basin, no problema de arquitectura ni de codigo. Seed=21266 produce modelo cualitativamente superior a todos los runs anteriores.
+
+**Baseline reproducible establecido**: `--seed 21266` con config Run 20 = punto de partida para iteraciones futuras.
+
+**Proximo paso**: Run 21 con seed=21266 fija + cambio incremental (candidato: MCP axis decomposition de Entry 79). Comparacion directa vs Run 20 aislara impacto del cambio.
+
+**Documentos relacionados**:
+- Entry 82: pipeline consolidado, runs 17-19.
+- Entry 79: diagnostico MCP, propuesta axis decomposition (fix pendiente).
