@@ -4617,3 +4617,85 @@ Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consi
 **Documentos relacionados**:
 - Entry 82: pipeline consolidado, runs 17-19.
 - Entry 79: diagnostico MCP, propuesta axis decomposition.
+
+---
+
+## Entry 84 -- 2026-05-13: Run 21 + Run 22 plan -- MCP weight boost y angle-based D_R
+
+**Context**: Post-Run 20 (mejor modelo, seed=21266). Dos experimentos en cola en branch `experimental`.
+
+---
+
+### Run 21 (corriendo al momento de escribir)
+
+**Config**: igual que Run 20 + `mcp D_R weight = 0.5` (vs 1/sigma ~0.19-0.33) + `SEED=21266` fijo.
+
+**Hipotesis**: pesos 1/sigma suprimen MCP en D_R (Entry 79). Subir MCP a 0.5 da mas señal de flexion sin abandonar 1/sigma para PIP/DIP.
+
+**Cambio en codigo**: `sk_weights_dr` en `train_cross_emb.py`:
+```python
+# Antes (1/sigma):  thumb=0.258, index=0.329, middle=0.188, ring=0.238, pinky=0.197
+# Ahora:           todos los dedos mcp=0.5 (pip/dip sin cambio)
+```
+
+**Criterio de exito**: MCP cierra mas completo en live retarget vs Run 20. Comparar mismo gesto de puno.
+
+**Nota**: si Run 21 = igual o peor que Run 20 → pesos no son causa raiz del MCP problem → pasar a Run 22.
+
+---
+
+### Run 22 -- Plan (pendiente resultados Run 21)
+
+**Hipotesis**: separar señal de flexion MCP de abduccion MCP en D_R, usando angulos escalares Dong (Eq.24) en vez de distancia cuaterniónica. La distancia cuaterniónica del MCP mezcla flex + abd; con magnitud angular mayor de flex, abd queda invisible.
+
+**Cambio conceptual en D_R para MCP**:
+```
+# Actual (todos los joints, incluyendo MCP):
+D_R_mcp = w_mcp * (1 - dot(q_mcp_a, q_mcp_b)^2)
+
+# Run 22:
+D_R_mcp = w_flex * |beta_a - beta_b| + w_abd * |gamma_a - gamma_b|
+```
+PIP/DIP: sin cambio (quaternion distance, mismo que ahora).
+
+**Infraestructura ya implementada** (branch `experimental`, commit 3e7850b8a):
+
+1. `robot_loader.py`: `_dong_run_stage2` ahora expone `mcp_angles`, `pip_angles`, `dip_angles` en meta (Dong Eq.24: beta=arccos(Zi_z), gamma=arccos(Yi_y)).
+2. `precompute_robot_dong.py`: guarda `mcp_angles [N,5,2]`, `pip_angles [N,5]`, `dip_angles [N,5]` en NPZ. Output default: `valid_robot_poses_eigengrasp_dong_euler.npz`.
+3. `precompute_dong_colab.ipynb`: apunta a `_dong_euler.npz`. Corre independiente en Colab (~4-5 min T4).
+
+**Analogia humano/robot**:
+- Humano: `hograspnet_abl13.csv` (abl11 + 20 columnas Dong: beta/gamma MCP + beta PIP/DIP).
+- Robot: `_dong_euler.npz` (mismo esquema: quats + chain + tips + mcp_angles + pip_angles + dip_angles).
+
+**Lo que falta implementar para Run 22**:
+
+1. **`compute_sk_weights.py`**: actualizar para leer abl13 y computar sigma de angulos en vez de quaternion para MCP:
+   - `sigma_mcp_flex = std(|beta_a - beta_b|)` (50k pares random, train split)
+   - `sigma_mcp_abd  = std(|gamma_a - gamma_b|)`
+   - PIP/DIP: pueden seguir con sigma de quaternion (abl11) o migrar a sigma de angulos (abl13).
+
+2. **`human_loader.py`**: agregar carga de columnas beta/gamma de abl13 como `_angles` tensor adicional al batch.
+
+3. **`robot_loader.py` / `cross_embodiment_sampler.py`**: leer `mcp_angles` del NPZ cache y devolverlo en el batch.
+
+4. **`train_cross_emb.py`**: modificar D_R para MCP: usar `w_flex*|beta_a-beta_b| + w_abd*|gamma_a-gamma_b|` en lugar de `w_mcp*(1-dot^2)`. PIP/DIP sin cambio.
+
+5. **Notebook `train_stage1_colab.ipynb`**: apuntar `VALID_POSES_PATH` a `_dong_euler.npz` y `CSV_PATH` a `abl13`.
+
+**Sobre sigma para PIP/DIP**: decision pendiente. Opciones:
+- (a) Mantener quaternion distance + sigma actual (abl11) — cambio minimo, solo MCP cambia.
+- (b) Migrar PIP/DIP tambien a angulos (abl13 tiene beta PIP/DIP) — mas consistente pero mas cambio de codigo.
+- Recomendacion: opcion (a) para Run 22. Si funciona, evaluar (b) en Run 23.
+
+**Pasos operativos antes de Run 22**:
+1. Esperar resultados Run 21.
+2. Correr `precompute_dong_colab.ipynb` en Colab (cuenta separada OK) → genera `_dong_euler.npz` en Drive.
+   - Archivos necesarios en Drive: `valid_robot_poses_eigengrasp.npz`, `shadow_hand_right.yaml`, carpeta `dex-urdf/`.
+3. Implementar cambios 1-5 arriba en branch `experimental`.
+4. Correr Run 22 con `SEED=21266`.
+
+**Documentos relacionados**:
+- Entry 79: diagnostico MCP original, propuesta axis decomposition.
+- Entry 83: Run 20 resultados, baseline reproducible.
+- Entry 75/76: como se computaron pesos 1/sigma actuales.
