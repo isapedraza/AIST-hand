@@ -4739,5 +4739,13 @@ suficiente senal de flexion sin aplastar la extension. A confirmar.
 confirma que D_R es el mecanismo correcto para controlar comportamiento por articulacion.
 La arquitectura responde al supervision signal como se espera.
 
+**Observacion adicional**: los dedos no-pulgar colapsan lateralmente (se juntan hacia un lado).
+Hipotesis: quaternion MCP completo mezcla flex + abd. Con peso=0.5, el modelo minimiza D_R
+via abduccion (rango pequeño, facil) en lugar de flexion (rango grande, dificil). Resultado:
+todos los dedos se juntan lateralmente porque abd es mas facil de satisfacer que flex.
+Esto es exactamente el problema que Run 22 ataca: separar mcp_flex de mcp_abd con pesos
+independientes. mcp_abd pesos en Run 22 son menores (middle=0.22, pinky=0.19) -- deberia
+reducir el colapso lateral.
+
 **Siguiente paso**: evaluar Run 22 (euler, pesos data-driven). Si el tradeoff flexion/extension
-mejora vs Run 21, el enfoque euler es superior. Si empeora igual, replantear.
+mejora vs Run 21 Y los dedos no colapsan lateralmente, el enfoque euler es la direccion correcta.
