@@ -4749,3 +4749,47 @@ reducir el colapso lateral.
 
 **Siguiente paso**: evaluar Run 22 (euler, pesos data-driven). Si el tradeoff flexion/extension
 mejora vs Run 21 Y los dedos no colapsan lateralmente, el enfoque euler es la direccion correcta.
+
+---
+
+## Entry 86 -- 2026-05-13: Run 22 resultados -- movimiento fluido, colisiones inter-dedo, pulgar con oposicion
+
+**Config Run 22**: abl13 + dong_euler.npz + D_R euler (Dong Eq.24 beta/gamma, pesos 1/sigma) + seed=21266 + 15k steps.
+
+**Resultados cualitativos (live retarget)**:
+
+| Aspecto | Run 20 | Run 21 | Run 22 |
+|---------|--------|--------|--------|
+| Movimiento global | Bueno | Bueno | **Fluido -- mejor que ambos** |
+| Pulgar | Bueno | Excelente | **Excelente -- primera oposicion real** |
+| MCP flexion | Incompleta | Mejora (colapso lateral) | Incompleta, meñique bien |
+| Finger extension | Bien | Empeora | Indice bien |
+| Colisiones inter-dedo | No | Leve (abd) | **Si -- dedos chuecos, se pegan** |
+| Overall | MEJOR | Segundo | Tercero (potencial alto) |
+
+**Observaciones especificas**:
+- Movimiento es el mas fluido de todos los runs hasta ahora.
+- Pulgar: primera vez que muestra oposicion -- se acerca/dobla hacia los otros dedos. Hito importante.
+- Indice: extension bien.
+- Meñique: MCP flexion correcta.
+- MCP resto de dedos: no bajan del todo.
+- Problema principal: dedos quedan "chuecos" y se pegan entre si. Al intentar puno, los dedos chocan porque no hay separacion espacial suficiente.
+
+**Interpretacion**:
+
+Dos problemas separados coexisten:
+
+1. **Colision por falta de separacion abd**: los pesos mcp_abd en Run 22 son bajos para middle (0.22) y pinky (0.19). Menos señal de abduccion → dedos no se separan lateralmente → colisionan al flexionar. Run 20 tenia mas separacion porque el quaternion MCP completo incluia abd implicitamente.
+
+2. **MCP flexion incompleta**: persiste como problema estructural. El euler D_R da mejor señal de flexion que quat (meñique lo demuestra) pero no suficiente para cerrar puno completo.
+
+**Sobre el movimiento fluido**: probablemente consecuencia de tener señal de supervision mas limpia por componente. Los angulos euler son mas interpretables que quaternion distance; la señal de gradiente en el espacio latente es mas consistente.
+
+**Hipotesis para mejora**:
+
+Run 22 tiene potencial real pero necesita balance abd. Opciones:
+- (a) Subir `mcp_abd` weights para middle/ring/pinky para recuperar separacion. Riesgo: volver al colapso lateral de Run 21.
+- (b) Escalar `w_r` hacia abajo (ej. w_r=0.5) para que D_joints recupere influencia -- la cadena de posiciones ya tiene informacion de separacion espacial.
+- (c) Combinacion: mantener euler pero ajustar pesos abd per-finger manualmente.
+
+**Dato clave para tesis**: Run 22 produce movimiento mas fluido que Run 20 y Run 21. La calidad cinematica del movimiento mejora con euler. El problema es de configuracion de pesos, no del enfoque en si. Euler > quat para D_R en terminos de calidad de movimiento.
