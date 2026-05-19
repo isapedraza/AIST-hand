@@ -74,7 +74,7 @@ def _parse_args() -> argparse.Namespace:
         help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
     )
     p.add_argument("--margin",      type=float, default=0.05)
-    p.add_argument("--w_r", type=float, default=1.0, help="Weight for whole-hand D_R in S_hand.")
+    p.add_argument("--w_r", type=float, default=10.0, help="Weight for whole-hand D_R in S_hand.")
     p.add_argument("--w_joints", type=float, default=0.0, help="Deprecated Run20 S_k weight; unused in Run21.")
     p.add_argument("--w_ahg", type=float, default=0.0, help="Deprecated Run20 S_k weight; unused in Run21.")
     p.add_argument("--w_thumb_pos", type=float, default=10.0, help="Weight for Xin thumb-tip position term in S_hand.")

@@ -4671,6 +4671,16 @@ Esto conserva la transicion de Xin en espacio unitario: ~50% de HL activa intenc
 - No agregar joint regularization del paper todavia.
 - No cambiar `D_R` a pesos uniformes hasta Run 22.
 
+**Metric probe local post-implementacion**:
+
+Con `B=16`, `n_steps=1`, `--log_metric_stats`, `W_R=1` produjo contribuciones ponderadas aproximadas:
+
+```text
+wD_R=0.069, wthumb=1.018, wtip=0.229, wdir=0.985, wpinch=4.520
+```
+
+Para Run 21 se deja `W_R=10` como punto inicial conservador: `D_R` deja de ser casi irrelevante, pero sigue por debajo de pinch.
+
 **Razonamiento**:
 
 Run 21 cambia una hipotesis a la vez: deja de representar la mano como dedos independientes y entrena el latent con criterios funcionales whole-hand. La adaptacion morfologica evita meter thresholds en metros dentro de un espacio unitario, pero conserva el significado del objetivo de pinch de Xin.
