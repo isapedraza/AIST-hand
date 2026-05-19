@@ -54,14 +54,13 @@ class CAMLayer(nn.Module):
 
 class HumanEncoder_E_h(nn.Module):
     """
-    E_h: encodes hand pose to decoupled latent subspaces via CAM-GNN.
+    E_h: encodes hand pose to a single whole-hand latent via CAM-GNN.
 
     Input : quats [B, 20, 4]   Dong quaternions (joints 1-20, wrist prepended as identity)
-    Output: z     [B, 3*z_dim] concat of [z_thumb, z_precision, z_support], each [-1,1]
+    Output: z     [B, z_dim] whole-hand latent, bounded to [-1, 1]
 
-    One shared CAM-GNN processes all 21 nodes. Three projection heads pool over
-    their respective node subsets: thumb (1-4), precision/index+middle (5-12),
-    support/ring+pinky (13-20). Wrist node 0 participates in CAM propagation only.
+    One shared CAM-GNN processes all 21 nodes. The projection head pools over all
+    hand joints (nodes 1-20). Wrist node 0 participates in CAM propagation only.
     """
 
     N_JOINTS = 21
@@ -72,11 +71,7 @@ class HumanEncoder_E_h(nn.Module):
         self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
         self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
         self.layer3 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
-        self.proj_thumb  = nn.Linear(hidden_dim, z_dim)
-        self.proj_index  = nn.Linear(hidden_dim, z_dim)
-        self.proj_middle = nn.Linear(hidden_dim, z_dim)
-        self.proj_ring   = nn.Linear(hidden_dim, z_dim)
-        self.proj_pinky  = nn.Linear(hidden_dim, z_dim)
+        self.proj_hand = nn.Linear(hidden_dim, z_dim)
         self.out_act = nn.Tanh()
 
     def forward(self, quats: torch.Tensor) -> torch.Tensor:
@@ -91,9 +86,5 @@ class HumanEncoder_E_h(nn.Module):
         x = self.layer2(x, self.cam)
         x = self.layer3(x, self.cam)
         x = x.view(B, N, -1)                              # [B, 21, hidden]
-        z_thumb  = self.out_act(self.proj_thumb( x[:, SUBSPACE_NODES["thumb"],  :].max(dim=1).values))
-        z_index  = self.out_act(self.proj_index( x[:, SUBSPACE_NODES["index"],  :].max(dim=1).values))
-        z_middle = self.out_act(self.proj_middle(x[:, SUBSPACE_NODES["middle"], :].max(dim=1).values))
-        z_ring   = self.out_act(self.proj_ring(  x[:, SUBSPACE_NODES["ring"],   :].max(dim=1).values))
-        z_pinky  = self.out_act(self.proj_pinky( x[:, SUBSPACE_NODES["pinky"],  :].max(dim=1).values))
-        return torch.cat([z_thumb, z_index, z_middle, z_ring, z_pinky], dim=-1)  # [B, 5*z_dim]
+        hand = x[:, 1:, :].max(dim=1).values               # [B, hidden]
+        return self.out_act(self.proj_hand(hand))          # [B, z_dim]

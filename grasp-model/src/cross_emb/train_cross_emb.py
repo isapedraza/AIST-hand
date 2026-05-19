@@ -60,7 +60,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ckpt_every", type=int,   default=5)
     p.add_argument("--lr_warmup",  type=int,   default=500)
     # Hyperparams
-    p.add_argument("--z_dim",      type=int,   default=64)
+    p.add_argument("--z_dim",      type=int,   default=16)
     p.add_argument("--shared_dim", type=int,   default=1024)
     p.add_argument("--lr",         type=float, default=1e-3)
     p.add_argument("--lambda_c",   type=float, default=10.0)
@@ -74,9 +74,17 @@ def _parse_args() -> argparse.Namespace:
         help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
     )
     p.add_argument("--margin",      type=float, default=0.05)
-    p.add_argument("--w_r",     type=float, default=1.0, help="Weight for D_R in S_k.")
-    p.add_argument("--w_joints", type=float, default=1.0, help="Weight for D_joints in S_k.")
-    p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
+    p.add_argument("--w_r", type=float, default=1.0, help="Weight for whole-hand D_R in S_hand.")
+    p.add_argument("--w_joints", type=float, default=0.0, help="Deprecated Run20 S_k weight; unused in Run21.")
+    p.add_argument("--w_ahg", type=float, default=0.0, help="Deprecated Run20 S_k weight; unused in Run21.")
+    p.add_argument("--w_thumb_pos", type=float, default=10.0, help="Weight for Xin thumb-tip position term in S_hand.")
+    p.add_argument("--w_tip_pos", type=float, default=1.0, help="Weight for Xin wrist-to-fingertip position term in S_hand.")
+    p.add_argument("--w_tip_dir", type=float, default=10.0, help="Weight for Xin DIP-to-tip vector term in S_hand.")
+    p.add_argument("--w_pinch", type=float, default=10.0, help="Weight for Xin thumb-to-fingertip pinch term in S_hand.")
+    p.add_argument("--pinch_eps1_m", type=float, default=0.1, help="Xin pinch intent threshold in meters before morphology normalization.")
+    p.add_argument("--pinch_eps2_m", type=float, default=0.01, help="Xin pinch contact threshold in meters before morphology normalization.")
+    p.add_argument("--pinch_ref_hand_length_m", type=float, default=0.197, help="Reference hand length used to convert Xin meter thresholds to unit hand-length ratios.")
+    p.add_argument("--pinch_sigmoid_w_m", type=float, default=10.0, help="Xin sigmoid slope in 1/m before morphology normalization.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(
@@ -167,7 +175,7 @@ def main():
     sys.path.insert(0, str(REPO_ROOT / "grasp-model/src/cross_emb"))
 
     from cross_embodiment_sampler import CrossEmbodimentSampler
-    from human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
+    from human_modules import HumanEncoder_E_h
     from robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
     from shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 
@@ -279,19 +287,101 @@ def main():
         "pinky":  [0.197, 0.405, 0.398, 0.0],
     }
     sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
+    pinch_eps1 = args.pinch_eps1_m / args.pinch_ref_hand_length_m
+    pinch_eps2 = args.pinch_eps2_m / args.pinch_ref_hand_length_m
+    pinch_sigmoid_w = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
+    if pinch_eps2 >= pinch_eps1:
+        raise ValueError(f"pinch_eps2 must be lower than pinch_eps1 after normalization: {pinch_eps2} >= {pinch_eps1}")
+    print(
+        f"Xin morphology ratios: eps1={pinch_eps1:.4f}, eps2={pinch_eps2:.4f}, "
+        f"sigmoid_w={pinch_sigmoid_w:.4f}"
+    )
 
-    # D_joints per-segment weights: w_j = (1/sigma_j) / sum(1/sigma)
-    # sigma_j = std(||chain_j_a - chain_j_b||) over HOGraspNet train pairs, human only.
-    # Order per subspace: [mcp, pip, dip, tip]. MCP highest weight (least variation).
-    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
-    _sk_wj = {
-        "thumb":  [0.4499, 0.2534, 0.1484, 0.1484],
-        "index":  [0.5282, 0.2435, 0.1381, 0.0902],
-        "middle": [0.5630, 0.2259, 0.1267, 0.0844],
-        "ring":   [0.5743, 0.2364, 0.1134, 0.0759],
-        "pinky":  [0.5459, 0.2465, 0.1241, 0.0835],
-    }
-    sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
+    _seg_order = ["mcp", "pip", "dip", "tip"]
+
+    def _dr_weights_for_labels(labels: list[str]) -> torch.Tensor:
+        vals = []
+        for label in labels:
+            finger, seg = label.split("_", 1)
+            vals.append(sk_weights_dr[finger][_seg_order.index(seg)])
+        w = torch.stack(vals).to(DEVICE)
+        return w / w.sum().clamp(min=1e-8)
+
+    def _sigmoid_xin(d: torch.Tensor, w: float) -> torch.Tensor:
+        return 1.0 / (1.0 + torch.exp(w * (d - pinch_eps1)))
+
+    def _pinch_rescale(d: torch.Tensor) -> torch.Tensor:
+        mid = pinch_eps1 / (pinch_eps1 - pinch_eps2) * (d - pinch_eps2)
+        return torch.where(
+            d < pinch_eps2,
+            torch.zeros_like(d),
+            torch.where(d > pinch_eps1, d, mid),
+        )
+
+    def _s_hand_components(
+        q1: torch.Tensor,
+        q2: torch.Tensor,
+        chain1: torch.Tensor,
+        chain2: torch.Tensor,
+        common_labels: list[str],
+        common_fingers: list[str],
+    ) -> dict[str, torch.Tensor]:
+        # q*: [N, K, 4], chain*: [N, F, 4, 3] in wrist-local hand-length units.
+        dot = (q1 * q2).sum(-1)
+        w_dr = _dr_weights_for_labels(common_labels)
+        D_R = (w_dr * (1 - dot ** 2)).sum(dim=-1)
+
+        n = chain1.shape[0]
+        zero = torch.zeros(n, device=chain1.device, dtype=chain1.dtype)
+        tips1 = chain1[:, :, 3, :]
+        tips2 = chain2[:, :, 3, :]
+        dirs1 = chain1[:, :, 3, :] - chain1[:, :, 2, :]
+        dirs2 = chain2[:, :, 3, :] - chain2[:, :, 2, :]
+        D_tip_dir = ((dirs1 - dirs2) ** 2).sum(dim=-1).sum(dim=-1)
+
+        if "thumb" not in common_fingers:
+            D_thumb_pos = zero
+            D_pinch = zero
+            D_tip_pos = ((tips1 - tips2) ** 2).sum(dim=-1).sum(dim=-1)
+        else:
+            thumb_idx = common_fingers.index("thumb")
+            pinch_idx = [i for i, f in enumerate(common_fingers) if f != "thumb"]
+            D_thumb_pos = ((tips1[:, thumb_idx] - tips2[:, thumb_idx]) ** 2).sum(dim=-1)
+            if not pinch_idx:
+                D_pinch = zero
+                D_tip_pos = ((tips1 - tips2) ** 2).sum(dim=-1).sum(dim=-1)
+            else:
+                thumb1 = tips1[:, thumb_idx]
+                thumb2 = tips2[:, thumb_idx]
+                gamma1 = tips1[:, pinch_idx, :] - thumb1[:, None, :]
+                gamma2 = tips2[:, pinch_idx, :] - thumb2[:, None, :]
+                d = gamma1.norm(dim=-1)
+                gamma_hat = gamma1 / d[..., None].clamp(min=1e-8)
+                s = _sigmoid_xin(d, pinch_sigmoid_w)
+                stilde_nonthumb = _sigmoid_xin(d, -pinch_sigmoid_w)
+                target = _pinch_rescale(d)[..., None] * gamma_hat
+                D_pinch = (s * ((gamma2 - target) ** 2).sum(dim=-1)).sum(dim=-1)
+
+                stilde = torch.ones(n, len(common_fingers), device=chain1.device, dtype=chain1.dtype)
+                stilde[:, pinch_idx] = stilde_nonthumb
+                stilde[:, thumb_idx] = _sigmoid_xin(d.min(dim=-1).values, -pinch_sigmoid_w)
+                D_tip_pos = (stilde * ((tips1 - tips2) ** 2).sum(dim=-1)).sum(dim=-1)
+
+        S = (
+            args.w_r * D_R
+            + args.w_thumb_pos * D_thumb_pos
+            + args.w_tip_pos * D_tip_pos
+            + args.w_tip_dir * D_tip_dir
+            + args.w_pinch * D_pinch
+        )
+        return {
+            "D_R": D_R,
+            "D_thumb_pos": D_thumb_pos,
+            "D_tip_pos": D_tip_pos,
+            "D_tip_dir": D_tip_dir,
+            "D_pinch": D_pinch,
+            "S": S,
+        }
 
     def _sd(m: torch.nn.Module) -> dict:
         # Strip the OptimizedModule wrapper from torch.compile so saved keys
@@ -324,6 +414,7 @@ def main():
         D_X_ = getattr(D_X, "_orig_mod", D_X)
         D_r_ = getattr(D_r, "_orig_mod", D_r)
         rs_sum = nds_sum = nvs_sum = 0.0
+        s_hand_sum = pinch_err_sum = pinch_dist_err_sum = tip_dir_err_sum = 0.0
         rec_sum = 0.0
         n_done = 0
         human_labels_global = ["thumb", "index", "middle", "ring", "pinky"]
@@ -395,10 +486,34 @@ def main():
                 q_r_hat_rd = D_r_(D_X_(z_r_))
                 rec        = (q_r_data - q_r_hat_rd).norm(dim=-1).mean().item()
 
+                comps = _s_hand_components(
+                    quats_h_sub,
+                    quats_r_sub_t,
+                    chain_h_sub,
+                    chain_r_t,
+                    common_labels,
+                    common_fingers,
+                )
+                s_hand = comps["S"].mean().item()
+                tip_dir_err = comps["D_tip_dir"].mean().item()
+                pinch_err = comps["D_pinch"].mean().item()
+                if "thumb" in common_fingers and len(common_fingers) > 1:
+                    thumb_i = common_fingers.index("thumb")
+                    pinch_i = [i for i, f in enumerate(common_fingers) if f != "thumb"]
+                    gh = chain_h_sub[:, pinch_i, 3, :] - chain_h_sub[:, thumb_i, 3, :][:, None, :]
+                    gr = chain_r_t[:, pinch_i, 3, :] - chain_r_t[:, thumb_i, 3, :][:, None, :]
+                    pinch_dist_err = (gh.norm(dim=-1) - gr.norm(dim=-1)).abs().mean().item()
+                else:
+                    pinch_dist_err = 0.0
+
                 rs_sum  += rs
                 nds_sum += nds
                 nvs_sum += nvs
                 rec_sum += rec
+                s_hand_sum += s_hand
+                pinch_err_sum += pinch_err
+                pinch_dist_err_sum += pinch_dist_err
+                tip_dir_err_sum += tip_dir_err
                 n_done  += 1
         for m in (E_h_, E_r_, E_X_, D_X_, D_r_):
             m.train()
@@ -409,6 +524,10 @@ def main():
             "nds": nds_sum / n_done,
             "nvs": nvs_sum / n_done,
             "rec": rec_sum / n_done,
+            "s_hand": s_hand_sum / n_done,
+            "pinch_err": pinch_err_sum / n_done,
+            "pinch_dist_err": pinch_dist_err_sum / n_done,
+            "tip_dir_err": tip_dir_err_sum / n_done,
             "n_batches": n_done,
             "b_eval": b_eval,
         }
@@ -444,9 +563,9 @@ def main():
         extra_human_by_class = batch.get("extra_human_by_class", {})
 
         with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
-            z_t  = E_h(quats_h)       # [B, 5*z_dim]
+            z_t  = E_h(quats_h)       # [B, z_dim]
             z_t1 = E_h(quats_h_t1)
-            z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
+            z_r  = E_X(E_r(q_r))     # [B, z_dim]
 
             q_r_hat    = D_r(D_X(z_r))
             z_h_rt     = E_X(D_X(z_t))
@@ -455,38 +574,16 @@ def main():
             L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
             L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
 
-        # --- Per-subspace contrastive loss (Yan et al. 2026) ---
-        z_t_subs = z_t.chunk(5, dim=-1)   # (z_thumb, z_index, z_middle, z_ring, z_pinky) each [B, z_dim]
-        z_r_subs = z_r.chunk(5, dim=-1)
-        L_cont = torch.tensor(0.0, device=DEVICE)
+        # --- Whole-hand contrastive loss with functional S_hand ---
+        z_all = torch.cat([z_t, z_r], dim=0)
+        q_all = torch.cat([quats_h_sub, quats_r_sub], dim=0)
+        chain_all = torch.cat([chain_h_sub, chain_r_sub], dim=0)
+        B2 = z_all.shape[0]
+        n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
         metric_stats = {}
-        for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
-            prefixes   = SUBSPACE_LABEL_PREFIX[sub]
-            sub_finger = SUBSPACE_FINGERS[sub]
-            # Indices into common_labels / quats_*_sub for this subspace
-            jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
-            # Indices into common_fingers / tips_*_sub for this subspace
-            tidx = [i for i, f in enumerate(common_fingers) if f in sub_finger]
-            if not jidx:
-                continue
-            z_h_k = z_t_subs[k]                          # [B, z_dim]
-            z_r_k = z_r_subs[k]
-            q_h_k     = quats_h_sub[:, jidx, :]              # [B, Jk, 4]
-            q_r_k     = quats_r_sub[:, jidx, :]
-            chain_h_k = chain_h_sub[:, tidx, :, :] if tidx else chain_h_sub[:, :0, :, :]  # [B, Fk, 4, 3]
-            chain_r_k = chain_r_sub[:, tidx, :, :] if tidx else chain_r_sub[:, :0, :, :]
-
-            z_all_k     = torch.cat([z_h_k, z_r_k], dim=0)
-            q_all_k     = torch.cat([q_h_k, q_r_k], dim=0)
-            chain_all_k = torch.cat([chain_h_k, chain_r_k], dim=0)  # [2B, Fk, 4, 3]
-            B2  = z_all_k.shape[0]
-            if B2 < 3:
-                continue
-            n   = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
-
-            # Yan et al. describe randomly sampled triplets. Sample anchors and
-            # two non-self candidates directly; compute S_k only for the pairs
-            # used by the loss instead of allocating an all-pairs matrix.
+        if B2 < 3:
+            L_cont = torch.tensor(0.0, device=DEVICE)
+        else:
             anchors = torch.randperm(B2, device=DEVICE)[:n]
             cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
             cand_a = cand_a + (cand_a >= anchors).long()
@@ -498,79 +595,43 @@ def main():
                 cand_b[same] += (cand_b[same] == anchors[same]).long()
                 cand_b[same] %= B2
 
-            # Triplet selection metrics (D_R / D_joints / D_ahg) only feed the
-            # hard `S_a <= S_b` mask. Gradient flows exclusively through
-            # z_all_k below, so this whole block is no_grad — saves graph
-            # allocation and autograd bookkeeping over n=2B anchors x 5 subs.
             with torch.no_grad():
-                qa       = q_all_k[anchors]
-                chain_a  = chain_all_k[anchors]              # [n, Fk, 4, 3]
-                q_ca     = q_all_k[cand_a]
-                q_cb     = q_all_k[cand_b]
-                chain_ca = chain_all_k[cand_a]
-                chain_cb = chain_all_k[cand_b]
-
-                dot_a      = (qa * q_ca).sum(-1)
-                dot_b      = (qa * q_cb).sum(-1)
-                _seg_order = ["mcp", "pip", "dip", "tip"]
-                _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
-                _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
-                _w_dr      = sk_weights_dr[sub][_dr_idx]
-                _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
-                D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
-                D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
-                _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
-                D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
-                D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
-
-                # D_ahg: AHG-style angles at wrist between each joint and critical joints
-                # Critical joints = bases (chain[:,0,:]) + tips (chain[:,3,:]) of common fingers
-                # All positions are wrist-local -> wrist = origin -> v_j = chain_j directly
-                def _ahg(c1, c2):
-                    # c1, c2: [n, Fk, 4, 3]
-                    n_s = c1.shape[0]
-                    Fk  = c1.shape[1]
-                    joints   = c1.view(n_s, Fk * 4, 3)                        # [n, Fk*4, 3]
-                    critical = torch.cat([c1[:, :, 0, :], c1[:, :, 3, :]], dim=1)  # [n, 2*Fk, 3]
-                    u_j = joints   / joints.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    u_c = critical / critical.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    cos = torch.bmm(u_j, u_c.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
-                    ang1 = torch.acos(cos)                                      # [n, Fk*4, 2*Fk]
-                    joints2   = c2.view(n_s, Fk * 4, 3)
-                    critical2 = torch.cat([c2[:, :, 0, :], c2[:, :, 3, :]], dim=1)
-                    u_j2 = joints2   / joints2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    u_c2 = critical2 / critical2.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-                    cos2 = torch.bmm(u_j2, u_c2.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
-                    ang2 = torch.acos(cos2)
-                    return (ang1 - ang2).abs().sum(dim=(-2, -1))               # [n]
-                D_ahg_a = _ahg(chain_a, chain_ca)
-                D_ahg_b = _ahg(chain_a, chain_cb)
-
-                S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
-                S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
-
-                if args.log_metric_stats:
-                    D_R_pairs      = torch.cat([D_R_a, D_R_b])
-                    D_joints_pairs = torch.cat([D_joints_a, D_joints_b])
-                    D_ahg_pairs    = torch.cat([D_ahg_a, D_ahg_b])
-                    S_pairs        = torch.cat([S_a, S_b])
-                    metric_stats[sub] = (
-                        D_R_pairs.mean().item(),
-                        D_joints_pairs.mean().item(),
-                        D_ahg_pairs.mean().item(),
-                        S_pairs.mean().item(),
-                        S_pairs.std().item(),
-                        S_pairs.min().item(),
-                        S_pairs.max().item(),
-                    )
-
+                comps_a = _s_hand_components(
+                    q_all[anchors],
+                    q_all[cand_a],
+                    chain_all[anchors],
+                    chain_all[cand_a],
+                    common_labels,
+                    common_fingers,
+                )
+                comps_b = _s_hand_components(
+                    q_all[anchors],
+                    q_all[cand_b],
+                    chain_all[anchors],
+                    chain_all[cand_b],
+                    common_labels,
+                    common_fingers,
+                )
+                S_a = comps_a["S"]
+                S_b = comps_b["S"]
                 a_closer = S_a <= S_b
                 pos_idx = torch.where(a_closer, cand_a, cand_b)
                 neg_idx = torch.where(a_closer, cand_b, cand_a)
 
-            L_cont  = L_cont + torch.relu(
-                (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
-                - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
+                if args.log_metric_stats:
+                    merged = {k: torch.cat([comps_a[k], comps_b[k]]) for k in comps_a.keys()}
+                    metric_stats["hand"] = tuple(
+                        merged[k].mean().item()
+                        for k in ("D_R", "D_thumb_pos", "D_tip_pos", "D_tip_dir", "D_pinch", "S")
+                    ) + (
+                        merged["S"].std().item(),
+                        merged["S"].min().item(),
+                        merged["S"].max().item(),
+                    )
+
+            L_cont = torch.relu(
+                (z_all[anchors] - z_all[pos_idx]).norm(dim=-1)
+                - (z_all[anchors] - z_all[neg_idx]).norm(dim=-1)
                 + args.margin
             ).mean()
 
@@ -649,16 +710,14 @@ def main():
                 val_sampler, args.n_eval_batches, args.b_eval
             )
             if last_val_metrics is not None:
-                # Combined score: RS + NDS + λ_tmp * NVS. Lower is better.
-                score = (
-                    last_val_metrics["rs"]
-                    + last_val_metrics["nds"]
-                    + args.lambda_tmp * last_val_metrics["nvs"]
-                )
+                # Run21 functional score: S_hand plus small smoothness/reconstruction terms.
+                score = last_val_metrics["s_hand"] + 0.1 * last_val_metrics["nvs"] + 0.1 * last_val_metrics["rec"]
                 print(
                     f"[step {step:05d}] VAL rs={last_val_metrics['rs']:.4f} "
                     f"nds={last_val_metrics['nds']:.4f} nvs={last_val_metrics['nvs']:.4f} "
-                    f"rec={last_val_metrics['rec']:.4f} score={score:.4f}"
+                    f"rec={last_val_metrics['rec']:.4f} s_hand={last_val_metrics['s_hand']:.4f} "
+                    f"pinch={last_val_metrics['pinch_err']:.4f} tip_dir={last_val_metrics['tip_dir_err']:.4f} "
+                    f"score={score:.4f}"
                     f"{' *best_val' if score < best_val_score else ''}"
                 )
                 if score < best_val_score:
@@ -682,11 +741,19 @@ def main():
                 fist_count = extra_human_by_class.get(29, 0)
                 print(f"  batch extra_human={extra_human_count} open={open_count} fist={fist_count}")
             if args.log_metric_stats and metric_stats:
-                stats = " | ".join(
-                    f"{sub}(D_R={dr:.4f}, D_joints={dj:.4f}, D_ahg={da:.4f}, S_mean={s:.4f}, S_std={std:.4f}, S_min={mn:.4f}, S_max={mx:.4f})"
-                    for sub, (dr, dj, da, s, std, mn, mx) in metric_stats.items()
+                dr, dt, dp, dd, dpin, s, std, mn, mx = metric_stats["hand"]
+                weighted = (
+                    f"wD_R={args.w_r * dr:.4f}, "
+                    f"wthumb={args.w_thumb_pos * dt:.4f}, "
+                    f"wtip={args.w_tip_pos * dp:.4f}, "
+                    f"wdir={args.w_tip_dir * dd:.4f}, "
+                    f"wpinch={args.w_pinch * dpin:.4f}"
                 )
-                print(f"  metric pairs {stats}")
+                print(
+                    f"  S_hand pairs D_R={dr:.4f}, D_thumb_pos={dt:.4f}, "
+                    f"D_tip_pos={dp:.4f}, D_tip_dir={dd:.4f}, D_pinch={dpin:.4f}, "
+                    f"S_mean={s:.4f}, S_std={std:.4f}, S_min={mn:.4f}, S_max={mx:.4f} | {weighted}"
+                )
 
         if step % args.ckpt_every == 0:
             torch.save({
@@ -724,10 +791,12 @@ def main():
     )
     test_metrics = _compute_eval_metrics(test_sampler, args.n_eval_batches, args.b_eval)
     if test_metrics is not None:
-        score = test_metrics["rs"] + test_metrics["nds"] + args.lambda_tmp * test_metrics["nvs"]
+        score = test_metrics["s_hand"] + 0.1 * test_metrics["nvs"] + 0.1 * test_metrics["rec"]
         print(
             f"TEST rs={test_metrics['rs']:.4f} nds={test_metrics['nds']:.4f} "
-            f"nvs={test_metrics['nvs']:.4f} rec={test_metrics['rec']:.4f} score={score:.4f}"
+            f"nvs={test_metrics['nvs']:.4f} rec={test_metrics['rec']:.4f} "
+            f"s_hand={test_metrics['s_hand']:.4f} pinch={test_metrics['pinch_err']:.4f} "
+            f"tip_dir={test_metrics['tip_dir_err']:.4f} score={score:.4f}"
         )
 
         # Annotate best-val ckpt with test metrics for final reporting.

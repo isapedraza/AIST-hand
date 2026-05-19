@@ -45,6 +45,48 @@ class _LegacyHumanEncoder(nn.Module):
         return torch.cat([z_t, z_p, z_s], dim=-1)
 
 
+class _FiveSubspaceHumanEncoder(nn.Module):
+    """Run20 CAM-GNN encoder (thumb/index/middle/ring/pinky)."""
+    N_JOINTS = 21
+    _NODES = {
+        "thumb": [1, 2, 3, 4],
+        "index": [5, 6, 7, 8],
+        "middle": [9, 10, 11, 12],
+        "ring": [13, 14, 15, 16],
+        "pinky": [17, 18, 19, 20],
+    }
+
+    def __init__(self, in_dim=4, hidden_dim=32, z_dim=64):
+        super().__init__()
+        self.cam = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS).uniform_(-1, 1))
+        self.layer1 = CAMLayer(in_dim, hidden_dim, self.N_JOINTS)
+        self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
+        self.layer3 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
+        self.proj_thumb = nn.Linear(hidden_dim, z_dim)
+        self.proj_index = nn.Linear(hidden_dim, z_dim)
+        self.proj_middle = nn.Linear(hidden_dim, z_dim)
+        self.proj_ring = nn.Linear(hidden_dim, z_dim)
+        self.proj_pinky = nn.Linear(hidden_dim, z_dim)
+        self.out_act = nn.Tanh()
+
+    def forward(self, quats):
+        B = quats.shape[0]
+        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
+        wrist[:, 0, 0] = 1.0
+        quats = torch.cat([wrist, quats], dim=1)
+        B, N, in_f = quats.shape
+        x = quats.reshape(B * N, in_f)
+        x = self.layer1(x, self.cam)
+        x = self.layer2(x, self.cam)
+        x = self.layer3(x, self.cam)
+        x = x.view(B, N, -1)
+        zs = [
+            self.out_act(getattr(self, f"proj_{name}")(x[:, nodes, :].max(dim=1).values))
+            for name, nodes in self._NODES.items()
+        ]
+        return torch.cat(zs, dim=-1)
+
+
 class _SharedDecoder_compat(nn.Module):
     """D_X with configurable input dim (handles both 3*z_dim and 5*z_dim checkpoints)."""
     def __init__(self, in_dim: int, shared_dim: int = 1024):
@@ -87,12 +129,15 @@ class Retargeter:
         n_j = ck["D_r"]["fc.weight"].shape[0]
         dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
 
-        if "proj_precision.weight" in ck["E_h"]:
+        if "proj_hand.weight" in ck["E_h"]:
+            z_dim = ck["E_h"]["proj_hand.weight"].shape[0]
+            self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
+        elif "proj_precision.weight" in ck["E_h"]:
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = _LegacyHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
         else:
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
-            self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
+            self.E_h = _FiveSubspaceHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
 
         self.D_X = _SharedDecoder_compat(in_dim=dx_in_dim, shared_dim=1024).eval()
         self.D_r = RobotDecoder_D_r(n_joints=n_j, shared_dim=1024).eval()

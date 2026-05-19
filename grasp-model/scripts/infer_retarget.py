@@ -27,7 +27,10 @@ def load_models(ckpt_path: str, device: str = "cpu"):
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
 
     n_joints = ck["D_r"]["fc.weight"].shape[0]
-    z_dim = ck["E_h"]["proj.weight"].shape[0]
+    if "proj_hand.weight" in ck["E_h"]:
+        z_dim = ck["E_h"]["proj_hand.weight"].shape[0]
+    else:
+        raise KeyError("scripts/infer_retarget.py supports Run21 proj_hand checkpoints; use src/cross_emb/inference/retarget.py for legacy checkpoints")
 
     E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).to(device)
     D_X = SharedDecoder_D_X(z_dim=z_dim, shared_dim=1024).to(device)

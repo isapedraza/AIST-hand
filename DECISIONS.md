@@ -4617,3 +4617,60 @@ Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consi
 **Documentos relacionados**:
 - Entry 82: pipeline consolidado, runs 17-19.
 - Entry 79: diagnostico MCP, propuesta axis decomposition.
+
+## Entry 84 -- 2026-05-19: Run 21 plan implementado -- latent whole-hand y `S_hand` morfologico basado en Xin
+
+**Context**: Run 20 mejora open/close y puno, pero no logra agarres funcionales/pinch. Diagnostico: el contrastive por subespacio entrena posturas locales por dedo; la destreza de mano vive en relaciones entre dedos.
+
+**Decision arquitectonica**:
+
+- Reemplazar 5 subespacios por un solo latent whole-hand `z_hand`.
+- `z_dim=16` ahora es dimension total del latent, no por dedo.
+- `E_h` conserva CAM-GNN sobre 21 nodos Dong, pero usa un solo head `proj_hand` con pooling sobre nodos 1-20.
+- `E_X` y `D_X` pasan a mapear `shared_dim <-> z_dim`.
+- `E_r` y `D_r` se mantienen conceptualmente iguales.
+
+**Decision de similitud**:
+
+`S_k` per-finger se reemplaza por `S_hand` global:
+
+```text
+S_hand =
+  w_r         * D_R
++ w_thumb_pos * D_thumb_pos
++ w_tip_pos   * D_tip_pos
++ w_tip_dir   * D_tip_dir
++ w_pinch     * D_pinch
+```
+
+**Componentes**:
+
+- `D_R`: se mantiene con pesos actuales `1/sigma` y tip quaternion peso 0. En Run 22 se probara `D_R` uniforme.
+- `D_thumb_pos`: distancia cuadrada entre thumb tips.
+- `D_tip_pos`: wrist-to-fingertip vectors con `stilde(d)` de Xin.
+- `D_tip_dir`: vector crudo DIP-to-tip, sin normalizar a unit vector, siguiendo paper/codigo Xin.
+- `D_pinch`: thumb-to-fingertip vectors con sigmoid switching y distance rescaling.
+- Dedos adaptativos: usar todos los `common_fingers`; pinch = thumb contra todos los dedos comunes excepto thumb.
+
+**Adaptacion morfologica de Xin**:
+
+Xin define `eps1=0.1m`, `eps2=0.01m`, `w=10 1/m`. Como nuestro pipeline compara posiciones en unidades de `hand_length`, se preserva el significado fisico mediante una mano de referencia:
+
+```text
+HL_ref = 0.197m
+eps1_rel = 0.1 / HL_ref ~= 0.508
+eps2_rel = 0.01 / HL_ref ~= 0.0508
+w_rel = 10 * HL_ref ~= 1.97
+```
+
+Esto conserva la transicion de Xin en espacio unitario: ~50% de HL activa intencion de pinch, ~5% de HL equivale a contacto.
+
+**Lo que queda fuera de Run 21**:
+
+- No usar `D_joints` ni `D_ahg` en `S_hand` inicial.
+- No agregar joint regularization del paper todavia.
+- No cambiar `D_R` a pesos uniformes hasta Run 22.
+
+**Razonamiento**:
+
+Run 21 cambia una hipotesis a la vez: deja de representar la mano como dedos independientes y entrena el latent con criterios funcionales whole-hand. La adaptacion morfologica evita meter thresholds en metros dentro de un espacio unitario, pero conserva el significado del objetivo de pinch de Xin.
