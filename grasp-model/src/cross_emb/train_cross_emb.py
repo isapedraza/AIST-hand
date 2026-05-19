@@ -265,33 +265,9 @@ def main():
     scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
     print(f"AMP: {'enabled (fp16)' if use_amp else 'disabled'}")
 
-    # ---------------------------------------------------------------------------
-    # D_R per-joint weights: w_j = (1/sigma_j) / sum(1/sigma)
-    # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
-    # Order per subspace: [mcp, pip, dip, tip]. tip=0 (always identity in Dong).
-    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
-    # ---------------------------------------------------------------------------
-    _sk_w = {
-        "thumb":  [0.258, 0.544, 0.199, 0.0],
-        "index":  [0.329, 0.325, 0.346, 0.0],
-        "middle": [0.188, 0.362, 0.451, 0.0],
-        "ring":   [0.238, 0.357, 0.405, 0.0],
-        "pinky":  [0.197, 0.405, 0.398, 0.0],
-    }
-    sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
-
-    # D_joints per-segment weights: w_j = (1/sigma_j) / sum(1/sigma)
-    # sigma_j = std(||chain_j_a - chain_j_b||) over HOGraspNet train pairs, human only.
-    # Order per subspace: [mcp, pip, dip, tip]. MCP highest weight (least variation).
-    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
-    _sk_wj = {
-        "thumb":  [0.4499, 0.2534, 0.1484, 0.1484],
-        "index":  [0.5282, 0.2435, 0.1381, 0.0902],
-        "middle": [0.5630, 0.2259, 0.1267, 0.0844],
-        "ring":   [0.5743, 0.2364, 0.1134, 0.0759],
-        "pinky":  [0.5459, 0.2465, 0.1241, 0.0835],
-    }
-    sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
+    # Weightless S_k ablation: D_R and D_joints use uniform sums over the
+    # available joints/segments. The global args.w_r / args.w_joints /
+    # args.w_ahg still control the relative scale of the three S_k terms.
 
     def _sd(m: torch.nn.Module) -> dict:
         # Strip the OptimizedModule wrapper from torch.compile so saved keys
@@ -512,16 +488,10 @@ def main():
 
                 dot_a      = (qa * q_ca).sum(-1)
                 dot_b      = (qa * q_cb).sum(-1)
-                _seg_order = ["mcp", "pip", "dip", "tip"]
-                _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
-                _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
-                _w_dr      = sk_weights_dr[sub][_dr_idx]
-                _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
-                D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
-                D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
-                _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
-                D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
-                D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
+                D_R_a      = (1 - dot_a ** 2).sum(dim=-1)
+                D_R_b      = (1 - dot_b ** 2).sum(dim=-1)
+                D_joints_a = (chain_a - chain_ca).norm(dim=-1).sum(dim=(-2, -1))
+                D_joints_b = (chain_a - chain_cb).norm(dim=-1).sum(dim=(-2, -1))
 
                 # D_ahg: AHG-style angles at wrist between each joint and critical joints
                 # Critical joints = bases (chain[:,0,:]) + tips (chain[:,3,:]) of common fingers
