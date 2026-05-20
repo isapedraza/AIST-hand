@@ -1,0 +1,577 @@
+name: ur5e_shadow_right
+kind: assembly
+dof: 30
+metadata:
+  generated_from: ur5e_shadow_right_hand_glb.urdf
+  generated_at: '2026-05-20T21:57:21.074715+00:00'
+  component_assignment: heuristic
+  review_required: true
+assets:
+  urdf: ur5e_shadow_right_hand_glb.urdf
+joints:
+- name: shoulder_pan_joint
+  index: 0
+  type: revolute
+  limits:
+  - -6.28318530718
+  - 6.28318530718
+  parent_link: base_link_inertia
+  child_link: shoulder_link
+  axis:
+  - 0.0
+  - 0.0
+  - 1.0
+  effort: 150.0
+  velocity: 3.14159265359
+  component: arm
+- name: shoulder_lift_joint
+  index: 1
+  type: revolute
+  limits:
+  - -6.28318530718
+  - 6.28318530718
+  parent_link: shoulder_link
+  child_link: upper_arm_link
+  axis:
+  - 0.0
+  - 0.0
+  - 1.0
+  effort: 150.0
+  velocity: 3.14159265359
+  component: arm
+- name: elbow_joint
+  index: 2
+  type: revolute
+  limits:
+  - -3.14159265359
+  - 3.14159265359
+  parent_link: upper_arm_link
+  child_link: forearm_link
+  axis:
+  - 0.0
+  - 0.0
+  - 1.0
+  effort: 150.0
+  velocity: 3.14159265359
+  component: arm
+- name: wrist_1_joint
+  index: 3
+  type: revolute
+  limits:
+  - -6.28318530718
+  - 6.28318530718
+  parent_link: forearm_link
+  child_link: wrist_1_link
+  axis:
+  - 0.0
+  - 0.0
+  - 1.0
+  effort: 28.0
+  velocity: 3.14159265359
+  component: arm
+- name: wrist_2_joint
+  index: 4
+  type: revolute
+  limits:
+  - -6.28318530718
+  - 6.28318530718
+  parent_link: wrist_1_link
+  child_link: wrist_2_link
+  axis:
+  - 0.0
+  - 0.0
+  - 1.0
+  effort: 28.0
+  velocity: 3.14159265359
+  component: arm
+- name: wrist_3_joint
+  index: 5
+  type: revolute
+  limits:
+  - -6.28318530718
+  - 6.28318530718
+  parent_link: wrist_2_link
+  child_link: wrist_3_link
+  axis:
+  - 0.0
+  - 0.0
+  - 1.0
+  effort: 28.0
+  velocity: 3.14159265359
+  component: arm
+- name: WRJ2
+  index: 6
+  type: revolute
+  limits:
+  - -0.523598775598
+  - 0.174532925199
+  parent_link: forearm
+  child_link: wrist
+  axis:
+  - 0.0
+  - 1.0
+  - 0.0
+  effort: 10.0
+  velocity: 2.0
+  component: hand
+- name: WRJ1
+  index: 7
+  type: revolute
+  limits:
+  - -0.698131700798
+  - 0.488692190558
+  parent_link: wrist
+  child_link: palm
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 30.0
+  velocity: 2.0
+  component: hand
+- name: FFJ4
+  index: 8
+  type: revolute
+  limits:
+  - -0.349065850399
+  - 0.349065850399
+  parent_link: palm
+  child_link: ffknuckle
+  axis:
+  - 0.0
+  - -1.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: FFJ3
+  index: 9
+  type: revolute
+  limits:
+  - -0.261799387799
+  - 1.57079632679
+  parent_link: ffknuckle
+  child_link: ffproximal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: FFJ2
+  index: 10
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: ffproximal
+  child_link: ffmiddle
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: FFJ1
+  index: 11
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: ffmiddle
+  child_link: ffdistal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: MFJ4
+  index: 12
+  type: revolute
+  limits:
+  - -0.349065850399
+  - 0.349065850399
+  parent_link: palm
+  child_link: mfknuckle
+  axis:
+  - 0.0
+  - -1.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: MFJ3
+  index: 13
+  type: revolute
+  limits:
+  - -0.261799387799
+  - 1.57079632679
+  parent_link: mfknuckle
+  child_link: mfproximal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: MFJ2
+  index: 14
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: mfproximal
+  child_link: mfmiddle
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: MFJ1
+  index: 15
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: mfmiddle
+  child_link: mfdistal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: RFJ4
+  index: 16
+  type: revolute
+  limits:
+  - -0.349065850399
+  - 0.349065850399
+  parent_link: palm
+  child_link: rfknuckle
+  axis:
+  - 0.0
+  - 1.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: RFJ3
+  index: 17
+  type: revolute
+  limits:
+  - -0.261799387799
+  - 1.57079632679
+  parent_link: rfknuckle
+  child_link: rfproximal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: RFJ2
+  index: 18
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: rfproximal
+  child_link: rfmiddle
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: RFJ1
+  index: 19
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: rfmiddle
+  child_link: rfdistal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: LFJ5
+  index: 20
+  type: revolute
+  limits:
+  - 0.0
+  - 0.785398163397
+  parent_link: palm
+  child_link: lfmetacarpal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: LFJ4
+  index: 21
+  type: revolute
+  limits:
+  - -0.349065850399
+  - 0.349065850399
+  parent_link: lfmetacarpal
+  child_link: lfknuckle
+  axis:
+  - 0.0
+  - 1.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: LFJ3
+  index: 22
+  type: revolute
+  limits:
+  - -0.261799387799
+  - 1.57079632679
+  parent_link: lfknuckle
+  child_link: lfproximal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: LFJ2
+  index: 23
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: lfproximal
+  child_link: lfmiddle
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: LFJ1
+  index: 24
+  type: revolute
+  limits:
+  - 0.0
+  - 1.57079632679
+  parent_link: lfmiddle
+  child_link: lfdistal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: THJ5
+  index: 25
+  type: revolute
+  limits:
+  - -1.0471975512
+  - 1.0471975512
+  parent_link: palm
+  child_link: thbase
+  axis:
+  - 0.0
+  - 0.0
+  - -1.0
+  effort: 5.0
+  velocity: 4.0
+  component: hand
+- name: THJ4
+  index: 26
+  type: revolute
+  limits:
+  - 0.0
+  - 1.2217304764
+  parent_link: thbase
+  child_link: thproximal
+  axis:
+  - 0.0
+  - 1.0
+  - 0.0
+  effort: 3.0
+  velocity: 4.0
+  component: hand
+- name: THJ3
+  index: 27
+  type: revolute
+  limits:
+  - -0.209439510239
+  - 0.209439510239
+  parent_link: thproximal
+  child_link: thhub
+  axis:
+  - 0.0
+  - 1.0
+  - 0.0
+  effort: 2.0
+  velocity: 4.0
+  component: hand
+- name: THJ2
+  index: 28
+  type: revolute
+  limits:
+  - -0.698131700798
+  - 0.698131700798
+  parent_link: thhub
+  child_link: thmiddle
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 2.0
+  velocity: 2.0
+  component: hand
+- name: THJ1
+  index: 29
+  type: revolute
+  limits:
+  - -0.261799387799
+  - 1.57079632679
+  parent_link: thmiddle
+  child_link: thdistal
+  axis:
+  - 1.0
+  - 0.0
+  - 0.0
+  effort: 1.0
+  velocity: 4.0
+  component: hand
+components:
+  arm:
+    kind: arm
+    joints:
+    - shoulder_pan_joint
+    - shoulder_lift_joint
+    - elbow_joint
+    - wrist_1_joint
+    - wrist_2_joint
+    - wrist_3_joint
+    base_link: base_link
+    end_effector_link: ee_link
+  hand:
+    kind: hand
+    joints:
+    - WRJ2
+    - WRJ1
+    - FFJ4
+    - FFJ3
+    - FFJ2
+    - FFJ1
+    - MFJ4
+    - MFJ3
+    - MFJ2
+    - MFJ1
+    - RFJ4
+    - RFJ3
+    - RFJ2
+    - RFJ1
+    - LFJ5
+    - LFJ4
+    - LFJ3
+    - LFJ2
+    - LFJ1
+    - THJ5
+    - THJ4
+    - THJ3
+    - THJ2
+    - THJ1
+    kinematic_chains:
+      thumb:
+        joints:
+        - THJ5
+        - THJ4
+        - THJ3
+        - THJ2
+        - THJ1
+        links:
+        - thbase
+        - thmiddle
+        - thdistal
+        - thtip
+      index:
+        joints:
+        - FFJ4
+        - FFJ3
+        - FFJ2
+        - FFJ1
+        links:
+        - ffknuckle
+        - ffmiddle
+        - ffdistal
+        - fftip
+      middle:
+        joints:
+        - MFJ4
+        - MFJ3
+        - MFJ2
+        - MFJ1
+        links:
+        - mfknuckle
+        - mfmiddle
+        - mfdistal
+        - mftip
+      ring:
+        joints:
+        - RFJ4
+        - RFJ3
+        - RFJ2
+        - RFJ1
+        links:
+        - rfknuckle
+        - rfmiddle
+        - rfdistal
+        - rftip
+      pinky:
+        joints:
+        - LFJ5
+        - LFJ4
+        - LFJ3
+        - LFJ2
+        - LFJ1
+        links:
+        - lfknuckle
+        - lfmiddle
+        - lfdistal
+        - lftip
+    representation:
+      palm_frame:
+        wrist_link: palm
+        index_mcp_link: ffknuckle
+        middle_mcp_link: mfknuckle
+        ring_mcp_link: rfknuckle
+    semantic_roles:
+      abduction:
+        joints:
+        - FFJ4
+        - MFJ4
+        - RFJ4
+        - LFJ4
+        xin_position_weight: 0.5
+      thumb_rotation:
+        joints:
+        - THJ5
+        xin_position_weight: 0.1
+      special_constraints: []

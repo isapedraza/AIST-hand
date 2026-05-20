@@ -22,6 +22,9 @@ third_party/
 human/datasets/**/raw/
 human/datasets/**/processed/
 robot/**/datasets/
+robot/**/*.glb
+robot/**/*.mtl
+robot/**/*.obj
 models/*/checkpoints/
 models/*/models/
 models/*/experiments/**

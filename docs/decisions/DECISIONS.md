@@ -4617,3 +4617,133 @@ Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consi
 **Documentos relacionados**:
 - Entry 82: pipeline consolidado, runs 17-19.
 - Entry 79: diagnostico MCP, propuesta axis decomposition.
+
+---
+
+## Entry 84 -- 2026-05-20: Robot metadata contract for extensible retargeting
+
+**Context**: The repository is being reorganized by execution-pipeline responsibility. `robot/` should not become a runtime-control bucket; it should describe concrete robot bodies in a way that lets a new hand, arm, or arm-hand system be added without changing model/training code. The immediate pressure comes from cross-embodiment retargeting: current Shadow Hand metadata is split across `robot/hand-configs/shadow_hand_right.yaml`, `robot/shadow-hand/configs/shadow_hand.yaml`, canonical pose YAMLs, and hardcoded limits in inference code.
+
+Xin et al. do not define a reusable morphology file, but their retargeting objective uses joint-space regularization weights chosen by physical joint role, then implemented by numeric indices. This is fragile for this project because our robots may not include the Panda arm, may start joint indexing at 0 for the hand alone, and may later include different hands, arms, or complete embodiments.
+
+**Decision**: Robot descriptions live directly under `robot/`, grouped by embodiment category. Each concrete robot folder owns its URDF-level description and its stable `robot.yaml` contract. Heavy geometry assets (`.obj`, `.glb`, `.mtl`) are kept outside Git and can be restored from external storage such as Drive when rendering/simulation needs them:
+
+```text
+robot/
+  hands/
+    shadow_hand/
+      shadow_hand_right.urdf
+      robot.yaml
+      canonical.yaml      # optional/generated grasp anchors, kept separate
+  arms/
+    ur5e/
+      ur5e.urdf
+      robot.yaml
+  assembly/
+    ur5e_shadow/
+      ur5e_shadow_right_hand_glb.urdf
+      robot.yaml
+```
+
+`robot.yaml` owns the stable robot contract. It has universal fields (`name`, `kind`, `dof`, `assets`, `joints`) and optional `components` for assemblies:
+
+```yaml
+name: ur5e_shadow_right
+kind: assembly
+dof: 30
+
+assets:
+  urdf: ur5e_shadow_right_hand_glb.urdf
+
+joints:
+  - name: shoulder_pan_joint
+    index: 0
+    type: revolute
+    limits: [-6.28318530718, 6.28318530718]
+    parent_link: base_link_inertia
+    child_link: shoulder_link
+    component: arm
+  - name: WRJ2
+    index: 6
+    type: revolute
+    limits: [-0.523598775598, 0.174532925199]
+    parent_link: forearm
+    child_link: wrist
+    component: hand
+
+components:
+  arm:
+    kind: arm
+    joints: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint]
+    base_link: base_link
+    end_effector_link: ee_link
+
+  hand:
+    kind: hand
+    joints: [WRJ2, WRJ1, FFJ4, FFJ3, FFJ2, FFJ1]
+
+    kinematic_chains:
+      index:
+        joints: [FFJ4, FFJ3, FFJ2, FFJ1]
+        links: [ffknuckle, ffmiddle, ffdistal, fftip]
+
+    representation:
+      palm_frame:
+        wrist_link: palm
+        index_mcp_link: ffknuckle
+        middle_mcp_link: mfknuckle
+        ring_mcp_link: rfknuckle
+
+    semantic_roles:
+      abduction:
+        joints: [FFJ4, MFJ4, RFJ4, LFJ4]
+        xin_position_weight: 0.5
+      thumb_rotation:
+        joints: [THJ5]
+        xin_position_weight: 0.1
+      special_constraints: []
+```
+
+The universal required sections are:
+
+- `joints`: complete actuated joint list, stable qpos/decoder order, joint type, limits, parent/child links, and optional component assignment. These mechanical facts should come from the robot URDF/MJCF.
+- `components`: optional grouping for `hand`, `arm`, or `assembly` robots. A hand-only robot may still use `components.hand`; an arm-only robot may use `components.arm`; an arm+hand robot uses both.
+- `assets`: source URDF/MJCF paths used to generate or validate the spec. Mesh paths may still be referenced by URDFs, but heavy mesh files are ignored in Git.
+
+Hand components may add:
+
+- `kinematic_chains`: per-finger joint/link chains. This supports fingertip geometry, pinch terms, and fingertip-orientation terms.
+- `representation`: how to project this robot into the common hand representation currently implemented through Dong-style palm-frame features. The YAML should name the function (`palm_frame`), not the paper (`dong`), so the config remains conceptually stable if the implementation changes.
+- `semantic_roles`: role-based joint groups used by robot-agnostic losses or control rules. For the Xin-style regularization currently justified by the paper, only `abduction`, `thumb_rotation`, and optional `special_constraints` are required. Do not add broad roles such as wrist or finger flexion unless a future objective explicitly needs them.
+
+`canonical.yaml` remains separate because canonical open/close grasp anchors are generated data, not stable morphology. They may be regenerated from Dexonomy or another dataset and should not force churn in the robot contract.
+
+**Alternatives considered**:
+
+- Four YAML files (`canonical.yaml`, `kinematics.yaml`, `morphology.yaml`, `robot.yaml`). Rejected for now because it adds ceremony before the contract has stabilized.
+- Mixing canonical grasp poses into `robot.yaml`. Rejected because canonical poses are large, derived, and dataset-dependent.
+- Numeric-index Xin weights. Rejected because indices are embodiment-specific and break when the robot does not have the same joint layout as Xin's Panda+hand setup.
+- Naming the representation section `dong`. Rejected because the section describes a common palm-frame representation, not a permanent commitment to one paper-specific implementation.
+
+**Expected impact**:
+
+- Adding a robot should mean adding a folder such as `robot/hands/<robot-name>/` or `robot/assembly/<robot-name>/` with its URDF and `robot.yaml`, not editing model/training internals. Heavy meshes can be distributed separately.
+- Training and control code can ask for `semantic_roles.abduction` or `semantic_roles.thumb_rotation` and resolve names to indices through `joints`.
+- Decoder clipping can use robot-declared limits instead of hardcoded Shadow Hand arrays.
+- Cross-embodiment losses can remain robot-agnostic while preserving robot-specific joint morality/constraints.
+
+**Open validation**:
+
+- Current YAMLs provide the palm-frame links and link chains, but not all information is authoritative.
+- Current Shadow Hand limits exist in inference code and should be validated against URDF/MJCF before being treated as physical truth.
+- Joint chains by joint name may need to be validated against URDF/MJCF rather than inferred manually from naming conventions.
+
+**References**:
+
+- Xin et al., *Retargeting for Dexterous Manipulation*, objective terms `L_joint` and `L_vel`; appendix hyperparameters for Leap and Shadow Hand regularization weights.
+- Current `robot/hand-configs/shadow_hand_right.yaml`: palm-frame and finger-link representation metadata.
+- Current `robot/shadow-hand/configs/shadow_hand.yaml`: Shadow Hand actuator order.
+- Current `models/latent-retargeting/src/cross_emb/inference/retarget.py`: hardcoded Shadow Hand limits to be migrated into robot metadata after validation.
+- `robot/assembly/ur5e_shadow/ur5e_shadow_right_hand_glb.urdf`: validated assembly case with 6 UR5e arm joints plus 24 Shadow Hand joints.
+
+**Status**: Proposed
