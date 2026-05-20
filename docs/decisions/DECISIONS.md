@@ -4747,3 +4747,41 @@ Hand components may add:
 - `robot/assembly/ur5e_shadow/ur5e_shadow_right_hand_glb.urdf`: validated assembly case with 6 UR5e arm joints plus 24 Shadow Hand joints.
 
 **Status**: Proposed
+
+---
+
+## Entry 85 -- 2026-05-20: Heavy robot meshes live outside Git
+
+**Context**: The robot asset import initially included URDFs plus mesh geometry from `dex-urdf` (`.obj`, `.glb`, `.mtl`). The full geometry set was about 168 MB and made push impractically slow. These files are needed for rendering/simulation fidelity, but they are not needed for the stable robot metadata contract or for parsing joint names, limits, parent/child links, and component structure from URDF.
+
+**Decision**: Git tracks robot URDF/SRDF files, `robot.yaml` specs, and robot metadata scripts. Heavy geometry files are not tracked:
+
+```text
+robot/**/*.obj
+robot/**/*.glb
+robot/**/*.mtl
+```
+
+Those mesh files should be stored externally, currently in the user's Drive/archive copy of the original `dex-urdf` assets, and restored into the same relative folders when full visual/collision geometry is needed:
+
+```text
+robot/arms/<robot-name>/meshes/
+robot/hands/<robot-name>/meshes/
+robot/assembly/<robot-name>/meshes/
+```
+
+URDFs may still reference these mesh paths. That is acceptable: the URDF remains the mechanical source for joints/limits, while meshes are optional local assets for visualization, collision rendering, or simulator workflows.
+
+**Alternatives considered**:
+
+- Commit all meshes to Git. Rejected because the push was slow and the assets are better treated as external binary payloads.
+- Remove URDFs too. Rejected because URDFs are the mechanical source needed to generate/validate `robot.yaml`.
+- Rewrite URDFs to remove mesh references. Rejected because it would diverge from upstream robot descriptions and reduce simulator compatibility.
+
+**Expected impact**:
+
+- The repo remains lightweight enough to push and clone.
+- Robot metadata generation and validation continue to work from URDF.
+- Full simulation/visualization requires restoring meshes from external storage into the original relative locations.
+
+**Status**: Implemented
