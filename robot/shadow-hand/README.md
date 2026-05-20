@@ -1,29 +1,19 @@
 # shadow-hand
 
-Shadow Hand robot/simulation integration. This module now lives at robot/shadow-hand and consumes installed packages. Historical notes below may still mention the old grasp-robot path.
+Shadow Hand robot and simulation integration.
 
----
+This folder owns Shadow Hand-specific configuration, datasets, experiments, and
+MuJoCo/pose-map tools. It should contain facts about the robot body and ways to
+execute commands, not camera code or learned model definitions.
 
-# grasp-robot — GraphGrasp
+## Layout
 
-Robot adapters for **GraphGrasp: A Framework for Grasp Intent-Driven Teleoperation**.
+```text
+robot/shadow-hand/
+  configs/      # canonical grasp YAMLs and Shadow Hand mappings
+  datasets/     # robot-side local/generated datasets, ignored when heavy
+  experiments/  # robot-side analysis outputs
+  tools/        # extraction, visualization, and pose-map scripts
+```
 
-**Status:** pending implementation
-
-## Responsibilities
-- Receive `GraspToken` from `grasp-app`
-- Load robot YAML configuration (`grasp_configs/<robot>.yaml`)
-- Send joint commands via `SrHandCommander` (Shadow Hand) or equivalent
-- Pattern: `YAMLRobotAdapter` — new robot = new YAML, no code changes
-
-## Supported robots
-- Shadow Dexterous Hand (target)
-  - Joint angles sourced from Dexonomy (RSS 2025): https://arxiv.org/abs/2504.18829
-
-## Dependencies
-- ROS Noetic (runs inside Shadow Robot Docker container)
-- `sr_robot_commander`
-- `grasp-model` (for `GraspToken` type)
-
-## Shadow Hand setup
-See root README for Aurora one-liner installation.
+Generic hand kinematic configs used by retargeting live in `robot/hand-configs/`.

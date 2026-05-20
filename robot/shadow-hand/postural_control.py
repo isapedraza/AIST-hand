@@ -21,7 +21,7 @@ from grasp_gcn.dataset.grasps import GRASP_CLASS_NAMES
 from grasp_gcn.transforms.tograph import ToGraph
 
 MODEL_PATH  = Path(__file__).resolve().parents[2] / "apps" / "graphgrasp-live" / "models" / "best_model_run_abl04_xyz_ahg_flex.pth"
-YAML_PATH   = Path(__file__).parent / "grasp_configs" / "shadow_hand_canonical_v5_grasp.yaml"
+YAML_PATH   = Path(__file__).parent / "configs" / "shadow_hand_canonical_v5_grasp.yaml"
 N_CLASSES   = 28
 IN_DIM      = 24   # xyz + AHG + flex
 
@@ -229,7 +229,7 @@ def demo(n_frames: int = 5):
     pc = PosturalController()
 
     cache = torch.load(
-        Path(__file__).resolve().parents[2] / "packages/grasp-gcn/data/processed/hograspnet_test_c28_cmc_nocmc_ahga_ahgd.pt",
+        Path(__file__).resolve().parents[2] / "human/datasets/hograspnet/processed/hograspnet_test_c28_cmc_nocmc_ahga_ahgd.pt",
         weights_only=False
     )
     data, slices = cache

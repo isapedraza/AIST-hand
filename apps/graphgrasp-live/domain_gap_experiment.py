@@ -18,6 +18,7 @@ Usage:
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 import csv
@@ -39,7 +40,8 @@ from grasp_gcn import ToGraph, VotingWindow, get_network
 
 from inference_runtime import OpenHandLatch, parse_model_output, to_probs
 from model_variant import resolve_model_spec
-from perception.mediapipe_backend import MediaPipeBackend
+import _repo_path  # noqa: F401
+from human.perception.mediapipe_backend import MediaPipeBackend
 
 
 # ---------------------------------------------------------------------------

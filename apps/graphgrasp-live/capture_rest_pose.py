@@ -13,6 +13,7 @@ Output:
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 import csv
@@ -26,7 +27,8 @@ os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
 import cv2
 import numpy as np
 
-from perception.hamer_backend import HaMeRBackend
+import _repo_path  # noqa: F401
+from human.perception.hamer_backend import HaMeRBackend
 
 # Class ID 28 = Rest (new class for R014)
 REST_CLASS_ID = 28

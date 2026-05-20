@@ -1,22 +1,18 @@
 # Architecture
 
-GraphGrasp is now a monorepo with separate installable Python packages.
+GraphGrasp is organized by execution pipeline responsibility.
 
-## Packages
+## Pipeline Domains
 
-- packages/grasp-gcn owns the graph classifier: ToGraph, GCN networks, grasp labels, GraspToken, VotingWindow, training scripts, GCN tests, and GCN experiments.
-- packages/cross-emb owns cross-embodiment retargeting: latent-space modules, Retargeter, MediaPipe-to-Dong source, MuJoCo sink, stage1 training, retargeting scripts, robot/human loaders, and cross-emb checkpoints.
+- `human/` owns observation and human-hand representation: perception backends, Dong kinematics, canonicalization, and human datasets.
+- `models/` owns learned prediction: `grasp-intent` imports as `grasp_gcn`, and `retargeting` imports as `cross_emb`.
+- `control/` owns runtime policies: smoothing, temporal confirmation, safety clipping, top-k postural decisions, and reset behavior.
+- `robot/` owns robot-specific bodies and execution details: Shadow Hand configs, kinematic hand configs, robot datasets, MuJoCo tools, and future ROS/MuJoCo sinks.
+- `apps/` owns entrypoints that connect pipeline domains.
 
-## Applications
+## Data Ownership
 
-- apps/graphgrasp-live consumes installed packages and contains camera/perception demos, model variant selection, live inference loops, and app-local deploy checkpoints.
-
-## Robot
-
-- robot/shadow-hand owns Shadow Hand configs, postural control, and MuJoCo/pose-map scripts. It consumes grasp_gcn as an installed package.
-
-## Data and Artifacts
-
-- data/ is for shared local datasets and is ignored by git.
-- package-local data folders may exist for model-specific generated files.
-- artifacts/ is for shared generated outputs such as runs, reports, and checkpoints.
+- Human datasets live under `human/datasets/`.
+- Robot datasets live under the specific robot folder, for example `robot/shadow-hand/datasets/`.
+- Model checkpoints and experiments live under their model owner in `models/`.
+- Non-pipeline history and recovered legacy material lives under `docs/archive/`.

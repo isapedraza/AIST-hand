@@ -17,6 +17,7 @@ Usage:
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 import csv
@@ -38,7 +39,8 @@ from grasp_gcn.dataset.grasps import GRASP_CLASS_NAMES
 
 from inference_runtime import parse_model_output, to_probs
 from model_variant import resolve_model_spec
-from perception.hamer_backend import HaMeRBackend
+import _repo_path  # noqa: F401
+from human.perception.hamer_backend import HaMeRBackend
 
 
 # ---------------------------------------------------------------------------

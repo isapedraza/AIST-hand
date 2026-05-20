@@ -10,6 +10,7 @@ No aplica normalizacion, no usa modelo GCN y no guarda datos.
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 import os

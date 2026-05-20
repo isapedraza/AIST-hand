@@ -1,3 +1,4 @@
+import _repo_path  # noqa: F401
 """
 GraphGrasp — grasp-app entry point.
 
@@ -18,7 +19,8 @@ from grasp_gcn import get_network, ToGraph, GraspToken
 
 from inference_runtime import parse_model_output, to_probs
 from model_variant import resolve_model_spec
-from perception.mediapipe_backend import MediaPipeBackend
+import _repo_path  # noqa: F401
+from human.perception.mediapipe_backend import MediaPipeBackend
 
 # TODO: import robot adapter from grasp-robot
 # from grasp_robot import YAMLRobotAdapter
@@ -86,7 +88,7 @@ def main():
     to_graph = ToGraph(**spec["tograph_kwargs"])
     smoothed_probs = None  # EMA state
     backend = MediaPipeBackend(camera_index=camera_source)
-    # adapter = YAMLRobotAdapter("../robot/shadow-hand/grasp_configs/shadow_hand.yaml")
+    # adapter = YAMLRobotAdapter("../robot/shadow-hand/configs/shadow_hand.yaml")
 
     # --- Loop ---
     while backend.is_ready():

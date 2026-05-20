@@ -1,26 +1,33 @@
 # Migration Notes
 
-Old top-level directories were moved into domain-specific locations.
+The repository moved from old repo-name buckets into pipeline domains.
 
 ```text
-grasp-model/              -> packages/grasp-gcn/
-grasp-model/src/cross_emb -> packages/cross-emb/src/cross_emb
-grasp-app/                -> apps/graphgrasp-live/
-grasp-robot/              -> robot/shadow-hand/
+grasp-app/perception/              -> human/perception/
+grasp-app/hand_preprocessing/      -> human/kinematics/
+grasp-model/                       -> models/grasp-intent-classification/
+grasp-model/src/cross_emb          -> models/latent-retargeting/src/cross_emb
+grasp-robot/                       -> robot/shadow-hand/
+robot/shadow-hand/grasp_configs/   -> robot/shadow-hand/configs/
 ```
 
-Install both packages after pulling this migration:
+Install both learned-model packages from their new locations:
 
 ```bash
-pip install -e packages/grasp-gcn
-pip install -e packages/cross-emb
+pip install -e models/grasp-intent-classification
+pip install -e models/latent-retargeting
 ```
 
-Imports should use package names, not path hacks:
+Current data/checkpoint owners:
 
-```python
-import grasp_gcn
-import cross_emb
+```text
+human/datasets/hograspnet/processed/hograspnet_abl11.csv
+robot/shadow-hand/datasets/processed/valid_robot_poses_eigengrasp_dong.npz
+robot/hand-configs/shadow_hand_right.yaml
+models/grasp-intent-classification/checkpoints/
+models/latent-retargeting/checkpoints/
+apps/graphgrasp-live/models/
 ```
 
-App-local deploy checkpoints remain under apps/graphgrasp-live/models. Cross-emb stage1 checkpoints were moved to packages/cross-emb/checkpoints.
+Use importable package names for model code (`grasp_gcn`, `cross_emb`) and
+domain packages for repo-local pipeline code (`human.*`, `control.*`).

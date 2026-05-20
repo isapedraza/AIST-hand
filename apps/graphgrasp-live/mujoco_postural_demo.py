@@ -9,6 +9,7 @@ Continuous interpolation -- no discrete state switching.
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import os
 import sys
@@ -31,7 +32,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from postural_control import PosturalController
 from inference_runtime import OpenHandLatch
-from perception.mediapipe_backend import MediaPipeBackend
+import _repo_path  # noqa: F401
+from human.perception.mediapipe_backend import MediaPipeBackend
 
 SHADOW_DIR    = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND    = SHADOW_DIR / "right_hand.xml"

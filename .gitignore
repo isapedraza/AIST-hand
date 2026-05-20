@@ -17,21 +17,37 @@ experiments/**
 events.out.tfevents.*
 !examples/**
 
-# Local heavy artifacts (do not commit)
-grasp-app/experiment/
-grasp-app/experiment_hamer/**/frames/
-grasp-app/plots_step4/
+# Local heavy inputs/outputs (do not commit)
 third_party/
+human/datasets/**/raw/
+human/datasets/**/processed/
+robot/**/datasets/
+models/*/checkpoints/
+models/*/models/
+models/*/experiments/**
+!models/*/experiments/**/
+!models/*/experiments/**/*.py
+!models/*/experiments/**/*.md
+!models/*/experiments/**/*.json
+!models/*/experiments/**/*.csv
+!models/*/experiments/**/*.txt
+!models/*/experiments/**/*.png
 
 # Local-only files
 knowledge/
+/knowledge/
+/grasp-model/
+/argparse
+/cd
+/mujoco
+/mujoco.viewer
+/source
+/sys
+/time
 mapping_log.txt
 python
 
 .codegraph/
-artifacts/
-packages/*/checkpoints/
-packages/*/models/
 apps/*/models/*.pt
 apps/*/models/*.pth
 

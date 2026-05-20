@@ -13,7 +13,8 @@ Uso:
 import argparse
 import cv2
 import numpy as np
-from perception.hamer_backend import HaMeRBackend
+import _repo_path  # noqa: F401
+from human.perception.hamer_backend import HaMeRBackend
 
 JOINTS = HaMeRBackend.JOINTS
 

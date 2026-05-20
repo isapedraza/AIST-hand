@@ -7,6 +7,7 @@ small subset of classes to existing MuJoCo Menagerie keyframes.
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 import os
@@ -26,8 +27,9 @@ from grasp_gcn import GraspToken, ToGraph, VotingWindow, get_network
 
 from inference_runtime import OpenHandLatch, parse_model_output, to_probs
 from model_variant import resolve_model_spec
-from perception.mediapipe_backend import MediaPipeBackend
-from perception.hamer_backend import HaMeRBackend
+import _repo_path  # noqa: F401
+from human.perception.mediapipe_backend import MediaPipeBackend
+from human.perception.hamer_backend import HaMeRBackend
 
 
 ROOT = Path(__file__).resolve().parents[2]

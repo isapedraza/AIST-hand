@@ -10,6 +10,7 @@ No aplica normalizacion, no calcula angulos, no usa profundidad RGB-D.
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 import csv

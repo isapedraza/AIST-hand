@@ -6,6 +6,7 @@ Controls:
 """
 
 from __future__ import annotations
+import _repo_path  # noqa: F401
 
 import argparse
 from pathlib import Path

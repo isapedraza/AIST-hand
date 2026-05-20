@@ -1,3 +1,4 @@
+import _repo_path  # noqa: F401
 """
 Demo simple: HaMeR + GCN.
 
@@ -23,7 +24,8 @@ import torch
 from grasp_gcn import ToGraph, get_network
 from inference_runtime import parse_model_output, to_probs
 from model_variant import resolve_model_spec
-from perception.hamer_backend import HaMeRBackend
+import _repo_path  # noqa: F401
+from human.perception.hamer_backend import HaMeRBackend
 
 
 def _parse_args():
