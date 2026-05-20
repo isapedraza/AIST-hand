@@ -1,0 +1,27 @@
+Run 007 -- GCN_CAM_8_8_16_16_32 -- taxonomy_v1 (17 classes)
+Test Accuracy : 0.7561
+Macro F1      : 0.6704
+
+                    precision    recall  f1-score   support
+
+    Tripod_cluster      0.796     0.735     0.764     65486
+     Pinch_cluster      0.769     0.838     0.802     39924
+   Lateral_cluster      0.773     0.863     0.816     53445
+Power_Wrap_cluster      0.610     0.786     0.687     12881
+ Precision_cluster      0.745     0.852     0.795     38129
+    Small_Diameter      0.605     0.603     0.604      7334
+  Index_Finger_Ext      0.819     0.798     0.809     18858
+    Extension_Type      0.779     0.835     0.806     15229
+      Parallel_Ext      0.663     0.720     0.690      6688
+            Palmar      0.676     0.668     0.672      6997
+       Medium_Wrap      0.577     0.105     0.178      2204
+    Adducted_Thumb      0.756     0.437     0.554     16783
+            Distal      0.823     0.746     0.783     20543
+      Power_Sphere      0.562     0.480     0.518      6602
+   Sphere_4_Finger      0.695     0.744     0.718      4880
+    Adduction_Grip      0.810     0.574     0.672      5786
+           Quadpod      0.678     0.433     0.529      5491
+
+          accuracy                          0.756    327260
+         macro avg      0.714     0.660     0.670    327260
+      weighted avg      0.757     0.756     0.750    327260

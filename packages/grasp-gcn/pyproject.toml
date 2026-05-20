@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grasp-gcn"
+version = "0.1.0"
+description = "Graph-based grasp intent classifier for GraphGrasp"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "torch-geometric>=2.4",
+    "scikit-learn>=1.3",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "tensorboard>=2.13",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,40 @@
+run_abl13_dong_xyz_norm_ahg_euler -- GCN_CAM_8_8_16_16_32
+Features/node: 25  (xyz_norm=3, ahg_angles=10, ahg_distances=10, dong_euler=2)
+Test Accuracy : 0.680755
+Macro F1      : 0.622703
+Weighted F1   : 0.678067
+
+                        precision    recall  f1-score   support
+
+        Large Diameter      0.687     0.707     0.697      7948
+        Small Diameter      0.592     0.559     0.575      7334
+Index Finger Extension      0.835     0.905     0.869     18858
+        Extension Type      0.729     0.808     0.766     15229
+    Parallel Extension      0.615     0.756     0.679      6688
+                Palmar      0.561     0.616     0.587      6997
+           Medium Wrap      0.459     0.318     0.376      2204
+        Adducted Thumb      0.615     0.644     0.629     16783
+            Light Tool      0.587     0.707     0.641     23738
+                Distal      0.883     0.806     0.843     20543
+                  Ring      0.466     0.627     0.535      5356
+            Power Disk      0.789     0.722     0.754      4933
+          Power Sphere      0.599     0.611     0.605      6602
+       Sphere 4-Finger      0.682     0.815     0.743      4880
+       Sphere 3-Finger      0.718     0.615     0.662     13047
+               Lateral      0.766     0.765     0.765     26701
+                 Stick      0.340     0.304     0.321      3006
+        Adduction Grip      0.800     0.703     0.748      5786
+        Writing Tripod      0.543     0.550     0.546     16116
+        Lateral Tripod      0.440     0.269     0.334      5118
+          Palmar Pinch      0.700     0.689     0.694     13338
+             Tip Pinch      0.585     0.393     0.470      7154
+       Inferior Pincer      0.671     0.671     0.671     14076
+    Prismatic 3 Finger      0.444     0.432     0.438      6905
+        Precision Disk      0.796     0.818     0.807     32794
+      Precision Sphere      0.483     0.370     0.419      5335
+               Quadpod      0.644     0.632     0.638      5491
+                Tripod      0.668     0.584     0.623     24300
+
+              accuracy                          0.681    327260
+             macro avg      0.632     0.621     0.623    327260
+          weighted avg      0.681     0.681     0.678    327260

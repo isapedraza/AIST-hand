@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cross-emb"
+version = "0.1.0"
+description = "Cross-embodiment retargeting model for GraphGrasp"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

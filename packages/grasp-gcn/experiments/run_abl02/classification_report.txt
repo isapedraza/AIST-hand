@@ -1,0 +1,38 @@
+run_abl02_xyz_flex -- GCN_CAM_8_8_16_16_32
+Test Accuracy : 0.6390
+Macro F1      : 0.5745
+
+                        precision    recall  f1-score   support
+
+        Large Diameter      0.540     0.635     0.584      7948
+        Small Diameter      0.663     0.571     0.614      7334
+Index Finger Extension      0.821     0.793     0.807     18858
+        Extension Type      0.764     0.837     0.799     15229
+    Parallel Extension      0.597     0.756     0.667      6688
+                Palmar      0.628     0.732     0.676      6997
+           Medium Wrap      0.386     0.225     0.285      2204
+        Adducted Thumb      0.676     0.528     0.593     16783
+            Light Tool      0.553     0.680     0.610     23738
+                Distal      0.788     0.775     0.781     20543
+                  Ring      0.498     0.550     0.523      5356
+            Power Disk      0.724     0.629     0.674      4933
+          Power Sphere      0.478     0.514     0.496      6602
+       Sphere 4-Finger      0.570     0.822     0.673      4880
+       Sphere 3-Finger      0.632     0.535     0.579     13047
+               Lateral      0.700     0.794     0.744     26701
+                 Stick      0.305     0.181     0.227      3006
+        Adduction Grip      0.727     0.655     0.689      5786
+        Writing Tripod      0.533     0.528     0.531     16116
+        Lateral Tripod      0.532     0.223     0.314      5118
+          Palmar Pinch      0.579     0.643     0.609     13338
+             Tip Pinch      0.455     0.411     0.432      7154
+       Inferior Pincer      0.627     0.588     0.607     14076
+    Prismatic 3 Finger      0.453     0.327     0.380      6905
+        Precision Disk      0.785     0.750     0.767     32794
+      Precision Sphere      0.322     0.321     0.322      5335
+               Quadpod      0.512     0.575     0.542      5491
+                Tripod      0.579     0.553     0.566     24300
+
+              accuracy                          0.639    327260
+             macro avg      0.587     0.576     0.575    327260
+          weighted avg      0.639     0.639     0.635    327260

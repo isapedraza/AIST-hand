@@ -27,3 +27,15 @@ third_party/
 knowledge/
 mapping_log.txt
 python
+
+.codegraph/
+artifacts/
+packages/*/checkpoints/
+packages/*/models/
+apps/*/models/*.pt
+apps/*/models/*.pth
+
+apps/*/experiment/
+apps/*/experiment_hamer/
+apps/*/plots_step4/
+apps/*/.claude/
