@@ -49,29 +49,49 @@ def test_synthetic() -> None:
 
     # 1. All fingers contribute non-negative scalars
     for f in range(5):
-        sk = xin_sk_per_finger(tips_a, tips_b, chain_a, chain_b, f)
+        sk = xin_sk_per_finger(tips_a, tips_b, chain_a, chain_b, f,
+                               lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
         assert sk.shape == (N,), f"finger {f}: expected [{N}], got {sk.shape}"
         assert (sk >= 0).all(), f"finger {f}: negative similarity"
     _format_check("per-finger shapes and non-negativity (all 5 fingers, thumb included)")
 
     # 2. full = sum of per-finger
-    sk_full = xin_sk_full(tips_a, tips_b, chain_a, chain_b)
+    sk_full = xin_sk_full(tips_a, tips_b, chain_a, chain_b,
+                          lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
     sk_sum = sum(
-        xin_sk_per_finger(tips_a, tips_b, chain_a, chain_b, f) for f in range(5)
+        xin_sk_per_finger(tips_a, tips_b, chain_a, chain_b, f,
+                          lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
+        for f in range(5)
     )
     assert torch.allclose(sk_full, sk_sum, atol=1e-6), "full vs sum of per-finger differ"
     _format_check("xin_sk_full = sum of per-finger contributions")
 
     # 3. symmetry
-    sk_ab = xin_sk_full(tips_a, tips_b, chain_a, chain_b)
-    sk_ba = xin_sk_full(tips_b, tips_a, chain_b, chain_a)
+    sk_ab = xin_sk_full(tips_a, tips_b, chain_a, chain_b,
+                        lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
+    sk_ba = xin_sk_full(tips_b, tips_a, chain_b, chain_a,
+                        lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
     assert torch.allclose(sk_ab, sk_ba, atol=1e-6), "S_k is not symmetric"
     _format_check("symmetry: S_k(a,b) == S_k(b,a)")
 
     # 4. self -> 0
-    sk_self = xin_sk_full(tips_a, tips_a, chain_a, chain_a)
+    sk_self = xin_sk_full(tips_a, tips_a, chain_a, chain_a,
+                          lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
     assert torch.allclose(sk_self, torch.zeros(N), atol=1e-6), "S_k(a,a) != 0"
     _format_check("self-similarity: S_k(a,a) == 0")
+
+    # 6. lam_mid=0 reproduces Run 25 exactly; lam_mid>0 increases S_k when PIP differs
+    chain_b_diff_pip = chain_b.clone()
+    chain_b_diff_pip[:, :, 1, :] += 0.5  # shift all PIP positions
+    sk_no_mid  = xin_sk_full(tips_a, tips_b, chain_a, chain_b,
+                              lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=0.0)
+    sk_mid_0   = xin_sk_full(tips_a, tips_b, chain_a, chain_b,
+                              lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=0.0)
+    sk_mid_1   = xin_sk_full(tips_a, tips_b, chain_a, chain_b_diff_pip,
+                              lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0)
+    assert torch.allclose(sk_no_mid, sk_mid_0, atol=1e-6), "lam_mid=0 should match Run 25"
+    assert (sk_mid_1 > sk_mid_0).all(), "lam_mid>0 with differing PIP should increase S_k"
+    _format_check("lam_mid=0 reproduces Run 25; lam_mid=1 increases S_k on PIP-shifted poses")
 
     # 5. gradient flows through both inputs
     sk_full.sum().backward()

@@ -392,9 +392,9 @@ def main() -> None:
                     chain_cb = chain_all[cand_b]
 
                     S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
-                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr)
+                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
                     S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
-                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr)
+                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
 
                     if args.log_metric_stats:
                         S_pairs = torch.cat([S_a, S_b])
@@ -455,12 +455,12 @@ def main() -> None:
                     S_a = xin_sk_per_finger(
                         tips_a, tips_ca, chain_a, chain_ca,
                         finger_idx=finger_idx,
-                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr,
+                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
                     )
                     S_b = xin_sk_per_finger(
                         tips_a, tips_cb, chain_a, chain_cb,
                         finger_idx=finger_idx,
-                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr,
+                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
                     )
 
                     if args.log_metric_stats:

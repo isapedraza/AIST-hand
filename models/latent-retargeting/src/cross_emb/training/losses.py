@@ -104,6 +104,7 @@ def xin_sk_per_finger(
     lam_fp: float = 1.0,
     lam_pinch: float = 10.0,
     lam_fr: float = 10.0,
+    lam_mid: float = 1.0,
 ) -> torch.Tensor:
     """Per-finger Cartesian similarity. Symmetric, operates in normalized space.
 
@@ -134,7 +135,12 @@ def xin_sk_per_finger(
     r_b_hat = _last_segment_unit(chain_b, finger_idx)
     fr = ((r_a_hat - r_b_hat) ** 2).sum(dim=-1)
 
-    return lam_fp * fp + lam_pinch * pinch + lam_fr * fr
+    # PIP position (wrist -> PIP vector, DexMV-style intermediate joint)
+    pip_a = chain_a[:, finger_idx, 1, :]
+    pip_b = chain_b[:, finger_idx, 1, :]
+    mid = ((pip_a - pip_b) ** 2).sum(dim=-1)
+
+    return lam_fp * fp + lam_pinch * pinch + lam_fr * fr + lam_mid * mid
 
 
 def xin_sk_full(
@@ -145,13 +151,14 @@ def xin_sk_full(
     lam_fp: float = 1.0,
     lam_pinch: float = 10.0,
     lam_fr: float = 10.0,
+    lam_mid: float = 1.0,
 ) -> torch.Tensor:
     """Full-hand symmetric S_k (sum over all 5 fingers)."""
     s = tips_a.new_zeros(tips_a.shape[0])
     for f in range(5):
         s = s + xin_sk_per_finger(
             tips_a, tips_b, chain_a, chain_b, f,
-            lam_fp=lam_fp, lam_pinch=lam_pinch, lam_fr=lam_fr,
+            lam_fp=lam_fp, lam_pinch=lam_pinch, lam_fr=lam_fr, lam_mid=lam_mid,
         )
     return s
 

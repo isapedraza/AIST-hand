@@ -5044,3 +5044,34 @@ Mas simple de implementar. El brazo no aprovecha el espacio latente -- pero el b
 | Funcionalidad | control unificado via latente | funcional, pragmatico |
 
 **Estado**: idea documentada -- no implementar hasta que el subespacio de mano este resuelto. Opcion B es el camino natural para una demostracion funcional rapida. Opcion A es la extension academicamente mas interesante si se consiguen datos de brazo.
+
+---
+
+## Entry 90 -- 2026-05-21: Run 26 -- lam_mid (PIP Cartesiano, DexMV-style)
+
+**Problema observado en Run 25**
+
+Ejecucion rigida: dedos bajan ligeramente pero no flexionan en articulaciones intermedias. Pose default = extension de indice. Analisis: Xin S_k mide TIP + DIP→TIP + pinch, pero NO mide PIP ni MCP. El encoder no aprende a distinguir poses que difieren solo en flexion intermedia. El decoder aprende pose promedio para joints intermedios → rigidez.
+
+**Fix implementado**
+
+4to termino `lam_mid` = posicion Cartesiana wrist→PIP normalizada, sumado a S_k por dedo:
+
+```
+S_k = lam_fp * fp + lam_pinch * pinch + lam_fr * fr + lam_mid * mid
+mid = ||chain_a[:,f,1,:] - chain_b[:,f,1,:]||^2
+```
+
+`chain[:,f,1,:]` = slot PIP en el tensor `[N, 5, 4, 3]` (MCP/PIP/DIP/TIP). Identico semanticamente para humano (`INDEX_PIP_*` columns en CSV) y robot (`ffmiddle`, `mfmiddle`, etc. en YAML). Normalizado por `hand_length` → morphology-agnostic.
+
+**Base en literatura**
+
+DexMV usa exactamente los links `*middle` (PIP-equivalente) como targets IK en `retarget_human_hand.py:23`. Xin menciona esto como "vectors from the palm to the middle phalanx to represent finger bending information" (linea 86, tex). La diferencia: DexMV lo usa como objetivo IK (el solver resuelve joints intermedios implicitamente); nosotros lo usamos como termino de similaridad en el selector de triplets.
+
+**Hiperparametros Run 26**: `lam_mid=1.0` (igual que `lam_fp`, mismo tipo de metrica: posicion Cartesiana). Para reproducir Run 25 exacto: `--lam_mid 0`.
+
+**Fallbacks si Run 26 falla (en orden)**
+
+1. `single_latent=False` — 5 subspaces per-finger. La descomposicion per-finger de Xin S_k es matematicamente valida: cada termino (fp, pinch, fr, mid) es aditivo por dedo. Pinch cross-finger no es bloqueador: `tips_all` contiene los 5 dedos siempre, pulgar disponible como referencia. Pulgar y menique reciben `pinch=0`.
+2. Switching weights (`s(d_i)` sigmoid en `lam_pinch`) — sin ellos `pinch=10.0` aplica siempre, distorsionando la metrica en poses no-pinch (mayoria del dataset).
+3. D_R — ultimo recurso. Analisis actualizado: D_R es valido para dedos no-pulgar (estructura analoga: knuckle/proximal/distal/tip ↔ MCP/PIP/DIP). Para el pulgar D_R es problematico: THJ5+THJ4+THJ3+THJ2+THJ1 no mapea a CMC+MCP+IP humano (diferente funcion, diferente eje, diferente DoF). Si se usa D_R, lo correcto seria aplicarlo solo a los 4 dedos no-pulgar y dejar el pulgar con Xin Cartesiano.
