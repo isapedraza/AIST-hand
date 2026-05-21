@@ -97,3 +97,46 @@ class HumanEncoder_E_h(nn.Module):
         z_ring   = self.out_act(self.proj_ring(  x[:, SUBSPACE_NODES["ring"],   :].max(dim=1).values))
         z_pinky  = self.out_act(self.proj_pinky( x[:, SUBSPACE_NODES["pinky"],  :].max(dim=1).values))
         return torch.cat([z_thumb, z_index, z_middle, z_ring, z_pinky], dim=-1)  # [B, 5*z_dim]
+
+
+class HumanEncoder_E_h_single(nn.Module):
+    """E_h variant with a SINGLE projection head over the whole hand (Run 25+).
+
+    Same 3x CAM-GNN backbone as HumanEncoder_E_h. Replaces the 5 per-finger
+    projection heads with a single Sequential(Linear -> Tanh) that operates on
+    a global max-pool of nodes 1-20 (joints, wrist excluded). Output is a
+    unified latent of size z_dim_total instead of the 5-way decoupled
+    concatenation.
+
+    The single-latent variant pairs with Xin's Cartesian S_k (xin_sk_full)
+    in the contrastive loss: there is no longer a per-finger triplet step,
+    so per-finger projection heads add capacity without aligned supervision.
+    """
+
+    N_JOINTS = 21
+
+    def __init__(self, in_dim: int = 4, hidden_dim: int = 32, z_dim_total: int = 320):
+        super().__init__()
+        self.cam    = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS).uniform_(-1, 1))
+        self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
+        self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
+        self.layer3 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
+        self.proj_hand = nn.Sequential(
+            nn.Linear(hidden_dim, z_dim_total),
+            nn.Tanh(),
+        )
+
+    def forward(self, quats: torch.Tensor) -> torch.Tensor:
+        B = quats.shape[0]
+        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
+        wrist[:, 0, 0] = 1.0
+        quats = torch.cat([wrist, quats], dim=1)           # [B, 21, 4]
+        B, N, in_f = quats.shape
+        x = quats.reshape(B * N, in_f)
+        x = self.layer1(x, self.cam)
+        x = self.layer2(x, self.cam)
+        x = self.layer3(x, self.cam)
+        x = x.view(B, N, -1)                              # [B, 21, hidden]
+        # Pool over joints 1-20 (exclude wrist, consistent with E_h convention).
+        x_pool = x[:, 1:, :].max(dim=1).values             # [B, hidden]
+        return self.proj_hand(x_pool)                      # [B, z_dim_total]

@@ -16,39 +16,45 @@ N_SUBSPACES = 5  # thumb / index / middle / ring / pinky
 
 class SharedEncoder_E_X(nn.Module):
     """
-    E_X: shared MLP encoder from robot embedding to decoupled latent subspaces.
+    E_X: shared MLP encoder from robot embedding to the latent space.
 
-    Input : [B, shared_dim]       (output of RobotEncoder_E_r)
-    Output: z [B, N_SUBSPACES*z_dim]  concat of [z_thumb, z_precision, z_support]
+    Input : [B, shared_dim]    (output of RobotEncoder_E_r)
+    Output: z [B, z_dim_total] where z_dim_total = N_SUBSPACES*z_dim by default,
+            or explicit z_dim_total when --single_latent is in effect.
 
     8-layer MLP with 256-neuron hidden layers (Yan et al. 2026).
     Shared across all robots.
     """
 
-    def __init__(self, shared_dim: int = 1024, z_dim: int = 64):
+    def __init__(self, shared_dim: int = 1024, z_dim: int = 64, z_dim_total: int | None = None):
         super().__init__()
-        self.net = _mlp([shared_dim, 256, 256, 256, 256, 256, 256, 256, N_SUBSPACES * z_dim])
+        if z_dim_total is None:
+            z_dim_total = N_SUBSPACES * z_dim
+        self.net = _mlp([shared_dim, 256, 256, 256, 256, 256, 256, 256, z_dim_total])
 
     def forward(self, x):
-        """x: [B, shared_dim] -> z: [B, N_SUBSPACES*z_dim]"""
+        """x: [B, shared_dim] -> z: [B, z_dim_total]"""
         return self.net(x)
 
 
 class SharedDecoder_D_X(nn.Module):
     """
-    D_X: shared MLP decoder from decoupled latent subspaces to robot embedding.
+    D_X: shared MLP decoder from the latent space to robot embedding.
 
-    Input : z [B, N_SUBSPACES*z_dim]  concat of all subspace vectors
-    Output: [B, shared_dim],          bounded [-1, 1] via Tanh
+    Input : z [B, z_dim_total]    where z_dim_total = N_SUBSPACES*z_dim by default,
+            or explicit z_dim_total when --single_latent is in effect.
+    Output: [B, shared_dim],       bounded [-1, 1] via Tanh
 
     8-layer MLP with 256-neuron hidden layers (Yan et al. 2026).
     Shared across all robots.
     """
 
-    def __init__(self, z_dim: int = 64, shared_dim: int = 1024):
+    def __init__(self, z_dim: int = 64, shared_dim: int = 1024, z_dim_total: int | None = None):
         super().__init__()
-        self.net = _mlp([N_SUBSPACES * z_dim, 256, 256, 256, 256, 256, 256, 256, shared_dim])
+        if z_dim_total is None:
+            z_dim_total = N_SUBSPACES * z_dim
+        self.net = _mlp([z_dim_total, 256, 256, 256, 256, 256, 256, 256, shared_dim])
 
     def forward(self, z):
-        """z: [B, N_SUBSPACES*z_dim] -> [B, shared_dim]"""
+        """z: [B, z_dim_total] -> [B, shared_dim]"""
         return self.net(z)

@@ -34,9 +34,20 @@ def _parse_args() -> argparse.Namespace:
         help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
     )
     p.add_argument("--margin",      type=float, default=0.05)
-    p.add_argument("--w_r",     type=float, default=1.0, help="Weight for D_R in S_k.")
-    p.add_argument("--w_joints", type=float, default=1.0, help="Weight for D_joints in S_k.")
-    p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
+    p.add_argument("--w_r",      type=float, default=1.0, help="[DEPRECATED in Run 25] Legacy D_R weight in S_k. Ignored by Xin Cartesian S_k.")
+    p.add_argument("--w_joints", type=float, default=1.0, help="[DEPRECATED in Run 25] Legacy D_joints weight. Ignored by Xin Cartesian S_k.")
+    p.add_argument("--w_ahg",    type=float, default=1.0, help="[DEPRECATED in Run 25] Legacy D_ahg weight. Ignored by Xin Cartesian S_k.")
+    p.add_argument("--lam_fp",    type=float, default=1.0,  help="Weight for fingertip_pos term in Xin Cartesian S_k.")
+    p.add_argument("--lam_pinch", type=float, default=10.0, help="Weight for pinch (thumb->primary) term in Xin Cartesian S_k.")
+    p.add_argument("--lam_fr",    type=float, default=10.0, help="Weight for fingertip_rot (last-segment unit vector) term in Xin Cartesian S_k.")
+    p.add_argument("--lambda_joint",    type=float, default=0.0,
+                   help="Weight for L_joint (joint position regularization). 0 disables.")
+    p.add_argument("--robot_yaml_path", default=None,
+                   help="Override path to robot.yaml (semantic_roles -> L_joint weights). Defaults to repo_root/robot/hands/shadow_hand/robot.yaml")
+    p.add_argument("--single_latent", action="store_true",
+                   help="Use HumanEncoder_E_h_single (one projection head, z_dim_total) and xin_sk_full instead of 5 per-finger subspaces.")
+    p.add_argument("--z_dim_total", type=int, default=320,
+                   help="Total latent dimension when --single_latent is set. Default 320 = 5*64 for capacity parity with the 5-subspace baseline.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(

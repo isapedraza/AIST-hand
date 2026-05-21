@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..nn.human_modules import HumanEncoder_E_h, CAMLayer
+from ..nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, CAMLayer
 from ..nn.shared_modules import _mlp
 from ..nn.robot_modules  import RobotDecoder_D_r
 
@@ -87,10 +87,16 @@ class Retargeter:
         n_j = ck["D_r"]["fc.weight"].shape[0]
         dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
 
-        if "proj_precision.weight" in ck["E_h"]:
+        if "proj_hand.0.weight" in ck["E_h"]:
+            # Run 25+ single-latent encoder
+            z_dim_total = ck["E_h"]["proj_hand.0.weight"].shape[0]
+            self.E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).eval()
+        elif "proj_precision.weight" in ck["E_h"]:
+            # Legacy 3-subspace encoder (thumb / precision / support)
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = _LegacyHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
         else:
+            # 5-subspace encoder (thumb / index / middle / ring / pinky)
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
 

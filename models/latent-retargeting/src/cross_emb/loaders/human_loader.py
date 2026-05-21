@@ -69,11 +69,16 @@ _MIDDLE_TIP_COLS: list[str] = [
 
 # Full chain positions per finger: [MCP, PIP, DIP, TIP] x [x, y, z]
 # Ordered to match TIP_LABELS: thumb, index, middle, ring, pinky
-# Thumb: IP used as PIP analog; TIP used as DIP proxy (no separate DIP)
+# Thumb: human anatomy has only 3 phalanges (no DIP). To make formula
+# `chain[:,f,3]-chain[:,f,2]` (last-segment direction) work uniformly for
+# all fingers, thumb slot 2 (called "DIP") is filled with THUMB_IP (the
+# last joint before TIP). Therefore slot 1 == slot 2 == THUMB_IP for thumb,
+# and slot 3 - slot 2 = TIP - IP = real last segment vector.
+# Robot side already uses analogous convention (thdistal -> thtip).
 _CHAIN_COLS: list[str] = [
     "THUMB_MCP_x",         "THUMB_MCP_y",         "THUMB_MCP_z",
     "THUMB_IP_x",          "THUMB_IP_y",           "THUMB_IP_z",
-    "THUMB_TIP_x",         "THUMB_TIP_y",          "THUMB_TIP_z",
+    "THUMB_IP_x",          "THUMB_IP_y",           "THUMB_IP_z",
     "THUMB_TIP_x",         "THUMB_TIP_y",          "THUMB_TIP_z",
     "INDEX_FINGER_MCP_x",  "INDEX_FINGER_MCP_y",   "INDEX_FINGER_MCP_z",
     "INDEX_FINGER_PIP_x",  "INDEX_FINGER_PIP_y",   "INDEX_FINGER_PIP_z",
