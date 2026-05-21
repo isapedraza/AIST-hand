@@ -36,6 +36,8 @@ models/*/experiments/**
 !models/*/experiments/**/*.txt
 !models/*/experiments/**/*.png
 
+docs/references/
+
 # Local-only files
 knowledge/
 /knowledge/
