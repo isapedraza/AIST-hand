@@ -4785,3 +4785,85 @@ URDFs may still reference these mesh paths. That is acceptable: the URDF remains
 - Full simulation/visualization requires restoring meshes from external storage into the original relative locations.
 
 **Status**: Implemented
+
+---
+
+## Entry 86 -- 2026-05-21: Experimento Run 25 -- Xin-style S_k + espacio latente unico
+
+**Context**: Run 20 es el mejor modelo actual (RS=0.320, NDS=2.261, NVS=0.088). El problema persistente es que el MCP no cierra completamente y la coordinacion inter-dedo (pinch) es debil. La hipotesis es que el S_k actual (D_R + D_joints + D_ahg) mide similitud cinematica abstracta, no similitud de manipulacion. Dos poses pueden tener D_R bajo pero comportamiento de agarre completamente distinto.
+
+Se intento este experimento antes del refactor SOLID (run borrado sin nombre). Fallo por complejidad del codigo monolitico -- no estaba claro donde tocar que sin romper todo. El refactor completado (2026-05-21) elimina ese obstaculo.
+
+**Decision**: Implementar Run 25 con dos cambios arquitecturales coordinados:
+
+**1. Reemplazar S_k por metricas Xin et al. (2025)**
+
+El S_k selecciona tripletes contrastivos. Reemplazar:
+
+```
+# actual
+S_k = w_r * D_R + w_joints * D_joints + w_ahg * D_ahg
+
+# Xin-inspired
+S_k = lambda_fp * L_fingertip_pos + lambda_pinch * L_pinch + lambda_fr * L_fingertip_rot
+```
+
+Donde:
+- `L_fingertip_pos`: sum_i s̃(d_i) * ||v_wrist->tip_r - v_wrist->tip_h||^2 con switching weight continuo
+- `L_pinch`: sum_i s(d_i) * ||gamma_r - l(d_i)*gamma_hat_h||^2 donde gamma = vector pulgar->dedo; switching weight sigmoid; distance rescaling en [eps2, eps1]
+- `L_fingertip_rot`: sum_i ||r_DIP->tip_h - r_DIP->tip_r||^2
+
+Justificacion: L_pinch captura coordinacion pulgar-indice directamente. L_fingertip_rot mide orientacion de contacto via DIP->tip, mas relevante que quaterniones de joint. El switching weight continuo es mas suave que pesos fijos 1/sigma.
+
+**2. Espacio latente unico (no 5 subespacios)**
+
+L_pinch es inter-dedo: mide distancias pulgar->index/middle/ring. Esto no encaja con 5 subespacios donde S_k se calcula por dedo independientemente. Con 5 subespacios, el subespacio del indice se seleccionaria por una metrica que depende del pulgar, rompiendo la separacion semantica.
+
+Un solo subespacio de dimension z_dim_total permite que S_k global opere sobre toda la mano. La granularidad por-dedo se espera que emerja de forma implicita desde la senal contrastiva inter-dedo.
+
+Nueva arquitectura encoder humano: clase `HumanEncoder_E_h_single` en `nn/human_modules.py` con un unico projection head `proj_hand` de dimension z_dim_total. El resto del sistema (E_r, E_X, D_X, D_r) se adapta a la nueva dimension de z.
+
+**3. Quitar pesos 1/sigma de S_k**
+
+Los pesos `_sk_w` y `_sk_wj` son 1/sigma calculados desde el dataset. Con Xin como S_k estos pesos no aplican. Las lambdas de Xin son hiperparametros explicitos sin justificacion estadistica -- mas interpretables y directamente comparables con los valores del paper.
+
+**4. L_joint como ablacion opcional**
+
+```
+L_joint = sum_j w_j * ||q_j - q_bar_j||^2
+```
+
+Donde q_bar es la pose de reposo del Shadow Hand (mano abierta). Regulariza joints que Dong no codifica bien (MCP abduccion). Pesos w_j por joint desde robot.yaml semantic_roles.
+
+**Archivos a modificar** (todos quirurgicos post-refactor SOLID):
+
+| Cambio | Archivo |
+|---|---|
+| Funciones Xin S_k (fingertip_pos, pinch, fingertip_rot) | training/losses.py |
+| HumanEncoder_E_h_single (un solo proj head) | nn/human_modules.py |
+| Flags --single_latent, --lambda_fp, --lambda_pinch, --lambda_fr, --lambda_joint | training/config.py |
+| Selector encoder + S_k en loop, L_joint opcional | training/loop.py |
+| Compat en Retargeter.__init__ para proj_hand.weight | inference/retarget.py |
+
+**Pendiente -- requiere planificacion antes de implementar**:
+
+- Dimension exacta de z_dim_total (64? 80? igual que 5*z_dim actual para comparabilidad)
+- Valores iniciales de lambda_fp, lambda_pinch, lambda_fr (referencia: Xin appendix para Shadow Hand)
+- eps1, eps2 del switching weight (Xin usa eps1=0.1m, eps2=0.01m para Leap; escalar para Shadow Hand normalizado por hand_length)
+- Definicion de q_bar (rest pose) para L_joint y de donde leerla (robot.yaml o hardcoded)
+- Pesos w_j por joint para L_joint (Xin appendix da valores para Shadow Hand)
+- Seed: usar seed=21266 (buen basin confirmado en Run 20)
+
+**Alternativas consideradas**:
+
+- Xin S_k con 5 subespacios usando solo terminos locales (L_fingertip_pos y L_fingertip_rot por dedo, L_pinch solo en subespacio thumb/index). Rechazado por complejidad y porque L_pinch a medias no captura la coordinacion inter-dedo completa.
+- Mantener S_k actual y solo anadir L_joint como ablacion. Posible como experimento separado antes de Run 25.
+- z_dim_total = z_dim (reducir capacidad). Rechazado para que la comparacion con Run 20 sea justa en capacidad total.
+
+**Referencias**:
+
+- Xin et al. (2025), Sec. II: formulas L_fingertip_pos, L_pinch, L_fingertip_rot, L_joint. Appendix: hiperparametros para Shadow Hand.
+- docs/references/xin2025/contents/main_text.tex: fuente local del paper.
+- Run 20 (Entry 83): baseline a superar, seed=21266.
+
+**Status**: Propuesto -- implementacion pendiente de planificacion detallada
