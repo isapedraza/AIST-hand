@@ -14,7 +14,7 @@ Two methods:
        - Interpolate in PC space, project back
 
 Output:
-  robot/shadow-hand/experiments/interpolation_pca_vs_linear.png
+  robot/hands/shadow_hand/experiments/interpolation_pca_vs_linear.png
   (2 rows x 7 columns; top=linear, bottom=PCA)
 
 Argument: PCA intermediate poses respect joint co-activation patterns learned from real
@@ -42,7 +42,7 @@ ROOT      = pathlib.Path(__file__).resolve().parents[3]
 YAML_PATH = ROOT / "robot/hands/shadow_hand/shadow_hand_canonical_v5_grasp.yaml"
 XML_PATH  = ROOT / "third_party/mujoco_menagerie/shadow_hand/right_hand.xml"
 DEX_DIR   = pathlib.Path("/media/yareeez/94649A33649A1856/dexonomy/Dexonomy_GRASP_shadow/succ_collect")
-OUT_PATH  = ROOT / "robot/shadow-hand/experiments/interpolation_pca_vs_linear.png"
+OUT_PATH  = ROOT / "robot/hands/shadow_hand/experiments/interpolation_pca_vs_linear.png"
 
 # Dexonomy qpos[7:29] -> MuJoCo Menagerie [2:24] (skip wrist indices 0,1)
 DEX2MJC_FINGER = slice(7, 29)   # 22 finger joints from Dexonomy

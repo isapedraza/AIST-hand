@@ -7,8 +7,9 @@ grasp-app/perception/              -> human/perception/
 grasp-app/hand_preprocessing/      -> human/kinematics/
 grasp-model/                       -> models/grasp-intent-classification/
 grasp-model/src/cross_emb          -> models/latent-retargeting/src/cross_emb
-grasp-robot/                       -> robot/shadow-hand/
-robot/shadow-hand/grasp_configs/   -> robot/hands/shadow_hand/
+grasp-robot/postural_control.py    -> control/postural_control.py
+grasp-robot/grasp_configs/         -> robot/hands/shadow_hand/
+grasp-robot/scripts/               -> robot/hands/shadow_hand/tools/
 ```
 
 Install both learned-model packages from their new locations:

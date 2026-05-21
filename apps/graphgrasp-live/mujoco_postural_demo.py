@@ -27,12 +27,10 @@ import numpy as np
 import torch
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "robot" / "shadow-hand"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from postural_control import PosturalController
+from control.postural_control import PosturalController
 from inference_runtime import OpenHandLatch
-import _repo_path  # noqa: F401
 from human.perception.mediapipe_backend import MediaPipeBackend
 
 SHADOW_DIR    = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
@@ -55,7 +53,7 @@ CAMERA_RESET = {
 }
 
 HAND_FLAT = np.zeros(HAND_QPOS_DIM, dtype=np.float64)   # open hand fallback
-ABL04_RESULTS_PATH = ROOT / "packages" / "grasp-gcn" / "experiments" / "run_abl04" / "results.json"
+ABL04_RESULTS_PATH = ROOT / "models" / "grasp-intent-classification" / "experiments" / "run_abl04" / "results.json"
 BLOCKED_F1_THRESHOLD = 0.45
 BLOCKED_CLASSES_MANUAL = {"Distal"}
 

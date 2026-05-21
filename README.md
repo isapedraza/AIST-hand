@@ -12,7 +12,8 @@ AIST-hand/
     retargeting/      # Cross-embodiment retargeting model, imports as cross_emb
   control/            # Temporal rules, safety, and stable command policies
   robot/
-    shadow-hand/      # Shadow Hand configs, datasets, MuJoCo tools
+    hands/
+      shadow_hand/    # Shadow Hand configs, datasets, MuJoCo tools
     hand-configs/     # Robot hand kinematic configs used by retargeting
   apps/
     graphgrasp-live/  # Live app and demos that connect pipeline modules

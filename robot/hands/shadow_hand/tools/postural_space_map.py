@@ -23,7 +23,7 @@ from sklearn.decomposition import PCA
 ROOT      = pathlib.Path(__file__).resolve().parents[3]
 YAML_PATH = ROOT / "robot/hands/shadow_hand/shadow_hand_canonical_v5_grasp.yaml"
 DEX_DIR   = pathlib.Path("/media/yareeez/94649A33649A1856/dexonomy/Dexonomy_GRASP_shadow/succ_collect")
-OUT_PATH  = ROOT / "robot/shadow-hand/experiments/postural_space_map.png"
+OUT_PATH  = ROOT / "robot/hands/shadow_hand/experiments/postural_space_map.png"
 
 DEX2MJC_FINGER = slice(7, 29)
 MAX_FILES_PER_CLASS = 50
