@@ -31,11 +31,12 @@ suffix `_dong.npz` unless `--output` is given.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
+
+from cross_emb.loaders.robot_loader import RobotLoader, _dong_run_stage2, _load_hand_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,11 +53,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
-    package_root = Path(__file__).resolve().parents[1]
-    sys.path.insert(0, str(package_root / "scripts"))
-
-    from robot_loader import RobotLoader, _dong_run_stage2, _load_hand_config
 
     device = args.device
     if device == "auto":

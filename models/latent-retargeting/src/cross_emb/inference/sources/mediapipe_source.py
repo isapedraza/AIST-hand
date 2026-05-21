@@ -16,21 +16,19 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
 import cv2
 import mediapipe as mp
 import numpy as np
 import torch
 
-# Dong kinematics lives in the human pipeline package.
-_HAND_PREPROCESSING = Path(__file__).resolve().parents[6] / "human" / "kinematics"
-if str(_HAND_PREPROCESSING) not in sys.path:
-    sys.path.insert(0, str(_HAND_PREPROCESSING))
-
-from dong_kinematics import DongKinematics, canonicalize_to_right_hand  # noqa: E402
+try:
+    from human.kinematics.dong_kinematics import DongKinematics, canonicalize_to_right_hand
+except ImportError as e:
+    raise ImportError(
+        "human package not found. Install it with: pip install -e /path/to/AIST-hand/human"
+    ) from e
 
 
 class MediaPipeSource:

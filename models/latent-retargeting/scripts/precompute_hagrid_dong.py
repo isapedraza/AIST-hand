@@ -20,14 +20,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "human" / "kinematics"))
-from dong_kinematics import DongKinematics  # noqa: E402
+try:
+    from human.kinematics.dong_kinematics import DongKinematics
+except ImportError as e:
+    raise ImportError(
+        "human package not found. Install it with: pip install -e /path/to/AIST-hand/human"
+    ) from e
 
 # HaGRID class labels to include. The output grasp_type values intentionally
 # live above the 28 HOGraspNet classes and are used only as metadata.
