@@ -28,7 +28,7 @@ import yaml
 ROOT       = Path(__file__).resolve().parents[3]
 SHADOW_DIR = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND = SHADOW_DIR / "right_hand.xml"
-CANONICAL  = ROOT / "robot" / "shadow-hand" / "configs" / "shadow_hand_canonical_v5_grasp.yaml"
+CANONICAL  = ROOT / "robot" / "hands" / "shadow_hand" / "shadow_hand_canonical_v5_grasp.yaml"
 
 HAND_QPOS_DIM = 24
 POSE_ALPHA    = 0.15

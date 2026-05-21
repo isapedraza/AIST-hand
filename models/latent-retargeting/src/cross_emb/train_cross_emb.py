@@ -148,7 +148,7 @@ def main():
 
     CSV_PATH    = Path(args.csv_path)    if args.csv_path    else REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl11.csv"
     CKPT_PATH   = Path(args.ckpt_path)  if args.ckpt_path   else PACKAGE_ROOT / "checkpoints/stage1_latest.pt"
-    HAND_CONFIG = Path(args.hand_config) if args.hand_config else REPO_ROOT / "robot/hand-configs/shadow_hand_right.yaml"
+    HAND_CONFIG = Path(args.hand_config) if args.hand_config else REPO_ROOT / "robot/hands/shadow_hand/shadow_hand_right.yaml"
     URDF_PATH   = DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
     EXTRA_HUMAN_CSV = Path(args.extra_human_csv) if args.extra_human_csv else None
 

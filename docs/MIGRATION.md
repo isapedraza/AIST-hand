@@ -8,7 +8,7 @@ grasp-app/hand_preprocessing/      -> human/kinematics/
 grasp-model/                       -> models/grasp-intent-classification/
 grasp-model/src/cross_emb          -> models/latent-retargeting/src/cross_emb
 grasp-robot/                       -> robot/shadow-hand/
-robot/shadow-hand/grasp_configs/   -> robot/shadow-hand/configs/
+robot/shadow-hand/grasp_configs/   -> robot/hands/shadow_hand/
 ```
 
 Install both learned-model packages from their new locations:
@@ -22,8 +22,8 @@ Current data/checkpoint owners:
 
 ```text
 human/datasets/hograspnet/processed/hograspnet_abl11.csv
-robot/shadow-hand/datasets/processed/valid_robot_poses_eigengrasp_dong.npz
-robot/hand-configs/shadow_hand_right.yaml
+robot/hands/shadow_hand/datasets/processed/valid_robot_poses_eigengrasp_dong.npz
+robot/hands/shadow_hand/shadow_hand_right.yaml
 models/grasp-intent-classification/checkpoints/
 models/latent-retargeting/checkpoints/
 apps/graphgrasp-live/models/

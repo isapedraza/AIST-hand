@@ -12,7 +12,7 @@ avoids depending on a single potentially bad grasp, while keeping all poses from
 similarly-sized objects.
   qpos = (1 - apertura) * pose_open + apertura * pose_close
 
-Output: robot/shadow-hand/configs/shadow_hand_canonical.yaml
+Output: robot/hands/shadow_hand/shadow_hand_canonical.yaml
 
 --- Dexonomy qpos layout (29 values, confirmed from DexLearn/base_dex.py) ---
 [0:3]  hand root translation (x, y, z)  -- ignored
@@ -50,7 +50,7 @@ import yaml
 # ---------------------------------------------------------------------------
 ROOT       = Path(__file__).resolve().parents[3]
 GRASP_DIR  = Path("/media/yareeez/94649A33649A1856/dexonomy/Dexonomy_GRASP_shadow/succ_collect")
-OUT_YAML   = ROOT / "robot" / "shadow-hand" / "configs" / "shadow_hand_canonical_v5_grasp.yaml"
+OUT_YAML   = ROOT / "robot" / "hands" / "shadow_hand" / "shadow_hand_canonical_v5_grasp.yaml"
 
 MAX_FILES_PER_CLASS = 150   # ~3 300 poses per class (each file has ~22 poses)
 N_SMALLEST          = 10    # number of smallest-scale grasps to use per class

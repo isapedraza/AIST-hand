@@ -13,13 +13,13 @@ DEFAULT_ROOT = Path(
     "Dexonomy_GRASP_shadow/succ_collect"
 )
 DEFAULT_OUT = Path(
-    "robot/shadow-hand/datasets/processed/"
+    "robot/hands/shadow_hand/datasets/processed/"
     "dexonomy_shadow_eigengrasps_balanced_sample.npz"
 )
 DEFAULT_QPOS_KEYS = ("pregrasp_qpos", "grasp_qpos", "squeeze_qpos")
 DEFAULT_SYNTHETIC_QPOS_NPZ = (
-    Path("robot/shadow-hand/datasets/processed/synthetic_open_hand_shadow_qpos.npz"),
-    Path("robot/shadow-hand/datasets/processed/synthetic_close_hand_shadow_qpos.npz"),
+    Path("robot/hands/shadow_hand/datasets/processed/synthetic_open_hand_shadow_qpos.npz"),
+    Path("robot/hands/shadow_hand/datasets/processed/synthetic_close_hand_shadow_qpos.npz"),
 )
 
 JOINTS22 = [

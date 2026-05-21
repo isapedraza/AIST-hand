@@ -13,6 +13,6 @@ GraphGrasp is organized by execution pipeline responsibility.
 ## Data Ownership
 
 - Human datasets live under `human/datasets/`.
-- Robot datasets live under the specific robot folder, for example `robot/shadow-hand/datasets/`.
+- Robot datasets live under the specific robot folder, for example `robot/hands/shadow_hand/datasets/`.
 - Model checkpoints and experiments live under their model owner in `models/`.
 - Non-pipeline history and recovered legacy material lives under `docs/archive/`.

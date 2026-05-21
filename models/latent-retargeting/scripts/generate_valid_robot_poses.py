@@ -11,7 +11,7 @@ Usage:
     python generate_valid_robot_poses.py --n_target 1000000 --batch 2000
 
 Output:
-    robot/shadow-hand/datasets/processed/valid_robot_poses.npz
+    robot/hands/shadow_hand/datasets/processed/valid_robot_poses.npz
         q  : float32 [N, 24]  joint angles in RobotLoader chain order
 """
 
@@ -28,10 +28,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 MJCF_PATH    = REPO_ROOT / "third_party/mujoco_menagerie/shadow_hand/right_hand.xml"
-OUT_PATH     = REPO_ROOT / "robot/shadow-hand/datasets/processed/valid_robot_poses.npz"
+OUT_PATH     = REPO_ROOT / "robot/hands/shadow_hand/datasets/processed/valid_robot_poses.npz"
 DEFAULT_EIGEN = (
     REPO_ROOT
-    / "robot/shadow-hand/datasets/processed"
+    / "robot/hands/shadow_hand/datasets/processed"
     / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_coeffstats_sample.npz"
 )
 

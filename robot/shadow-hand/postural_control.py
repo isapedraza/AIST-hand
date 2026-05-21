@@ -21,7 +21,7 @@ from grasp_gcn.dataset.grasps import GRASP_CLASS_NAMES
 from grasp_gcn.transforms.tograph import ToGraph
 
 MODEL_PATH  = Path(__file__).resolve().parents[2] / "apps" / "graphgrasp-live" / "models" / "best_model_run_abl04_xyz_ahg_flex.pth"
-YAML_PATH   = Path(__file__).parent / "configs" / "shadow_hand_canonical_v5_grasp.yaml"
+YAML_PATH   = Path(__file__).resolve().parents[1] / "hands" / "shadow_hand" / "shadow_hand_canonical_v5_grasp.yaml"
 N_CLASSES   = 28
 IN_DIM      = 24   # xyz + AHG + flex
 

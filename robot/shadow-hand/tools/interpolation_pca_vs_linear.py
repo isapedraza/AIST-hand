@@ -39,7 +39,7 @@ from sklearn.decomposition import PCA
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 ROOT      = pathlib.Path(__file__).resolve().parents[3]
-YAML_PATH = ROOT / "robot/shadow-hand/configs/shadow_hand_canonical_v5_grasp.yaml"
+YAML_PATH = ROOT / "robot/hands/shadow_hand/shadow_hand_canonical_v5_grasp.yaml"
 XML_PATH  = ROOT / "third_party/mujoco_menagerie/shadow_hand/right_hand.xml"
 DEX_DIR   = pathlib.Path("/media/yareeez/94649A33649A1856/dexonomy/Dexonomy_GRASP_shadow/succ_collect")
 OUT_PATH  = ROOT / "robot/shadow-hand/experiments/interpolation_pca_vs_linear.png"

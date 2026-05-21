@@ -88,7 +88,7 @@ def main():
     to_graph = ToGraph(**spec["tograph_kwargs"])
     smoothed_probs = None  # EMA state
     backend = MediaPipeBackend(camera_index=camera_source)
-    # adapter = YAMLRobotAdapter("../robot/shadow-hand/configs/shadow_hand.yaml")
+    # adapter = YAMLRobotAdapter("../../robot/hands/shadow_hand/shadow_hand.yaml")
 
     # --- Loop ---
     while backend.is_ready():

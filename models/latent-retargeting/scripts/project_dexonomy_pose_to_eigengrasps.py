@@ -7,7 +7,7 @@ import numpy as np
 
 
 DEFAULT_EIGENGRASPS = Path(
-    "robot/shadow-hand/datasets/processed/"
+    "robot/hands/shadow_hand/datasets/processed/"
     "dexonomy_shadow_eigengrasps_balanced_phase_open_close_sample.npz"
 )
 
