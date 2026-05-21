@@ -2,32 +2,32 @@
 Live retargeting: MediaPipe -> Dong kinematics -> Shadow Hand (MuJoCo).
 
 Usage:
-    python live_retarget.py --ckpt checkpoints/stage1_cam_5000.pt
-    python live_retarget.py --ckpt checkpoints/stage1_cam_5000.pt --camera 1 --calib 5.0
+    python apps/graphgrasp-live/live_retarget.py --ckpt /path/to/stage1_best_total.pt
+    python apps/graphgrasp-live/live_retarget.py --ckpt ... --camera 1 --calib 5.0
 """
 
+import _repo_path  # noqa: F401 -- adds latent-retargeting/src to sys.path
+
 import argparse
-import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
 from cross_emb.inference import Retargeter
-from cross_emb.inference.sources import MediaPipeSource
-from cross_emb.inference.sinks import MuJocoSink
+from sources import MediaPipeSource
+from sinks import MuJocoSink
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt",   default="checkpoints/stage1_cam_5000.pt")
-    parser.add_argument("--camera", type=int, default=0)
+    parser.add_argument("--ckpt",   required=True, help="Path to Stage 1 checkpoint (.pt).")
+    parser.add_argument("--camera", type=int,   default=0)
     parser.add_argument("--calib",  type=float, default=3.0, help="Calibration seconds")
     args = parser.parse_args()
 
     ckpt_path = Path(args.ckpt)
     if not ckpt_path.is_absolute():
-        ckpt_path = ROOT / ckpt_path
+        ckpt_path = REPO_ROOT / ckpt_path
 
     print(f"Checkpoint : {ckpt_path}")
     print(f"Camera     : {args.camera}")

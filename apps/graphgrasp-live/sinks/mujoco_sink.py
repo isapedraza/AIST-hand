@@ -21,7 +21,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 
-SHADOW_DIR    = Path(__file__).resolve().parents[5] / "third_party" / "mujoco_menagerie" / "shadow_hand"
+SHADOW_DIR    = Path(__file__).resolve().parents[3] / "third_party" / "mujoco_menagerie" / "shadow_hand"
 RIGHT_HAND    = SHADOW_DIR / "right_hand.xml"
 HAND_QPOS_DIM = 24
 POSE_ALPHA    = 0.25
