@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..human_modules import HumanEncoder_E_h, CAMLayer
-from ..shared_modules import _mlp
-from ..robot_modules  import RobotDecoder_D_r
+from ..nn.human_modules import HumanEncoder_E_h, CAMLayer
+from ..nn.shared_modules import _mlp
+from ..nn.robot_modules  import RobotDecoder_D_r
 
 
 class _LegacyHumanEncoder(nn.Module):
