@@ -4866,4 +4866,181 @@ Donde q_bar es la pose de reposo del Shadow Hand (mano abierta). Regulariza join
 - docs/references/xin2025/contents/main_text.tex: fuente local del paper.
 - Run 20 (Entry 83): baseline a superar, seed=21266.
 
+**Justificacion adicional -- por que D_R no aplica para manos (respaldo en literatura)**
+
+Yan usa D_R (similitud por quaterniones de joints) porque trabaja con robots humanoides de cuerpo completo, donde la correspondencia joint-a-joint es directa y natural: hombro humano → hombro robot, codo → codo. Para esos robots, comparar quaterniones tiene sentido semantico claro.
+
+Para manos dexteras, esa correspondencia NO existe. Xin et al. lo afirman explicitamente:
+
+> "due to the differences in morphology and degrees of freedom (DoFs) between human hands and current robot hands, the human hand configurations **can not be exactly reproduced** by the robot hand" (Sec. I)
+
+> "direct joint-to-joint mapping... **require considerable manual efforts** to define the joint-space transformation for a certain robot hand" (Sec. II)
+
+> "removing the pinch term results in significantly higher errors... This results from the **potential conflict between the global fingertip position and the fingertip position relative to the wrist, due to different hand morphologies between the human and robot**" (Sec. III)
+
+Conclusion: usar D_R en manos asume correspondencia joint-a-joint que no existe entre Dong kinematics (cinematica humana) y Shadow Hand (URDF robotico). El mismatch de frames se amplifica en configuraciones extremas, causando que pares positivos (humano fist, robot fist) no sean reconocidos como similares por el contrastive learning.
+
+Xin S_k opera en espacio Cartesiano (posiciones de fingertips, distancias de pinch, orientacion DIP→tip) -- metricas funcionales que no asumen correspondencia joint-a-joint. Esto es exactamente la adaptacion correcta del framework de Yan al dominio de manos dexteras.
+
 **Status**: Propuesto -- implementacion pendiente de planificacion detallada
+
+---
+
+## Entry 87 -- 2026-05-21: Propuesta -- pseudo-labels supervisados via dex-retargeting
+
+**Contexto**
+
+Revision de dos repos externos de retargeting disponibles localmente:
+- `/home/yareeez/dex-retargeting/` -- libreria production (DexSuite, AnyTeleop, Qin et al. 2023)
+- `/home/yareeez/retargeting/` -- paper Xin et al. 2025, extiende dex-retargeting con terminos adicionales
+
+Xin et al. cita explicitamente dex-retargeting para su implementacion DexPilot. Ambos usan el mismo algoritmo base; Xin anade L_wrist_rot + L_joint_pos + L_joint_vel.
+
+**Propuesta**
+
+Usar el optimizer DexPilot de dex-retargeting para generar pares supervisados `(dong_quats_humano, shadow_qpos)` a partir de HOGraspNet. Esto proporcionaria supervision directa de la correspondencia cross-embodiment, complementando o reemplazando el eigengrasp sampler no supervisado actual.
+
+Pipeline:
+```
+hograspnet_retarget.csv
+  [21 XYZ landmarks, world frame]
+           |
+  dex-retargeting DexPilot
+  config: shadow_hand_right_dexpilot.yml
+  input: xyz[fingertip] - xyz[wrist]  (vectors, translation-invariant)
+           |
+  shadow_qpos [22,] por frame
+           |
+hograspnet_shadow_qpos.npz  (~1.5M frames)
+```
+
+Compute estimado: ~15-80 min con 16 workers en paralelo (NLopt single-thread por frame, paralelizable con multiprocessing.Pool). Precompute unico, analogo a `precompute_dong_features.py`.
+
+**Uso en training**
+
+Opcion A (auxiliar, sin cambiar arquitectura):
+```python
+z_H = encoder_H(dong_quats)
+q_pred = decoder_R(z_H)
+L_pseudo = MSE(q_pred, q_pseudo_label)
+loss = loss_actual + w_pseudo * L_pseudo
+```
+
+Opcion B (reemplazar eigengrasp sampler): entrenar solo con pares reales `(dong_quats, shadow_qpos_pseudo)`. Mas simple, supervision directa. Pierde D_R estructural y la generalizacion cross-embodiment del RobotLoader.
+
+Opcion A preferida -- preserva el argumento de tesis (shared latent space + cross-embodiment).
+
+**Motivacion principal**
+
+El D_R actual alinea espacios latentes estructuralmente pero nunca ve un par real `(grasp humano HOGraspNet → Shadow qpos correcto)`. Los pseudo-labels aportarian esa correspondencia directa para los 28 agarres Feix.
+
+**Esto NO es dependencia circular**
+
+Es knowledge distillation / imitation learning de un optimizer experto. El modelo resultante tiene propiedades que dex-retargeting no tiene: shared latent space, cross-embodiment generalization (nuevo robot = solo encoder_R + decoder_R nuevos), inferencia en microsegundos vs 10-50ms NLopt.
+
+**Limitacion critica -- prerequisito antes de implementar**
+
+DexPilot optimiza posiciones de fingertips, no joint angles directamente. Si DexPilot no cierra los MCPs (FFJ4, MFJ4, RFJ4, LFJ4) en configuraciones de fist/power grasp, los pseudo-labels propagarian el mismo problema estructural que el modelo actual ya tiene (Entry 79).
+
+Sanity check requerido: correr DexPilot en 3 poses sinteticas (fist cerrado, mano abierta, pinch lateral) y visualizar Shadow Hand resultante. Si MCPs cierran correctamente, la propuesta es viable. Si no, pseudo-labels no resuelven el MCP problem y el esfuerzo no justifica el resultado.
+
+**Cobertura vs eigengrasp sampler**
+
+Eigengrasp sampler: cubre TODO el espacio sinergico Shadow Hand (9 PCs de Dexonomy, 10M muestras). Pseudo-labels HOGraspNet: cubre solo los 28 agarres Feix, ~1.5M frames, correspondencias humano-robot reales. Trade-off: eigengrasp tiene mejor cobertura robot-side, pseudo-labels tienen mejor correspondencia humano→robot. No es uno mejor absoluto.
+
+**Repos de referencia**
+
+- dex-retargeting DexPilot config: `src/dex_retargeting/configs/teleop/shadow_hand_right_dexpilot.yml`
+- dex-retargeting no instalado en el venv -- requiere `pip install -e /home/yareeez/dex-retargeting/` + pinocchio + nlopt
+- Xin et al. (con ROS2) tendria mejor calidad (terminos adicionales calibrados para Shadow Hand), pero sin ROS2 dex-retargeting es suficiente para el sanity check
+
+**Status**: Propuesto -- pendiente sanity check de calidad MCP antes de implementar
+
+---
+
+## Entry 88 -- 2026-05-21: Decision -- no usar pares supervisados humano-robot
+
+**Decision**: no anadir supervision pareada `(pose_humano, qpos_robot)` al entrenamiento del retargeter, ni via pseudo-labels de AnyTeleop/dex-retargeting ni via ninguna otra fuente externa.
+
+**Razon 1: contradice la contribucion central de Yan et al.**
+
+Yan et al. (2026) identifican explicitamente los metodos que requieren pares supervisados y los descarta por su "data bottleneck":
+
+> "prior work... relied heavily on manually collected paired datasets. To overcome this data bottleneck..."
+
+Su contribucion es demostrar que el espacio latente compartido puede aprenderse SIN pares. Introducir pares supervisados invierte esa decision arquitectural.
+
+**Razon 2: S_k ES la supervision implicita**
+
+No se necesitan pares porque la metrica de similitud S_k define implicitamente la correspondencia cross-embodiment. El contrastive learning alinea el espacio latente tal que poses con S_k pequeño quedan cerca, independientemente del embodiment. El decoder entonces aprende a generar poses robot que minimizan S_k con la pose humana -- sin necesitar ningun par explicito.
+
+**Razon 3: pseudo-labels de AnyTeleop seria dependencia circular**
+
+Generar pares `(dong_quats, shadow_qpos)` via dex-retargeting para entrenar el retargeter equivale a "usar un retargeter para entrenar un retargeter". La calidad del modelo queda acotada por AnyTeleop. La unica ventaja seria velocidad de inferencia y cross-embodiment -- debil argumento para una tesis que ya tiene la arquitectura cross-embodiment sin esa dependencia.
+
+**Razon 4: departure cualitativo vs cuantitativo**
+
+El uso de eigengrasps (en lugar de sampling uniforme como Yan) es un departure de ingenieria -- no introduce pares humano-robot, solo cambia como se cubre el espacio robot. Pseudo-labels serian un departure arquitectural: introducen supervision pareada donde el framework explicitamente no la tiene.
+
+**Razon 5: la contribucion original se preserva**
+
+Yan no cubre manos -- lo dice explicitamente en su Discussion:
+
+> "Since the SMPL model does not capture hand movements... hand motion retargeting is not handled in this paper... In future work, we plan to address this limitation."
+
+Aplicar el framework de Yan a manos dexteras (con Dong kinematics + Shadow Hand) es la contribucion original. Agregar pseudo-labels de AnyTeleop diluye esa contribucion al introducir exactamente la dependencia externa que el framework busca eliminar.
+
+**Relacion con Entry 87**
+
+Entry 87 documenta la propuesta de pseudo-labels como idea tecnica valida. Esta entry documenta por que, en el contexto especifico de esta tesis, no conviene implementarla. La propuesta sigue siendo tecnicamente sana (knowledge distillation es un metodo legitimo) pero incompatible con el argumento de contribucion original.
+
+**Estado del MCP problem**
+
+La amplitud reducida de movimiento (MCP no cierra completamente) se mantiene como limitacion conocida. No se resolvera via pseudo-labels. Las opciones validas dentro del framework actual son: mezcla de eigengrasp + sampling uniforme en batch robot-side, expansion de PCs/limites del eigengrasp sampler, o ajuste de pesos por joint en D_R. Ver Entry 79 y Entry 86.
+
+---
+
+## Entry 89 -- 2026-05-21: Idea -- extension a brazo + mano (UR5e + Shadow Hand)
+
+**Contexto**
+
+Se tiene disponible URDF de UR5e+Shadow en `robot/assembly/ur5e_shadow/`. La discusion sobre pseudo-labels llevo a analizar como extender el framework al brazo. Dos opciones identificadas.
+
+**Opcion A: subespacio brazo + subespacio mano en el latente**
+
+Extension directa del diseño de Yan (5 subespaces: LA/RA/TK/LL/RL). Para este sistema: 2 subespaces.
+
+```
+Human input
+  ├── Dong quats (wrist-local)   → E_h_hand → z_hand → D_r_hand → Shadow qpos (22)
+  └── wrist XYZ + orient (world) → E_h_arm  → z_arm  → D_r_arm  → UR5e joints (6)
+```
+
+S_k brazo: D_R(orient) + D_ee(pos) -- igual que Yan para brazos. No requiere matching joint-by-joint entre brazo humano y UR5e, solo end-effector.
+
+Robot-side sampling para UR5e: joints aleatorios uniformes → FK → end-effector. Trivial, sin eigengrasp needed.
+
+Limitacion principal: HOGraspNet no tiene wrist world-frame position. Requeriria otro dataset o grabacion propia para el subespacio del brazo.
+
+**Opcion B: brazo por IK analitico, mano por latente**
+
+Arquitectura hibrida: el brazo se retargetea con IK clasico (pinocchio / ikpy) sobre wrist_pos + wrist_orient estimados desde los 21 landmarks. La mano sigue el retargeter latente actual.
+
+```
+MediaPipe 21 XYZ
+  ├── estimate_frame_from_hand_points() → wrist_pose → UR5e IK → arm joints
+  └── Dong quats → retargeter latente → Shadow qpos
+```
+
+Mas simple de implementar. El brazo no aprovecha el espacio latente -- pero el brazo es cinematicamente simple (6R serial) y la contribucion original esta en la mano de todas formas.
+
+**Comparacion**
+
+| | Opcion A | Opcion B |
+|---|---|---|
+| Contribucion tesis | extiende framework a brazo+mano unificado | mano es la contribucion, brazo es infraestructura |
+| Datos requeridos | dataset con wrist world-frame | solo 21 landmarks (ya tienes) |
+| Complejidad impl. | alta -- nuevo subespacio, nuevo loader | baja -- IK clasico + latente existente |
+| Funcionalidad | control unificado via latente | funcional, pragmatico |
+
+**Estado**: idea documentada -- no implementar hasta que el subespacio de mano este resuelto. Opcion B es el camino natural para una demostracion funcional rapida. Opcion A es la extension academicamente mas interesante si se consiguen datos de brazo.
