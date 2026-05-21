@@ -19,11 +19,15 @@ from __future__ import annotations
 
 import argparse
 import random
-import sys
 from pathlib import Path
 
 import numpy as np
 import torch
+
+from cross_emb.loaders import CrossEmbodimentSampler
+from cross_emb.nn.human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
+from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
+from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 
 
 def _set_seed(seed: int) -> None:
@@ -162,15 +166,6 @@ def main():
         f"| triplets={triplet_mode} | margin={args.margin}"
     )
     print(f"zero_wrj={args.zero_wrj} | scheduler=none (Yan-pure, constant lr={args.lr}) | resume={args.resume_ckpt or 'none'}")
-
-    # Add scripts to path
-    sys.path.insert(0, str(PACKAGE_ROOT / "scripts"))
-    sys.path.insert(0, str(PACKAGE_ROOT / "src/cross_emb"))
-
-    from cross_embodiment_sampler import CrossEmbodimentSampler
-    from human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
-    from robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
-    from shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 
     # ---------------------------------------------------------------------------
     # Sampler
