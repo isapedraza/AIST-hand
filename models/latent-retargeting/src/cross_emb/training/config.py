@@ -41,6 +41,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lam_pinch", type=float, default=10.0, help="Weight for pinch (thumb->primary) term in Xin Cartesian S_k.")
     p.add_argument("--lam_fr",    type=float, default=10.0, help="Weight for fingertip_rot (last-segment unit vector) term in Xin Cartesian S_k.")
     p.add_argument("--lam_mid",   type=float, default=1.0,  help="Weight for PIP position term in Xin Cartesian S_k (DexMV-style intermediate joint).")
+    p.add_argument("--lam_dr",    type=float, default=0.0,  help="Weight for Yan-style D_R quaternion term added to S_k. 0 disables (default). Active only in --single_latent path; uniform sum over common-joint quaternions.")
     p.add_argument("--lambda_joint",    type=float, default=0.0,
                    help="Weight for L_joint (joint position regularization). 0 disables.")
     p.add_argument("--robot_yaml_path", default=None,

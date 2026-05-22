@@ -24,7 +24,7 @@ from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
-from .losses import l_joint, load_l_joint_config, xin_sk_full, xin_sk_per_finger
+from .losses import d_r_yan, l_joint, load_l_joint_config, xin_sk_full, xin_sk_per_finger
 
 
 def _set_seed(seed: int) -> None:
@@ -368,6 +368,7 @@ def main() -> None:
         # else:            five triplets (one per finger subspace) on xin_sk_per_finger.
         tips_all  = torch.cat([tips_h_sub,  tips_r_sub],  dim=0)   # [2B, Fc, 3]
         chain_all = torch.cat([chain_h_sub, chain_r_sub], dim=0)   # [2B, Fc, 4, 3]
+        quats_all = torch.cat([quats_h_sub, quats_r_sub], dim=0)   # [2B, Jc, 4]
         z_all_full = torch.cat([z_t, z_r], dim=0)                  # [2B, z_dim_total]
         metric_stats = {}
 
@@ -400,6 +401,18 @@ def main() -> None:
                     S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
                                       lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
 
+                    # Yan-style D_R term: uniform sum over common-joint quaternions.
+                    # Run 27B ablation. lam_dr=0 (default) skips this branch and
+                    # preserves Run 25/26 behavior exactly.
+                    if args.lam_dr > 0:
+                        quats_a  = quats_all[anchors]
+                        quats_ca = quats_all[cand_a]
+                        quats_cb = quats_all[cand_b]
+                        D_R_a = d_r_yan(quats_a, quats_ca)
+                        D_R_b = d_r_yan(quats_a, quats_cb)
+                        S_a = S_a + args.lam_dr * D_R_a
+                        S_b = S_b + args.lam_dr * D_R_b
+
                     if args.log_metric_stats:
                         S_pairs = torch.cat([S_a, S_b])
                         metric_stats["hand"] = (
@@ -408,6 +421,14 @@ def main() -> None:
                             S_pairs.min().item(),
                             S_pairs.max().item(),
                         )
+                        if args.lam_dr > 0:
+                            DR_pairs = torch.cat([D_R_a, D_R_b])
+                            metric_stats["D_R"] = (
+                                DR_pairs.mean().item(),
+                                DR_pairs.std().item(),
+                                DR_pairs.min().item(),
+                                DR_pairs.max().item(),
+                            )
 
                     a_closer = S_a <= S_b
                     pos_idx = torch.where(a_closer, cand_a, cand_b)

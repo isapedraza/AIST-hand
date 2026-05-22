@@ -164,6 +164,35 @@ def xin_sk_full(
 
 
 # ---------------------------------------------------------------------------
+# D_R -- Yan-style rotation similarity (Yan et al. 2026, eq. 1).
+#
+# Operates on quaternions over the joints common to both embodiments.
+# Uniform sum, no per-joint weights:
+#   D_R(x_A, x_B) = sum_j (1 - <q_A^j, q_B^j>^2)
+#
+# 1 - dot^2 is the squared geodesic distance on the unit quaternion sphere
+# (equivalent to sin^2(theta/2) where theta is the SO(3) geodesic angle).
+# Joints absent in either embodiment are filtered upstream by `common_labels`,
+# so this function just consumes the already-aligned [B, J, 4] tensors.
+# Tip joints in Dong are always identity; their contribution is ~0 and does
+# not need explicit exclusion.
+# ---------------------------------------------------------------------------
+
+
+def d_r_yan(q_a: torch.Tensor, q_b: torch.Tensor) -> torch.Tensor:
+    """Yan rotation similarity, uniform sum over joints.
+
+    Args:
+        q_a, q_b: [N, J, 4] unit quaternions, joint-aligned.
+
+    Returns:
+        [N] non-negative scalar (lower = more similar).
+    """
+    dot = (q_a * q_b).sum(dim=-1)            # [N, J]
+    return (1.0 - dot ** 2).sum(dim=-1)      # [N]
+
+
+# ---------------------------------------------------------------------------
 # L_joint -- joint position regularization (Xin Sec. III-B)
 #
 # Pulls specific joints (abduction joints + thumb rotation) toward 0 to

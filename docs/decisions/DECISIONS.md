@@ -5124,3 +5124,59 @@ SINGLE_LATENT = True    # igual que Run 25/26
 **Orden de ejecucion**: 27A primero (cambio mas simple, hipotesis principal). 27B solo si 27A resuelve el problema O si 27A falla y se necesita entender la contribucion de D_R de forma aislada.
 
 **Indicador de exito (cualitativo)**: flexion independiente de dedos al hacer puno, sin movimiento en bloque. Baseline: Run 20 (RS=0.320, NDS=2.261, NVS=0.088).
+
+## Entry 92 -- 2026-05-22: Run 27B final spec -- Yan D_R quaternion uniform sum (supersede 27B en Entry 91)
+
+**Cambio respecto a Entry 91**: la formulacion de D_R para Run 27B no es la version euler/per-dedo que se proponia tentativamente, sino la formula original de Yan et al. 2026 (eq. 1) en cuaterniones, suma uniforme sobre los joints comunes a ambos embodiments.
+
+### Decisiones de diseno
+
+**Formula** (Yan 2026, eq. 1):
+
+```
+D_R(x_A, x_B) = sum_j (1 - <q_A^j, q_B^j>^2)
+```
+
+- Operacion: `1 - dot^2` por joint = distancia geodesica al cuadrado en SO(3) (equivalente a `sin^2(theta/2)`).
+- Suma uniforme sobre los 15 joints comunes (5 dedos x 3 articulados; tip excluido implicitamente porque siempre es identidad en Dong).
+- Adaptativo a joints presentes via `common_labels` (filtrado upstream por sampler).
+
+**Sin pesos por joint**.
+
+Razon: la literatura revisada (Yan 2026, Xin 2025, Abbasi-Asl, Yan IL+IK 2023, ChatGPT Deep Research multiagente) no usa pesos `1/sigma` o variantes para per-joint quaternion D_R en triplet mining cross-embodiment. La idea de `1/sigma` venia del codigo viejo (Runs 20-22) como adicion nuestra, no como practica documentada. Para Run 27B se vuelve a la version original de Yan: suma uniforme.
+
+Discusion previa en hilo de chat: Gracia-Ibañez 2020 advierte que `1/sigma` amplifica ruido para joints con baja varianza, pero opera en espacio de angulos (no acotado). Quaternion `1 - dot^2` esta acotado en [0,1] -- ese argumento no aplica directamente. Sin embargo, ningun paper de retargeting usa per-joint weights para D_R cuaternionico, asi que se elige la baseline limpia.
+
+**Wire**: D_R se suma al S_k Xin existente (no lo reemplaza):
+
+```python
+S_k = lam_fp * fp + lam_pinch * pinch + lam_fr * fr + lam_mid * mid + lam_dr * D_R
+```
+
+Solo activo en rama `--single_latent` (Run 27B); para `--single_latent=False` (Run 27A) `lam_dr=0` por default y D_R no se evalua.
+
+**Calibracion de `lam_dr`**: medido empiricamente en batch real B=2000 (script `models/latent-retargeting/scripts/diag_dr_magnitude.py`):
+
+| metrica | mean | std | min | max |
+|---|---|---|---|---|
+| Xin S_k (lam_fp=1, lam_pinch=10, lam_fr=10, lam_mid=1) | 68.86 | 42.12 | 0.76 | 214.68 |
+| D_R raw (uniform sum, 15 joints) | 1.25 | 0.73 | 0.03 | 5.58 |
+
+- `lam_dr = 16.5` -> `lam_dr * D_R_mean = 20.66` -> ~30% del Xin S_k mean.
+- Eleccion: 30% es proporcion comparable a Yan original (D_R + w*D_ee con w=1, ambos del mismo orden ≈ cada termino ~33% del S_k total).
+- 18% (lam_dr=10) seria muy debil para voltear decisiones del selector (D_R alimenta solo no_grad selector, no gradiente directo). Si Run 27B fracasa con 30%, sabemos que el problema NO es magnitud insuficiente.
+- 50%+ pondria a D_R como arbitro principal, sobrescribiendo la señal Cartesiana validada.
+
+### Pregunta que responde
+
+Mas precisa que Entry 91: en arquitectura single_latent (Run 26), ¿añadir un termino rotacional cuaternionico al selector contrastive es suficiente para inducir movimiento articulado por dedo, o el cuello de botella sigue siendo estructural (encoder/decoder que ven la mano como un vector unico)?
+
+### Branch y archivos
+
+- Branch: `run27b-dr-yan` (desde main, post-Entry 91).
+- Cambios:
+  - `src/cross_emb/training/losses.py`: nueva funcion `d_r_yan(q_a, q_b)` (uniform sum).
+  - `src/cross_emb/training/config.py`: flag `--lam_dr` (default 0.0, opt-in).
+  - `src/cross_emb/training/loop.py`: wire en rama `single_latent`, log `D_R` en `log_metric_stats`.
+  - `notebooks/train_stage1_colab.ipynb`: cell-12 `SINGLE_LATENT=True`, `LAM_DR=16.5`; cell-8 branch `run27b-dr-yan`.
+  - `scripts/diag_dr_magnitude.py`: diagnostico de magnitudes (CPU-only, datos locales).
