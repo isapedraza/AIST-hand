@@ -5075,3 +5075,52 @@ DexMV usa exactamente los links `*middle` (PIP-equivalente) como targets IK en `
 1. `single_latent=False` — 5 subspaces per-finger. La descomposicion per-finger de Xin S_k es matematicamente valida: cada termino (fp, pinch, fr, mid) es aditivo por dedo. Pinch cross-finger no es bloqueador: `tips_all` contiene los 5 dedos siempre, pulgar disponible como referencia. Pulgar y menique reciben `pinch=0`.
 2. Switching weights (`s(d_i)` sigmoid en `lam_pinch`) — sin ellos `pinch=10.0` aplica siempre, distorsionando la metrica en poses no-pinch (mayoria del dataset).
 3. D_R — ultimo recurso. Analisis actualizado: D_R es valido para dedos no-pulgar (estructura analoga: knuckle/proximal/distal/tip ↔ MCP/PIP/DIP). Para el pulgar D_R es problematico: THJ5+THJ4+THJ3+THJ2+THJ1 no mapea a CMC+MCP+IP humano (diferente funcion, diferente eje, diferente DoF). Si se usa D_R, lo correcto seria aplicarlo solo a los 4 dedos no-pulgar y dejar el pulgar con Xin Cartesiano.
+
+## Entry 91 -- 2026-05-21: Runs 27A y 27B -- Ablaciones post-Run 26
+
+**Observacion Run 26**: pulgar se mueve ligeramente mas, pero el resto es extremadamente similar a Run 25. Movimiento sigue siendo monolitico comparado con Run 20. Conclusion: `lam_mid` mejora el selector de triplets pero no resuelve la rigidez. El cuello de botella no es S_k sino la arquitectura del espacio latente.
+
+**Hipotesis**: `single_latent=True` (un vector 320-dim para toda la mano) impide que el decoder especialice por dedo. Run 20 (per-finger, `single_latent=False`) tenia movimiento independiente por dedo precisamente porque cada subespacio de 64 dims recibe gradiente contrastivo enfocado solo en ese dedo.
+
+**Diseno de ablaciones**
+
+Las dos runs aislan una variable cada una:
+
+### Run 27A -- per-finger subspaces (variable: latente)
+
+**Cambio unico vs Run 26**: `single_latent=False`.
+
+```
+SINGLE_LATENT = False   # notebook cell 12
+# --single_latent NO se pasa al script
+```
+
+- Arquitectura: `HumanEncoder_E_h` (5 subspaces, z_dim=64, total=320)
+- `z.chunk(5)` → 5 triplets independientes por dedo sobre z_k [B,64]
+- S_k: `xin_sk_per_finger` con lam_fp=1.0, lam_pinch=10.0, lam_fr=10.0, lam_mid=1.0
+- Todo lo demas identico a Run 26 (lr, lambdas, seed=21266)
+
+**Pregunta**: ¿per-finger subspaces solos resuelven la monolítica sin D_R?
+
+**Resultado esperado**: movimiento independiente por dedo, similar a Run 20 pero con mejor selector S_k.
+
+### Run 27B -- single latent + D_R (variable: D_R como compensador)
+
+**Cambio unico vs Run 26**: agregar D_R euler (index/middle/ring/pinky, NO pulgar).
+
+```
+SINGLE_LATENT = True    # igual que Run 25/26
+# + --lambda_dr <w> con D_R euler, solo 4 dedos no-pulgar
+```
+
+- Arquitectura: identica a Run 26 (single latent, z_dim_total=320)
+- D_R euler igual que Run 22, pero sin aplicar al pulgar (THJ* no mapea a estructura MCP/PIP/DIP)
+- Rama en git separada (a crear despues de Run 27A)
+
+**Pregunta**: ¿D_R puede compensar la rigidez del latente unico, o el problema es estructural?
+
+**Resultado esperado**: si D_R compensa → movimiento mas articulado sin cambiar latente. Si no → confirma que el latente es el bloqueador.
+
+**Orden de ejecucion**: 27A primero (cambio mas simple, hipotesis principal). 27B solo si 27A resuelve el problema O si 27A falla y se necesita entender la contribucion de D_R de forma aislada.
+
+**Indicador de exito (cualitativo)**: flexion independiente de dedos al hacer puno, sin movimiento en bloque. Baseline: Run 20 (RS=0.320, NDS=2.261, NVS=0.088).

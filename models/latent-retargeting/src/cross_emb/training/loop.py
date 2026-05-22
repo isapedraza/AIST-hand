@@ -251,11 +251,15 @@ def main() -> None:
     if args.single_latent:
         z_dim_total = args.z_dim_total
         E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).to(DEVICE)
-        print(f"Encoder: HumanEncoder_E_h_single (single latent, z_dim_total={z_dim_total})")
+        print(f"{'='*60}")
+        print(f"  LATENT MODE : SINGLE (z_dim_total={z_dim_total})")
+        print(f"{'='*60}")
     else:
         z_dim_total = 5 * args.z_dim
         E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
-        print(f"Encoder: HumanEncoder_E_h (5 subspaces, z_dim={args.z_dim}, total={z_dim_total})")
+        print(f"{'='*60}")
+        print(f"  LATENT MODE : PER-FINGER (5 subspaces, z_dim={args.z_dim}, total={z_dim_total})")
+        print(f"{'='*60}")
     E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
     D_X = SharedDecoder_D_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
