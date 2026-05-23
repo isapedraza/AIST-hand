@@ -5064,9 +5064,13 @@ mid = ||chain_a[:,f,1,:] - chain_b[:,f,1,:]||^2
 
 `chain[:,f,1,:]` = slot PIP en el tensor `[N, 5, 4, 3]` (MCP/PIP/DIP/TIP). Identico semanticamente para humano (`INDEX_PIP_*` columns en CSV) y robot (`ffmiddle`, `mfmiddle`, etc. en YAML). Normalizado por `hand_length` → morphology-agnostic.
 
-**Base en literatura**
+**Base en literatura y justificacion**
 
-DexMV usa exactamente los links `*middle` (PIP-equivalente) como targets IK en `retarget_human_hand.py:23`. Xin menciona esto como "vectors from the palm to the middle phalanx to represent finger bending information" (linea 86, tex). La diferencia: DexMV lo usa como objetivo IK (el solver resuelve joints intermedios implicitamente); nosotros lo usamos como termino de similaridad en el selector de triplets.
+DexMV usa los links `*middle` (PIP-equivalente) como targets IK en `retarget_human_hand.py:23`. Xin menciona esto en main_text.tex linea 86: "vectors from the palm to the middle phalanx to represent finger bending information" -- solo como referencia, no lo adopta en su formulacion.
+
+Xin si prueba wrist→DIP como orientacion del dedo (ablacion A4, appendix linea 89), pero lo descarta porque DIP→tip captura mejor la orientacion del fingertip. Importante: A4 usa el vector como **orientacion**, no como posicion. Xin nunca evalua wrist→PIP como termino de **posicion** adicional en S_k -- esa pregunta queda abierta en el paper.
+
+Nuestra motivacion es distinta y directa: `pip_pos` mide distancia Cartesiana entre los PIPs de dos poses. Si dos poses tienen el mismo fingertip pero diferente flexion en PIP (geometricamente posible), `pip_pos` las separa en S_k. Esto fuerza al encoder a codificar la flexion intermedia, y al decoder a reproducirla. Es una adicion empirica basada en la observacion de rigidez en Run 25 -- no requiere respaldo de Xin.
 
 **Hiperparametros Run 26**: `lam_mid=1.0` (igual que `lam_fp`, mismo tipo de metrica: posicion Cartesiana). Para reproducir Run 25 exacto: `--lam_mid 0`.
 
