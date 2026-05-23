@@ -5180,3 +5180,70 @@ Mas precisa que Entry 91: en arquitectura single_latent (Run 26), ¿añadir un t
   - `src/cross_emb/training/loop.py`: wire en rama `single_latent`, log `D_R` en `log_metric_stats`.
   - `notebooks/train_stage1_colab.ipynb`: cell-12 `SINGLE_LATENT=True`, `LAM_DR=16.5`; cell-8 branch `run27b-dr-yan`.
   - `scripts/diag_dr_magnitude.py`: diagnostico de magnitudes (CPU-only, datos locales).
+
+---
+
+## Entry 93 -- 2026-05-23: Resultados Run 27A y Run 27B -- evaluacion visual
+
+**Context**: Ambas runs completadas en Colab T4. Evaluacion via `live_retarget.py` con camara.
+
+### Run 27A -- per-finger subspaces, sin D_R
+
+**Config**: `SINGLE_LATENT=False`, `LAM_DR=0.0`, `lam_mid=1.0`, seed=21266.
+
+**Observaciones**:
+- Movimiento extremadamente rigido. Flexion minima en todos los dedos.
+- Dedos se mueven de forma dispareja (sin coordinacion).
+- Unico movimiento perceptible: arriba/abajo. MCPs casi no bajan.
+- Calidad general: la peor de todas las runs recientes.
+
+**Diagnostico**: sin D_R, el selector de triplets Xin S_k Cartesiano solo es insuficiente para discriminar poses en el espacio milimetrico de la mano. El gradiente contrastivo no empuja el latente hacia los extremos funcionales. Confirma que D_R es necesario -- sin el, per-finger subspaces no bastan.
+
+### Run 27B -- single latent + D_R Yan (lam_dr=16.5)
+
+**Config**: `SINGLE_LATENT=True`, `LAM_DR=16.5`, `lam_mid=1.0`, seed=21266.
+
+**Observaciones**:
+- Muy superior a Run 27A.
+- Apertura y cierre decente. Movimiento suave -- probablemente el mas fluido de todas las runs.
+- MCPs mejoran respecto a Run 20 (mejor MCP hasta ahora).
+- Dedos se mueven en bloque: no hay control independiente por dedo (regresion respecto a Run 20).
+- Pulgar: no logra moverse del todo. Sin mejora respecto a runs anteriores.
+
+**Diagnostico**: D_R resuelve la rigidez y mejora MCPs. El movimiento en bloque es consecuencia directa de `HumanEncoder_E_h_single` (global max-pool sobre 21 joints, proyeccion a un solo vector) -- no hay estructura por dedo en el latente, todos los dedos acoplados.
+
+### Tabla comparativa actualizada
+
+| Run | Latente | Control independiente | MCPs | Pulgar | Suavidad |
+|-----|---------|----------------------|------|--------|----------|
+| 20 | per-finger (5x16) | mejor | problema | no | media |
+| 27A | per-finger (5x64) | no (rigido) | muy malo | no | muy mala |
+| 27B | single (320) | no (bloque) | mejor | no | mejor |
+
+**Conclusion**: D_R es necesario (27A sin el = rigido). Single latent causa movimiento en bloque (27B). El siguiente paso natural es combinar per-finger latents (27A) con D_R (27B).
+
+---
+
+## Entry 94 -- 2026-05-23: Run 28 -- per-finger subspaces + Yan D_R
+
+**Context**: Basado en diagnostico de Entry 93. Run 28 combina lo mejor de 27A y 27B.
+
+**Hipotesis**: per-finger latents restauran control independiente por dedo (como Run 20); D_R preserva suavidad y mejora MCPs (como Run 27B).
+
+**Cambios respecto a Run 27B**:
+
+```
+SINGLE_LATENT = False   # HumanEncoder_E_h (5 subspaces, z_dim=64) en vez de E_h_single
+LAM_DR        = 16.5    # igual que Run 27B -- sin cambio
+```
+
+Todo lo demas identico a Run 27B: `lam_fp=1.0`, `lam_pinch=10.0`, `lam_fr=10.0`, `lam_mid=1.0`, `lambda_c=10.0`, `lambda_rec=5.0`, `lambda_ltc=1.0`, `lambda_tmp=0.1`, `lambda_joint=1.0`, `LR=1e-3`, `MARGIN=0.05`, seed=21266.
+
+**Arquitectura**:
+- Encoder humano: `HumanEncoder_E_h` -- 5 cabezas por dedo, cada una proyecta a `z_dim=64`. Latente total = 5x64 = 320.
+- D_R Yan se mantiene (formula uniform sum sobre 15 joints comunes).
+- `--single_latent` flag NO se pasa al script de entrenamiento.
+
+**Resultado esperado**: control independiente por dedo + suavidad + MCPs mejorados. Si el pulgar no mejora, es problema separado (structural -- THJ5/THJ4/THJ3 no mapea bien a D_R cuaternionico).
+
+**Branch**: `run28-per-finger-dr-yan` (desde `run27b-dr-yan`).
