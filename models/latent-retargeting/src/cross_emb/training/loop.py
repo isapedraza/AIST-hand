@@ -488,6 +488,15 @@ def main() -> None:
                         lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
                     )
 
+                    if args.lam_dr > 0:
+                        quats_a  = quats_all[anchors]
+                        quats_ca = quats_all[cand_a]
+                        quats_cb = quats_all[cand_b]
+                        D_R_a = d_r_yan(quats_a, quats_ca)
+                        D_R_b = d_r_yan(quats_a, quats_cb)
+                        S_a = S_a + args.lam_dr * D_R_a
+                        S_b = S_b + args.lam_dr * D_R_b
+
                     if args.log_metric_stats:
                         S_pairs = torch.cat([S_a, S_b])
                         metric_stats[sub] = (
