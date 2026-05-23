@@ -397,9 +397,11 @@ def main() -> None:
                     chain_cb = chain_all[cand_b]
 
                     S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
-                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
+                                      lam_tip_pos=args.lam_tip_pos, lam_thumb_pos=args.lam_thumb_pos,
+                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos)
                     S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
-                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
+                                      lam_tip_pos=args.lam_tip_pos, lam_thumb_pos=args.lam_thumb_pos,
+                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos)
 
                     # Yan-style D_R term: uniform sum over common-joint quaternions.
                     # Run 27B ablation. lam_dr=0 (default) skips this branch and
@@ -477,15 +479,18 @@ def main() -> None:
                     chain_ca = chain_all[cand_a]
                     chain_cb = chain_all[cand_b]
 
+                    eff_tip_pos = args.lam_thumb_pos if sub == "thumb" else args.lam_tip_pos
                     S_a = xin_sk_per_finger(
                         tips_a, tips_ca, chain_a, chain_ca,
                         finger_idx=finger_idx,
-                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
+                        lam_tip_pos=eff_tip_pos, lam_pinch=args.lam_pinch,
+                        lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
                     )
                     S_b = xin_sk_per_finger(
                         tips_a, tips_cb, chain_a, chain_cb,
                         finger_idx=finger_idx,
-                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
+                        lam_tip_pos=eff_tip_pos, lam_pinch=args.lam_pinch,
+                        lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
                     )
 
                     if args.log_metric_stats:

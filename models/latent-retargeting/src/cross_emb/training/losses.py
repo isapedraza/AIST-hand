@@ -101,46 +101,51 @@ def xin_sk_per_finger(
     chain_a: torch.Tensor,
     chain_b: torch.Tensor,
     finger_idx: int,
-    lam_fp: float = 1.0,
+    lam_tip_pos: float = 1.0,
     lam_pinch: float = 10.0,
-    lam_fr: float = 10.0,
-    lam_mid: float = 1.0,
+    lam_tip_rot: float = 10.0,
+    lam_pip_pos: float = 1.0,
 ) -> torch.Tensor:
     """Per-finger Cartesian similarity. Symmetric, operates in normalized space.
+
+    Terms follow Xin et al. 2025 nomenclature:
+      tip_pos: L_fingertip_pos / L_thumb_pos -- wrist->tip vector (Xin Eqs. 1-2)
+      pinch:   L_pinch -- thumb->primary finger vector (Xin Eq. 3, fingers 1-3 only)
+      tip_rot: L_fingertip_rot -- DIP/IP->TIP unit vector (Xin Eq. 4)
+      pip_pos: PIP position (DexMV-style; not in Xin paper)
 
     Args:
         tips_a, tips_b:   [N, 5, 3]    wrist-relative, normalized by hand_length.
         chain_a, chain_b: [N, 5, 4, 3] MCP/PIP/DIP/TIP per finger, normalized.
         finger_idx:                    finger index in [0..4].
-        lam_fp, lam_pinch, lam_fr:     intra-S_k weights.
 
     Returns:
         [N] non-negative scalar similarity (lower = more similar).
     """
-    # Fingertip position (wrist -> tip)
+    # L_fingertip_pos / L_thumb_pos: wrist -> tip vector
     v_a = tips_a[:, finger_idx, :]
     v_b = tips_b[:, finger_idx, :]
-    fp = ((v_a - v_b) ** 2).sum(dim=-1)
+    tip_pos = ((v_a - v_b) ** 2).sum(dim=-1)
 
-    # Thumb -> primary finger vector (only index, middle, ring per Xin Sec. III-A)
+    # L_pinch: thumb -> primary finger vector (index, middle, ring only -- Xin Sec. III-A)
     if finger_idx in (1, 2, 3):
         g_a = tips_a[:, finger_idx, :] - tips_a[:, 0, :]
         g_b = tips_b[:, finger_idx, :] - tips_b[:, 0, :]
         pinch = ((g_a - g_b) ** 2).sum(dim=-1)
     else:
-        pinch = torch.zeros_like(fp)
+        pinch = torch.zeros_like(tip_pos)
 
-    # Last-segment orientation (unit vectors)
+    # L_fingertip_rot: DIP/IP -> TIP unit vector (Xin Eq. 4)
     r_a_hat = _last_segment_unit(chain_a, finger_idx)
     r_b_hat = _last_segment_unit(chain_b, finger_idx)
-    fr = ((r_a_hat - r_b_hat) ** 2).sum(dim=-1)
+    tip_rot = ((r_a_hat - r_b_hat) ** 2).sum(dim=-1)
 
-    # PIP position (wrist -> PIP vector, DexMV-style intermediate joint)
+    # PIP position: wrist -> PIP vector (DexMV-style; not in Xin paper)
     pip_a = chain_a[:, finger_idx, 1, :]
     pip_b = chain_b[:, finger_idx, 1, :]
-    mid = ((pip_a - pip_b) ** 2).sum(dim=-1)
+    pip_pos = ((pip_a - pip_b) ** 2).sum(dim=-1)
 
-    return lam_fp * fp + lam_pinch * pinch + lam_fr * fr + lam_mid * mid
+    return lam_tip_pos * tip_pos + lam_pinch * pinch + lam_tip_rot * tip_rot + lam_pip_pos * pip_pos
 
 
 def xin_sk_full(
@@ -148,17 +153,24 @@ def xin_sk_full(
     tips_b: torch.Tensor,
     chain_a: torch.Tensor,
     chain_b: torch.Tensor,
-    lam_fp: float = 1.0,
+    lam_tip_pos: float = 1.0,
+    lam_thumb_pos: float = 10.0,
     lam_pinch: float = 10.0,
-    lam_fr: float = 10.0,
-    lam_mid: float = 1.0,
+    lam_tip_rot: float = 10.0,
+    lam_pip_pos: float = 1.0,
 ) -> torch.Tensor:
-    """Full-hand symmetric S_k (sum over all 5 fingers)."""
+    """Full-hand symmetric S_k (sum over all 5 fingers).
+
+    Thumb tip uses lam_thumb_pos (L_thumb_pos, Xin Eq. 1).
+    Other fingers use lam_tip_pos (L_fingertip_pos, Xin Eq. 2).
+    Matches Xin et al. 2025 weight structure: thumb tip = 10x other fingertips.
+    """
     s = tips_a.new_zeros(tips_a.shape[0])
     for f in range(5):
+        eff_tip_pos = lam_thumb_pos if f == 0 else lam_tip_pos
         s = s + xin_sk_per_finger(
             tips_a, tips_b, chain_a, chain_b, f,
-            lam_fp=lam_fp, lam_pinch=lam_pinch, lam_fr=lam_fr, lam_mid=lam_mid,
+            lam_tip_pos=eff_tip_pos, lam_pinch=lam_pinch, lam_tip_rot=lam_tip_rot, lam_pip_pos=lam_pip_pos,
         )
     return s
 
