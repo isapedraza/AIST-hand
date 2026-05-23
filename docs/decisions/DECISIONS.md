@@ -5247,3 +5247,34 @@ Todo lo demas identico a Run 27B: `lam_fp=1.0`, `lam_pinch=10.0`, `lam_fr=10.0`,
 **Resultado esperado**: control independiente por dedo + suavidad + MCPs mejorados. Si el pulgar no mejora, es problema separado (structural -- THJ5/THJ4/THJ3 no mapea bien a D_R cuaternionico).
 
 **Branch**: `run28-per-finger-dr-yan` (desde `run27b-dr-yan`).
+
+**RESULTADO REAL (2026-05-23)**: FALLIDO. Movimiento erratico, mano permanentemente flexionada. Peor que Run 27B.
+
+**Post-mortem**: Bug critico -- `lam_dr` SOLO estaba cableado en el path `single_latent`. El path per-finger (`else` branch en loop.py) nunca ejecutaba el bloque D_R a pesar de `lam_dr=16.5`. Run 28 corrio efectivamente como per-finger + sin D_R, equivalente a Run 27A (rigida, control minimo). El bug fue identificado al comparar codigo y confirmado por el resultado. Fix: `7771f7fd6` en branch `run29-thumb-pos` agrega el bloque `d_r_yan` dentro del `no_grad` por dedo.
+
+---
+
+## Entry 95 -- 2026-05-23: Representacion 6D SO(3) como alternativa futura a quaterniones
+
+**Contexto**: Discusion sobre por que el fix de hemisferio (`w>=0`, Entry 27) existe y que lo motiva estructuralmente.
+
+**Problema con quaterniones como entrada a la red**:
+Los quaterniones tienen doble cobertura: `q` y `-q` representan la misma rotacion en SO(3). Esto introduce una discontinuidad topologica -- si dos quats cercanos tienen signos opuestos, la red interpola a traves de un salto en lugar de un camino suave. El fix `w>=0` (hemisferio norte forzado) parchea esto seleccionando un representante canonico, pero no elimina la discontinuidad en el borde del hemisferio.
+
+**6D (Zhou et al. 2019 -- "On the Continuity of Rotation Representations in Neural Networks")**:
+Toma las primeras dos columnas `(r1, r2)` de la matriz de rotacion 3x3. La tercera columna `r3 = r1 x r2` se reconstruye. El mapeo SO(3) -> R^6 es continuo y suave en toda la variedad. No hay antipodal, no hay hemisferio, no hay saltos. Redes neuronales aprenden mejor en espacios sin estructura topologica problematica (R^6 es contractible, S^3/Z_2 no lo es).
+
+**Pipeline propuesto**:
+```
+Dong quats [B, J, 4]  --quat_to_6d-->  [B, J, 6]  --> HumanEncoder_E_h --> latente
+latente --> D_r --> robot joint angles [B, 22]  --> FK / robot (usa quats internamente)
+```
+
+D_R Yan sigue usando quats originales (oráculo, no_grad) -- no cambia.
+
+**Implementacion**:
+- Conversion quat->6D on-the-fly en el sampler. Sin regenerar CSV.
+- `HumanEncoder_E_h` input_dim: `J*6` en lugar de `J*4`.
+- Inferencia: salida del decoder ya son joint angles (no quats) -- no requiere conversion de vuelta.
+
+**Estado**: Idea futura. Ejecutar despues de estabilizar per-finger + D_R + lam_thumb_pos. Si suavidad del latente sigue siendo problema, este cambio es candidato directo.
