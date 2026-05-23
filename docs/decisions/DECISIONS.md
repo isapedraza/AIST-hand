@@ -5247,3 +5247,64 @@ Todo lo demas identico a Run 27B: `lam_fp=1.0`, `lam_pinch=10.0`, `lam_fr=10.0`,
 **Resultado esperado**: control independiente por dedo + suavidad + MCPs mejorados. Si el pulgar no mejora, es problema separado (structural -- THJ5/THJ4/THJ3 no mapea bien a D_R cuaternionico).
 
 **Branch**: `run28-per-finger-dr-yan` (desde `run27b-dr-yan`).
+
+---
+
+## Entry 95 -- 2026-05-23: Run 29 -- L_thumb_pos boost + renombrado de términos S_k
+
+**Context**: Análisis comparativo entre `run21-paper-sk` (branch restaurada donde el pulgar funcionó perfectamente) y Run 28. Se identificó la causa raíz del pulgar inactivo en todas las runs recientes.
+
+### Causa raíz: L_thumb_pos sin boost
+
+En `run21-paper-sk`, el S_k tenía `w_thumb_pos=10.0` vs `w_tip_pos=1.0` para los otros dedos -- 10x asimetría. El selector de triplets era 10x más sensible a diferencias en la posición del pulgar, forzando al latente a codificarlo con alta resolución.
+
+En Runs 25-28, `lam_fp=1.0` uniforme para todos los dedos incluyendo el pulgar. El pulgar no recibía señal extra -- los triplets del subespacio thumb eran débiles.
+
+Confirmado en el código oficial de Xin et al. 2025 (`robot_teleoperation.py`):
+```python
+weights_links_vec[0]   = 10.0   # L_thumb_pos (thumb tip)
+weights_links_vec[1:5] = 1.0    # L_fingertip_pos (otros dedos)
+```
+El paper trata `L_thumb_pos` (Eq. 1) y `L_fingertip_pos` (Eq. 2) como términos separados con lambdas distintos. Nuestra implementación los fusionaba con el mismo peso -- bug respecto al paper.
+
+### Fix implementado en Run 29
+
+```python
+lam_thumb_pos = 10.0   # L_thumb_pos (Xin Eq. 1) -- thumb tip, peso 10x
+lam_tip_pos   = 1.0    # L_fingertip_pos (Xin Eq. 2) -- otros dedos
+```
+
+En el path per-finger, el subespacio thumb usa `lam_thumb_pos`. Los subespacios 1-4 usan `lam_tip_pos`. El oráculo S_k sigue siendo inter-dedo (el término `pinch` para el índice usa la posición del pulgar como referencia Cartesiana), pero el gradiente fluye solo por el subespacio correspondiente.
+
+### Renombrado de parámetros (alineado con paper Xin 2025)
+
+| Nombre viejo | Nombre nuevo | Término paper |
+|---|---|---|
+| `lam_fp` | `lam_tip_pos` | L_fingertip_pos (Eq. 2) |
+| `lam_fr` | `lam_tip_rot` | L_fingertip_rot (Eq. 4) |
+| `lam_mid` | `lam_pip_pos` | (DexMV, no en Xin) |
+| *(nuevo)* | `lam_thumb_pos` | L_thumb_pos (Eq. 1) |
+
+### Tabla comparativa run21-paper-sk vs Run 29
+
+| Componente | run21-paper-sk | Run 29 |
+|---|---|---|
+| Arquitectura encoder | Single latent (z_dim=16) | Per-finger subspaces (5×64=320) |
+| D_R | ✅ (1/sigma per-joint weights) | ✅ (uniform sum, lam_dr=16.5) |
+| L_thumb_pos boost | ✅ w=10.0 | ✅ lam_thumb_pos=10.0 |
+| L_fingertip_pos otros dedos | w=1.0 | lam_tip_pos=1.0 |
+| pip_pos (DexMV PIP) | ❌ | ✅ lam_pip_pos=1.0 |
+| L_joint | ❌ | ✅ lambda_joint=1.0 |
+| L_pinch | ✅ sigmoid contact-aware | ✅ simplificado (sin sigmoid) |
+
+run21-paper-sk tenía pulgar perfecto pero dedos malos (single latent, sin pip_pos, sin L_joint).
+Run 29 añade per-finger + pip_pos + L_joint sobre la base del thumb fix.
+
+### Branch y archivos
+
+- Branch: `run29-thumb-pos` (desde `run28-per-finger-dr-yan`).
+- Cambios:
+  - `src/cross_emb/training/losses.py`: renombrado de params/vars + `lam_thumb_pos` en `xin_sk_full` y `xin_sk_per_finger`.
+  - `src/cross_emb/training/config.py`: nuevos flags `--lam_tip_pos`, `--lam_thumb_pos`, `--lam_tip_rot`, `--lam_pip_pos`.
+  - `src/cross_emb/training/loop.py`: per-finger path usa `lam_thumb_pos` para sub=="thumb".
+  - `notebooks/train_stage1_colab.ipynb`: config Run 29.
