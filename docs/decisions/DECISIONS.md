@@ -5252,6 +5252,10 @@ Todo lo demas identico a Run 27B: `lam_fp=1.0`, `lam_pinch=10.0`, `lam_fr=10.0`,
 
 **Branch**: `run28-per-finger-dr-yan` (desde `run27b-dr-yan`).
 
+**RESULTADO REAL (2026-05-23)**: FALLIDO. Movimiento erratico, mano permanentemente flexionada. Peor que Run 27B.
+
+**Post-mortem**: Bug critico -- `lam_dr` SOLO estaba cableado en el path `single_latent`. El path per-finger (`else` branch en loop.py) nunca ejecutaba el bloque D_R a pesar de `lam_dr=16.5`. Run 28 corrio efectivamente como per-finger + sin D_R, equivalente a Run 27A (rigida, control minimo). El bug fue identificado al comparar codigo y confirmado por el resultado. Fix: `7771f7fd6` en branch `run29-thumb-pos` agrega el bloque `d_r_yan` dentro del `no_grad` por dedo.
+
 ---
 
 ## Entry 95 -- 2026-05-23: Run 29 -- L_thumb_pos boost + renombrado de términos S_k
