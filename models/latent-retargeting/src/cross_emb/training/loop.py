@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 from cross_emb.loaders import CrossEmbodimentSampler
-from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single
+from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, SUBSPACE_LABEL_PREFIX
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
@@ -489,13 +489,16 @@ def main() -> None:
                     )
 
                     if args.lam_dr > 0:
-                        quats_a  = quats_all[anchors]
-                        quats_ca = quats_all[cand_a]
-                        quats_cb = quats_all[cand_b]
-                        D_R_a = d_r_yan(quats_a, quats_ca)
-                        D_R_b = d_r_yan(quats_a, quats_cb)
-                        S_a = S_a + args.lam_dr * D_R_a
-                        S_b = S_b + args.lam_dr * D_R_b
+                        prefixes = SUBSPACE_LABEL_PREFIX[sub]
+                        jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
+                        if jidx:
+                            quats_a_k  = quats_all[anchors][:, jidx, :]
+                            quats_ca_k = quats_all[cand_a][:, jidx, :]
+                            quats_cb_k = quats_all[cand_b][:, jidx, :]
+                            D_R_a = d_r_yan(quats_a_k, quats_ca_k)
+                            D_R_b = d_r_yan(quats_a_k, quats_cb_k)
+                            S_a = S_a + args.lam_dr * D_R_a
+                            S_b = S_b + args.lam_dr * D_R_b
 
                     if args.log_metric_stats:
                         S_pairs = torch.cat([S_a, S_b])
