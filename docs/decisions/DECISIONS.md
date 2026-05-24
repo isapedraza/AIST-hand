@@ -5064,9 +5064,13 @@ mid = ||chain_a[:,f,1,:] - chain_b[:,f,1,:]||^2
 
 `chain[:,f,1,:]` = slot PIP en el tensor `[N, 5, 4, 3]` (MCP/PIP/DIP/TIP). Identico semanticamente para humano (`INDEX_PIP_*` columns en CSV) y robot (`ffmiddle`, `mfmiddle`, etc. en YAML). Normalizado por `hand_length` → morphology-agnostic.
 
-**Base en literatura**
+**Base en literatura y justificacion**
 
-DexMV usa exactamente los links `*middle` (PIP-equivalente) como targets IK en `retarget_human_hand.py:23`. Xin menciona esto como "vectors from the palm to the middle phalanx to represent finger bending information" (linea 86, tex). La diferencia: DexMV lo usa como objetivo IK (el solver resuelve joints intermedios implicitamente); nosotros lo usamos como termino de similaridad en el selector de triplets.
+DexMV usa los links `*middle` (PIP-equivalente) como targets IK en `retarget_human_hand.py:23`. Xin menciona esto en main_text.tex linea 86: "vectors from the palm to the middle phalanx to represent finger bending information" -- solo como referencia, no lo adopta en su formulacion.
+
+Xin si prueba wrist→DIP como orientacion del dedo (ablacion A4, appendix linea 89), pero lo descarta porque DIP→tip captura mejor la orientacion del fingertip. Importante: A4 usa el vector como **orientacion**, no como posicion. Xin nunca evalua wrist→PIP como termino de **posicion** adicional en S_k -- esa pregunta queda abierta en el paper.
+
+Nuestra motivacion es distinta y directa: `pip_pos` mide distancia Cartesiana entre los PIPs de dos poses. Si dos poses tienen el mismo fingertip pero diferente flexion en PIP (geometricamente posible), `pip_pos` las separa en S_k. Esto fuerza al encoder a codificar la flexion intermedia, y al decoder a reproducirla. Es una adicion empirica basada en la observacion de rigidez en Run 25 -- no requiere respaldo de Xin.
 
 **Hiperparametros Run 26**: `lam_mid=1.0` (igual que `lam_fp`, mismo tipo de metrica: posicion Cartesiana). Para reproducir Run 25 exacto: `--lam_mid 0`.
 
@@ -5124,3 +5128,408 @@ SINGLE_LATENT = True    # igual que Run 25/26
 **Orden de ejecucion**: 27A primero (cambio mas simple, hipotesis principal). 27B solo si 27A resuelve el problema O si 27A falla y se necesita entender la contribucion de D_R de forma aislada.
 
 **Indicador de exito (cualitativo)**: flexion independiente de dedos al hacer puno, sin movimiento en bloque. Baseline: Run 20 (RS=0.320, NDS=2.261, NVS=0.088).
+
+## Entry 92 -- 2026-05-22: Run 27B final spec -- Yan D_R quaternion uniform sum (supersede 27B en Entry 91)
+
+**Cambio respecto a Entry 91**: la formulacion de D_R para Run 27B no es la version euler/per-dedo que se proponia tentativamente, sino la formula original de Yan et al. 2026 (eq. 1) en cuaterniones, suma uniforme sobre los joints comunes a ambos embodiments.
+
+### Decisiones de diseno
+
+**Formula** (Yan 2026, eq. 1):
+
+```
+D_R(x_A, x_B) = sum_j (1 - <q_A^j, q_B^j>^2)
+```
+
+- Operacion: `1 - dot^2` por joint = distancia geodesica al cuadrado en SO(3) (equivalente a `sin^2(theta/2)`).
+- Suma uniforme sobre los 15 joints comunes (5 dedos x 3 articulados; tip excluido implicitamente porque siempre es identidad en Dong).
+- Adaptativo a joints presentes via `common_labels` (filtrado upstream por sampler).
+
+**Sin pesos por joint**.
+
+Razon: la literatura revisada (Yan 2026, Xin 2025, Abbasi-Asl, Yan IL+IK 2023, ChatGPT Deep Research multiagente) no usa pesos `1/sigma` o variantes para per-joint quaternion D_R en triplet mining cross-embodiment. La idea de `1/sigma` venia del codigo viejo (Runs 20-22) como adicion nuestra, no como practica documentada. Para Run 27B se vuelve a la version original de Yan: suma uniforme.
+
+Discusion previa en hilo de chat: Gracia-Ibañez 2020 advierte que `1/sigma` amplifica ruido para joints con baja varianza, pero opera en espacio de angulos (no acotado). Quaternion `1 - dot^2` esta acotado en [0,1] -- ese argumento no aplica directamente. Sin embargo, ningun paper de retargeting usa per-joint weights para D_R cuaternionico, asi que se elige la baseline limpia.
+
+**Wire**: D_R se suma al S_k Xin existente (no lo reemplaza):
+
+```python
+S_k = lam_fp * fp + lam_pinch * pinch + lam_fr * fr + lam_mid * mid + lam_dr * D_R
+```
+
+Solo activo en rama `--single_latent` (Run 27B); para `--single_latent=False` (Run 27A) `lam_dr=0` por default y D_R no se evalua.
+
+**Calibracion de `lam_dr`**: medido empiricamente en batch real B=2000 (script `models/latent-retargeting/scripts/diag_dr_magnitude.py`):
+
+| metrica | mean | std | min | max |
+|---|---|---|---|---|
+| Xin S_k (lam_fp=1, lam_pinch=10, lam_fr=10, lam_mid=1) | 68.86 | 42.12 | 0.76 | 214.68 |
+| D_R raw (uniform sum, 15 joints) | 1.25 | 0.73 | 0.03 | 5.58 |
+
+- `lam_dr = 16.5` -> `lam_dr * D_R_mean = 20.66` -> ~30% del Xin S_k mean.
+- Eleccion: 30% es proporcion comparable a Yan original (D_R + w*D_ee con w=1, ambos del mismo orden ≈ cada termino ~33% del S_k total).
+- 18% (lam_dr=10) seria muy debil para voltear decisiones del selector (D_R alimenta solo no_grad selector, no gradiente directo). Si Run 27B fracasa con 30%, sabemos que el problema NO es magnitud insuficiente.
+- 50%+ pondria a D_R como arbitro principal, sobrescribiendo la señal Cartesiana validada.
+
+### Pregunta que responde
+
+Mas precisa que Entry 91: en arquitectura single_latent (Run 26), ¿añadir un termino rotacional cuaternionico al selector contrastive es suficiente para inducir movimiento articulado por dedo, o el cuello de botella sigue siendo estructural (encoder/decoder que ven la mano como un vector unico)?
+
+### Branch y archivos
+
+- Branch: `run27b-dr-yan` (desde main, post-Entry 91).
+- Cambios:
+  - `src/cross_emb/training/losses.py`: nueva funcion `d_r_yan(q_a, q_b)` (uniform sum).
+  - `src/cross_emb/training/config.py`: flag `--lam_dr` (default 0.0, opt-in).
+  - `src/cross_emb/training/loop.py`: wire en rama `single_latent`, log `D_R` en `log_metric_stats`.
+  - `notebooks/train_stage1_colab.ipynb`: cell-12 `SINGLE_LATENT=True`, `LAM_DR=16.5`; cell-8 branch `run27b-dr-yan`.
+  - `scripts/diag_dr_magnitude.py`: diagnostico de magnitudes (CPU-only, datos locales).
+
+---
+
+## Entry 93 -- 2026-05-23: Resultados Run 27A y Run 27B -- evaluacion visual
+
+**Context**: Ambas runs completadas en Colab T4. Evaluacion via `live_retarget.py` con camara.
+
+### Run 27A -- per-finger subspaces, sin D_R
+
+**Config**: `SINGLE_LATENT=False`, `LAM_DR=0.0`, `lam_mid=1.0`, seed=21266.
+
+**Observaciones**:
+- Movimiento extremadamente rigido. Flexion minima en todos los dedos.
+- Dedos se mueven de forma dispareja (sin coordinacion).
+- Unico movimiento perceptible: arriba/abajo. MCPs casi no bajan.
+- Calidad general: la peor de todas las runs recientes.
+
+**Diagnostico**: sin D_R, el selector de triplets Xin S_k Cartesiano solo es insuficiente para discriminar poses en el espacio milimetrico de la mano. El gradiente contrastivo no empuja el latente hacia los extremos funcionales. Confirma que D_R es necesario -- sin el, per-finger subspaces no bastan.
+
+### Run 27B -- single latent + D_R Yan (lam_dr=16.5)
+
+**Config**: `SINGLE_LATENT=True`, `LAM_DR=16.5`, `lam_mid=1.0`, seed=21266.
+
+**Observaciones**:
+- Muy superior a Run 27A.
+- Apertura y cierre decente. Movimiento suave -- probablemente el mas fluido de todas las runs.
+- MCPs mejoran respecto a Run 20 (mejor MCP hasta ahora).
+- Dedos se mueven en bloque: no hay control independiente por dedo (regresion respecto a Run 20).
+- Pulgar: no logra moverse del todo. Sin mejora respecto a runs anteriores.
+
+**Diagnostico**: D_R resuelve la rigidez y mejora MCPs. El movimiento en bloque es consecuencia directa de `HumanEncoder_E_h_single` (global max-pool sobre 21 joints, proyeccion a un solo vector) -- no hay estructura por dedo en el latente, todos los dedos acoplados.
+
+### Tabla comparativa actualizada
+
+| Run | Latente | Control independiente | MCPs | Pulgar | Suavidad |
+|-----|---------|----------------------|------|--------|----------|
+| 20 | per-finger (5x16) | mejor | problema | no | media |
+| 27A | per-finger (5x64) | no (rigido) | muy malo | no | muy mala |
+| 27B | single (320) | no (bloque) | mejor | no | mejor |
+
+**Conclusion**: D_R es necesario (27A sin el = rigido). Single latent causa movimiento en bloque (27B). El siguiente paso natural es combinar per-finger latents (27A) con D_R (27B).
+
+---
+
+## Entry 94 -- 2026-05-23: Run 28 -- per-finger subspaces + Yan D_R
+
+**Context**: Basado en diagnostico de Entry 93. Run 28 combina lo mejor de 27A y 27B.
+
+**Hipotesis**: per-finger latents restauran control independiente por dedo (como Run 20); D_R preserva suavidad y mejora MCPs (como Run 27B).
+
+**Cambios respecto a Run 27B**:
+
+```
+SINGLE_LATENT = False   # HumanEncoder_E_h (5 subspaces, z_dim=64) en vez de E_h_single
+LAM_DR        = 16.5    # igual que Run 27B -- sin cambio
+```
+
+Todo lo demas identico a Run 27B: `lam_fp=1.0`, `lam_pinch=10.0`, `lam_fr=10.0`, `lam_mid=1.0`, `lambda_c=10.0`, `lambda_rec=5.0`, `lambda_ltc=1.0`, `lambda_tmp=0.1`, `lambda_joint=1.0`, `LR=1e-3`, `MARGIN=0.05`, seed=21266.
+
+**Arquitectura**:
+- Encoder humano: `HumanEncoder_E_h` -- 5 cabezas por dedo, cada una proyecta a `z_dim=64`. Latente total = 5x64 = 320.
+- D_R Yan se mantiene (formula uniform sum sobre 15 joints comunes).
+- `--single_latent` flag NO se pasa al script de entrenamiento.
+
+**Resultado esperado**: control independiente por dedo + suavidad + MCPs mejorados. Si el pulgar no mejora, es problema separado (structural -- THJ5/THJ4/THJ3 no mapea bien a D_R cuaternionico).
+
+**Branch**: `run28-per-finger-dr-yan` (desde `run27b-dr-yan`).
+
+**RESULTADO REAL (2026-05-23)**: FALLIDO. Movimiento erratico, mano permanentemente flexionada. Peor que Run 27B.
+
+**Post-mortem**: Bug critico -- `lam_dr` SOLO estaba cableado en el path `single_latent`. El path per-finger (`else` branch en loop.py) nunca ejecutaba el bloque D_R a pesar de `lam_dr=16.5`. Run 28 corrio efectivamente como per-finger + sin D_R, equivalente a Run 27A (rigida, control minimo). El bug fue identificado al comparar codigo y confirmado por el resultado. Fix: `7771f7fd6` en branch `run29-thumb-pos` agrega el bloque `d_r_yan` dentro del `no_grad` por dedo.
+
+---
+
+## Entry 95 -- 2026-05-23: Run 29 -- L_thumb_pos boost + renombrado de términos S_k
+
+**Context**: Análisis comparativo entre `run21-paper-sk` (branch restaurada donde el pulgar funcionó perfectamente) y Run 28. Se identificó la causa raíz del pulgar inactivo en todas las runs recientes.
+
+### Causa raíz: L_thumb_pos sin boost
+
+En `run21-paper-sk`, el S_k tenía `w_thumb_pos=10.0` vs `w_tip_pos=1.0` para los otros dedos -- 10x asimetría. El selector de triplets era 10x más sensible a diferencias en la posición del pulgar, forzando al latente a codificarlo con alta resolución.
+
+En Runs 25-28, `lam_fp=1.0` uniforme para todos los dedos incluyendo el pulgar. El pulgar no recibía señal extra -- los triplets del subespacio thumb eran débiles.
+
+Confirmado en el código oficial de Xin et al. 2025 (`robot_teleoperation.py`):
+```python
+weights_links_vec[0]   = 10.0   # L_thumb_pos (thumb tip)
+weights_links_vec[1:5] = 1.0    # L_fingertip_pos (otros dedos)
+```
+El paper trata `L_thumb_pos` (Eq. 1) y `L_fingertip_pos` (Eq. 2) como términos separados con lambdas distintos. Nuestra implementación los fusionaba con el mismo peso -- bug respecto al paper.
+
+### Fix implementado en Run 29
+
+```python
+lam_thumb_pos = 10.0   # L_thumb_pos (Xin Eq. 1) -- thumb tip, peso 10x
+lam_tip_pos   = 1.0    # L_fingertip_pos (Xin Eq. 2) -- otros dedos
+```
+
+En el path per-finger, el subespacio thumb usa `lam_thumb_pos`. Los subespacios 1-4 usan `lam_tip_pos`. El oráculo S_k sigue siendo inter-dedo (el término `pinch` para el índice usa la posición del pulgar como referencia Cartesiana), pero el gradiente fluye solo por el subespacio correspondiente.
+
+### Renombrado de parámetros (alineado con paper Xin 2025)
+
+| Nombre viejo | Nombre nuevo | Término paper |
+|---|---|---|
+| `lam_fp` | `lam_tip_pos` | L_fingertip_pos (Eq. 2) |
+| `lam_fr` | `lam_tip_rot` | L_fingertip_rot (Eq. 4) |
+| `lam_mid` | `lam_pip_pos` | (DexMV, no en Xin) |
+| *(nuevo)* | `lam_thumb_pos` | L_thumb_pos (Eq. 1) |
+
+### Tabla comparativa run21-paper-sk vs Run 29
+
+| Componente | run21-paper-sk | Run 29 |
+|---|---|---|
+| Arquitectura encoder | Single latent (z_dim=16) | Per-finger subspaces (5×64=320) |
+| D_R | ✅ (1/sigma per-joint weights) | ✅ (uniform sum, lam_dr=16.5) |
+| L_thumb_pos boost | ✅ w=10.0 | ✅ lam_thumb_pos=10.0 |
+| L_fingertip_pos otros dedos | w=1.0 | lam_tip_pos=1.0 |
+| pip_pos (DexMV PIP) | ❌ | ✅ lam_pip_pos=1.0 |
+| L_joint | ❌ | ✅ lambda_joint=1.0 |
+| L_pinch | ✅ sigmoid contact-aware | ✅ simplificado (sin sigmoid) |
+
+run21-paper-sk tenía pulgar perfecto pero dedos malos (single latent, sin pip_pos, sin L_joint).
+Run 29 añade per-finger + pip_pos + L_joint sobre la base del thumb fix.
+
+### Branch y archivos
+
+- Branch: `run29-thumb-pos` (desde `run28-per-finger-dr-yan`).
+- Cambios:
+  - `src/cross_emb/training/losses.py`: renombrado de params/vars + `lam_thumb_pos` en `xin_sk_full` y `xin_sk_per_finger`.
+  - `src/cross_emb/training/config.py`: nuevos flags `--lam_tip_pos`, `--lam_thumb_pos`, `--lam_tip_rot`, `--lam_pip_pos`.
+  - `src/cross_emb/training/loop.py`: per-finger path usa `lam_thumb_pos` para sub=="thumb".
+  - `notebooks/train_stage1_colab.ipynb`: config Run 29.
+
+---
+
+## Entry 96 -- 2026-05-23: Run 30 -- Xin sigmoid switching pinch (portado de run21-paper-sk)
+
+### Contexto
+
+Run 21 paper-sk produjo el mejor pulgar de todos los runs del proyecto, pero su arquitectura whole-hand (single latent, z_dim=16) colapsaba los demas dedos. El pulgar excepcional venia del **sigmoid switching pinch**, mecanismo fiel a Xin et al. 2025 (Eqs. 197, 216) que crea un "attractor de pinch" en el espacio latente:
+
+- Distingue regimen pinch (`d_i < eps1`) de regimen libre via sigmoide
+- Asimetria anchor/candidato con `target = l(d_anchor) * gamma_hat_anchor`
+- Stilde gating: suprime `tip_pos` cuando pinch activo para evitar double-counting de informacion geometrica
+
+Run 30 combina:
+- Arquitectura per-finger + per-finger D_R + `lam_thumb_pos=10` de Run 29
+- Switching pinch portado de Run 21 paper-sk (commit `49353dcde`)
+- Fix del double-counting heredado por Run 21 al adaptar Xin a wrist-local
+
+### Hipotesis
+
+Si Run 29 (per-finger + per-finger D_R + thumb boost) da MCPs + independencia + pulgar parcial, Run 30 agrega el attractor de pinch en cada subespacio non-thumb (index, middle, ring) para que el pulgar se especialice en pinch tal como en Run 21. Combinacion teorica: MCPs (27B) + independencia (20) + thumb_pos (Xin) + pinch perfecto (21 paper-sk).
+
+### Diseño per-finger del switching
+
+`xin_sk_per_finger(finger_idx)` ya operaba por dedo. El switching se monta dentro sin cambiar la estructura del loop. Cada subespacio non-thumb-non-pinky recibe su PROPIO `d`, su propia sigmoide, su propio target:
+
+| Subespacio | finger_idx | d usado | Pinch term | Stilde |
+|-----------|-----------|---------|-----------|--------|
+| thumb     | 0 | -- | no aplica | no aplica |
+| index     | 1 | `d_index = ||tip_index - tip_thumb||` | `s(d_index) * ||g_b - target||²` | `s(d_index, -w)` gates `tip_pos_index` |
+| middle    | 2 | `d_middle` | analogo | gates `tip_pos_middle` |
+| ring      | 3 | `d_ring` | analogo | gates `tip_pos_ring` |
+| pinky     | 4 | -- | no aplica (Xin no define) | no aplica |
+
+Ventaja vs Run 21 monolitico: cada subespacio especializa en pinch con un dedo especifico. Granularidad mas fina sin reformular nada.
+
+### Diferencias respecto a Run 21 paper-sk
+
+1. **Per-finger en lugar de whole-hand**: pinch se distribuye en 3 oraculos per-subspace en lugar de uno global.
+2. **Sin double-counting del thumb**: thumb aparece SOLO en `lam_thumb_pos * tip_pos[0]` (siempre activo). En Run 21 thumb aparecia tambien en `D_tip_pos` gated. La asimetria viene de que Xin tenia un termino world-thumb separado del wrist-relative thumb (su contexto NLopt+teleop con AVP necesita ambos), pero Run 21 los porto sin world frame -> ambos colapsaron a wrist-relative.
+3. **Sin `stilde[thumb] = sigmoid(d.min, -w)`**: la pieza inventada por Run 21 para gatear el thumb en su `D_tip_pos`. Ya no necesaria al eliminar el double-counting.
+
+### Diferencias respecto a Xin paper/codigo
+
+- **Contexto**: Xin usa NLopt online per-frame; nosotros triplet contrastive offline. La sigmoide actua como oraculo (no_grad), no como loss diferenciable.
+- **Roles**: Xin tiene human=referencia, robot=target; nosotros anchor=referencia, candidato=evaluado. Asimetria preservada (anchor juega rol fijo dentro de cada tripleta).
+- **Frame**: Xin trabaja en world frame (AVP teleop); nosotros wrist-local normalizado.
+- **Math**: las 4 fórmulas (`s(d)`, `l(d)`, `target = l(d)*gamma_hat`, `D_pinch = s*||g - target||²`) son **identicas**. Solo cambia donde se aplican.
+
+### Parametros
+
+Defaults idénticos a Xin paper y Run 21 paper-sk:
+- `pinch_eps1_m = 0.1` (transition threshold en metros)
+- `pinch_eps2_m = 0.01` (in-contact threshold)
+- `pinch_ref_hand_length_m = 0.197` (referencia para normalizar)
+- `pinch_sigmoid_w_m = 10.0` (sigmoid sharpness)
+
+Normalizacion: `eps_normalized = eps_m / ref_hand_length_m`. Resulta en `eps1=0.508`, `eps2=0.0508`, `sigmoid_w=1.97` en espacio wrist-local. Cada embodiment usa su propio `hand_length` para normalizar `d`, asi el threshold "50.8% del hand_length" aplica universal sin atar el codigo a un robot especifico.
+
+### Flag opt-in
+
+`--enable_pinch_switching` (default off). Con flag off, regresion bit-exacta vs Run 29 (verificado con `diff = 0.0` en `xin_sk_full`). Si Run 30 sale peor, simplemente se apaga el flag -- cero riesgo de romper Run 29.
+
+### Verificaciones realizadas
+
+- Helpers numericos: `_sigmoid_xin(d=eps1, w=10, eps1=0.508) = 0.5`; `_pinch_rescale(eps2)=0`, `(eps1)=eps1`, `(2*eps1)=2*eps1`.
+- Regression: con `enable_switching=False`, output identico al codigo Run 29 (diff = 0).
+- Switching activo: thumb y pinky sin cambio (no tienen pinch); index/middle/ring cambian valor de S como esperado.
+- Compatibilidad con resume desde ckpt Run 29: arquitectura del modelo no cambia (solo oraculo).
+
+### Hyperparams en config y notebook
+
+- Branch: `run30-pinch-switching` (desde `run29-thumb-pos`).
+- Resto identico a Run 29: SEED=21266, per-finger arch, `lam_dr=16.5`, `lam_thumb_pos=10.0`, `lam_pinch=10.0`, `lambda_joint=1.0`, LR=1e-3, MARGIN=0.05.
+
+### Archivos modificados
+
+- `src/cross_emb/training/losses.py`: helpers `_sigmoid_xin`, `_pinch_rescale`; `xin_sk_per_finger` y `xin_sk_full` con args opt-in `enable_switching, pinch_eps1/eps2/sigmoid_w`.
+- `src/cross_emb/training/config.py`: 5 flags nuevos.
+- `src/cross_emb/training/loop.py`: normaliza thresholds una vez al inicio (valida `eps2 < eps1`); propaga a `xin_sk_full` y `xin_sk_per_finger`.
+- `notebooks/train_stage1_colab.ipynb`: branch + bloque switching + CLI args nuevos.
+
+### Timing
+
+A esperar resultados de Run 29 primero. Si Run 29 cubre el pulgar suficiente, Run 30 puede no ser necesario. Si no, Run 30 esta listo para lanzar en Colab.
+
+### Riesgos identificados
+
+- **Eps mal calibrados para Shadow Hand**: defaults vienen de Xin (mano humana). Si Shadow tiene proporciones distintas, `eps1=0.508` (fraccion del hand_length) podria activarse mas o menos frecuente. Mitigacion: logging diagnostico revelara fraccion real.
+- **Subespacio pinky sin pinch**: igual que Run 29, no nuevo.
+- **Sigmoide saturada**: con `w=1.97` y `d ∈ [0, ~1]` no se satura agresivamente.
+
+---
+
+## Entry 97 -- 2026-05-24: Resultados Run 29 fix y Run 30 + diagnostico de techo arquitectural
+
+### Resultados Run 29 fix (per-finger D_R correcto)
+
+Branch: `run29-thumb-pos` con commit `5b4e5c51e` (fix de D_R filtrado por SUBSPACE_LABEL_PREFIX).
+
+**Best_val ckpt (step=3000 / 15000, 20%)**: comportamiento INVERTIDO.
+- Mano humana abierta → robot flexionada
+- Mano humana cerrada → robot abierta
+- val_score=2.46, rs=0.388 (peor que Run 20 baseline 0.320)
+- cont loss=0.07 muy bajo -- triplet trivialmente satisfecha
+
+**Best_total ckpt (step=13607 / 15000, 90%)**: mejor, pero todavia mal.
+- Comportamiento NO invertido
+- MCPs no flexionan cuando humano cierra puño -- se quedan rectos
+- PIP y DIP si flexionan
+- Cuando humano abre, mano robot ya estaba flexionada
+- total loss=0.91
+
+### Resultados Run 30 (single-finger + switching pinch)
+
+Branch: `run30-pinch-switching`, commit `cb344c1fb`. Best_total ckpt probado.
+
+**Comportamiento**: casi identico a Run 29 fix best_total. Pinches no se realizan correctamente. Switching pinch no rescato la limitacion arquitectural per-finger.
+
+### Bug critico del criterio best_val
+
+`val_score = rs + nds + lambda_tmp*nvs` favorece sistematicamente checkpoints tempranos en runs per-finger. Tabla de evidencia:
+
+| Run | step capturado | % training | val_score | Calidad |
+|-----|----------------|------------|-----------|---------|
+| 27A | 3500 / 15000 | 23% | 2.71 | mal |
+| **27B** | **14000 / 15000** | **93%** | **2.75** | **mejor del proyecto** |
+| 28 | 3500 / 15000 | 23% | 2.71 | mal |
+| 28b | 1000 / 15000 | 7% | 2.41 | erratico flexionado |
+| 29 | 5000 / 15000 | 33% | 2.66 | mal |
+| 29b | 1500 / 15000 | 10% | 2.40 | mal |
+| 29fix | 3000 / 15000 | 20% | 2.46 | invertido |
+
+Hipotesis: al inicio del training el modelo aun no aprendio (q_r_hat ~ 0) y por coincidencia las quaterniones identidad matchean partial human → rs/nds bajos sin que el modelo sea util. Best_val captura ese minimo prematuro. Run 27B fue excepcion: capturo al 93% porque el criterio val_score no decrecio mas hasta entonces.
+
+**Implicacion retroactiva**: varios runs anteriores reportados como "malos" probablemente tienen best_total o latest ckpts que NUNCA SE PROBARON. Auditoria pendiente.
+
+**Implicacion forward**: para runs futuras, usar best_total o latest. O agregar warmup minimo al criterio val_score (ignorar primeros 5000 steps).
+
+### Observaciones empiricas (hechos)
+
+Comparacion estructural entre runs (datos observados, no inferencias):
+
+| Run | Arquitectura | Oracle | MCP flex | Independencia | Pinch |
+|-----|--------------|--------|----------|---------------|-------|
+| Run 20 | per-finger 5x16 | Yan-pure (D_R weighted + D_joints weighted + D_ahg) | parcial | ✓ | ✗ |
+| **Run 27B** | single 320 | Xin terms + D_R global | ✓ (mejor del proyecto) | ✗ (bloque) | ✗ |
+| Run 28 | per-finger 5x64 | Xin terms + D_R global (BUG) | ✗ | erratico | ✗ |
+| Run 29 fix | per-finger 5x64 | Xin terms + D_R per-finger | ✗ | ? | ✗ |
+| Run 30 | per-finger 5x64 | Xin terms + D_R per-finger + sigmoid switching | ✗ | ? | ✗ |
+| Run 21 paper-sk | single 16 | Xin + D_R global weighted + sigmoid switching | parcial | ✗ | ✓ (mejor pulgar) |
+
+Lo que se observa:
+- Runs 28, 29fix, 30 (per-finger + Xin terms) fallan al producir MCP flex
+- Runs 27B y 21 paper-sk (single latent) producen MCP flex
+- Run 20 (per-finger + Yan-pure no-Xin) tiene MCP parcial
+
+### Hipotesis NO verificadas
+
+NO SABEMOS la causa real. Posibles hipotesis (cada una requiere experimento explicito para validar):
+
+H1 -- **Oracle Xin sub-optimo para MCP en per-finger**: Xin terms (tip_pos, pinch, tip_rot, pip_pos) no incluyen MCP position directamente. Solo D_R cuaternionico toca MCP. Podria ser que el modelo satisfaga el oraculo via PIP+DIP sin necesitar MCP. Para validar: agregar `lam_mcp_pos` y reentrenar.
+
+H2 -- **Per-finger fragmenta el aprendizaje**: cada subespacio aprende su finger independiente. La coordinacion inter-joint del MCP podria perderse. Para validar: medir si los 5 subespacios convergen a representaciones distintas o redundantes. O ver si el decoder usa todos los subespacios.
+
+H3 -- **Bias del best_total**: el ckpt al ~90% del training tampoco es el optimo. Podria existir un mejor punto del training que no descargamos.
+
+H4 -- **Bug oculto en per-finger D_R fix**: el filtrado por SUBSPACE_LABEL_PREFIX podria tener edge case no detectado. Smoke tests pasaron pero no son exhaustivos.
+
+H5 -- **Distribucion del dataset**: valid_robot_poses.npz sintetico podria tener bias contra poses con MCP muy flexionado. Para validar: distribucion de MCP angles en el sampler.
+
+H6 -- **Capacidad arquitectural insuficiente**: z_dim=64 por subespacio podria ser insuficiente para encodar la fineza requerida.
+
+H7 -- **Combinacion de los anteriores**: el problema puede ser multifactorial.
+
+NINGUNA de estas se ha verificado experimentalmente. Lo unico solido es el patron observado.
+
+### Verificaciones pendientes para diagnosticar
+
+- Distribucion de MCP angle en valid_robot_poses.npz vs HOGraspNet humano
+- Output del decoder en poses extremas: ¿produce variedad de MCP angles o esta saturado?
+- Curva de loss per subspace durante training: ¿algun subespacio converge antes y los demas dejan de aprender?
+- Reproducir Run 20 con codigo actual (Yan-pure no-Xin) per-finger: si funciona = problema es el oraculo, si falla = problema es otro
+
+### Problema operacional: wall-clock time
+
+Cada run tarda ~2 horas en Colab T4 (B=50k, 15k steps, AMP, torch.compile). Iterar sobre arquitectura/oraculo se vuelve costoso cuando cada experiment es 2h + descargar ckpt + live retarget + interpretar.
+
+Esto agrava el problema de exploracion: hipotesis fallidas consumen 2h cada una. Run 29fix, Run 30 = ~4h gastadas en runs que no funcionaron.
+
+Mitigaciones posibles (no implementadas):
+- Mejor criterio best_val (warmup minimo) para no descartar runs por bug del criterio
+- Eval qualitative cada N steps en lugar de solo al final
+- Smoke test arquitectura con pocos steps antes de full 15k
+
+### Estado del proyecto
+
+Modelos disponibles funcionales (con ckpt al ~90%+ training):
+- Run 27B: single latent, smooth open/close, MCPs OK, sin independencia, sin pinch, sin thumb. "Funciona" pero rendimiento limitado a apertura/cierre.
+- Run 20: per-finger 5x16, independencia, abducciones, thumb parcial, MCPs solo en puño extremo, sin pinch.
+- Run 21 paper-sk: single latent z_dim=16, mejor pulgar absoluto, demas dedos colapsan.
+
+Ningun run logra simultaneamente los 5 comportamientos buscados (open/close, independencia, MCP flex normal, thumb opposition, pinch real).
+
+### Patron observado, causa desconocida
+
+Lo que se ha observado: ninguna combinacion probada hasta ahora logra los 5 comportamientos simultaneos (open/close, independencia, MCP flex, thumb opp, pinch). Cada run alcanza 2-3 de 5.
+
+NO esta confirmado que sea un "techo del paradigma". Solo esta confirmado que las combinaciones especificas probadas no funcionaron. Las causas reales requieren experimentos adicionales para identificarse.
+
+Caminos no explorados que podrian romper o mover el patron observado:
+- Multi-robot training (Yan): no probado en hand scale
+- Distillation desde optimizer (Xin u otro): no probado
+- Per-finger con Yan-pure oracle (Run 20 oracle exacto) reproducido en codigo actual: no validado
+- Per-finger con `lam_mcp_pos` agregado: no probado
+- z_dim mas grande por subespacio: no probado
+- Otro encoder/decoder topology: no explorado
