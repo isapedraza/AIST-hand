@@ -65,8 +65,10 @@ def _ahg(c1: torch.Tensor, c2: torch.Tensor) -> torch.Tensor:
 # divided by their own hand_length). Symmetric, no switching weights, no eps
 # dependency.
 #
-# Adapted from Xin et al. 2025 (eqs. 178, 192, 224). Three terms:
-#   - fingertip_pos:   wrist -> tip vector match (overall hand shape)
+# Adapted from Xin et al. 2025 (eqs. 178, 192, 224). Run31 densifies
+# Xin's fingertip/thumb position term from wrist->TIP only to a full
+# per-finger chain pose over MCP/PIP/DIP/TIP:
+#   - finger_pose:     mean wrist-local chain point match (overall hand shape)
 #   - pinch:           thumb -> primary finger vector match (precise pinching)
 #   - fingertip_rot:   DIP/IP -> TIP unit vector match (orientation)
 #
@@ -95,6 +97,24 @@ def _last_segment_unit(chain: torch.Tensor, finger_idx: int, eps: float = 1e-6) 
     return r / (r.norm(dim=-1, keepdim=True) + eps)
 
 
+def dense_finger_pose(
+    chain_a: torch.Tensor,
+    chain_b: torch.Tensor,
+    finger_idx: int,
+) -> torch.Tensor:
+    """Dense wrist-local finger pose distance over MCP/PIP/DIP/TIP.
+
+    Args:
+        chain_a, chain_b: [N, 5, 4, 3] MCP/PIP/DIP/TIP per finger, normalized.
+        finger_idx:       0=thumb, 1=index, 2=middle, 3=ring, 4=pinky.
+
+    Returns:
+        [N] mean squared Cartesian distance over the 4 chain points.
+    """
+    diff = chain_a[:, finger_idx, :, :] - chain_b[:, finger_idx, :, :]
+    return (diff ** 2).sum(dim=-1).mean(dim=-1)
+
+
 def xin_sk_per_finger(
     tips_a: torch.Tensor,
     tips_b: torch.Tensor,
@@ -108,8 +128,9 @@ def xin_sk_per_finger(
 ) -> torch.Tensor:
     """Per-finger Cartesian similarity. Symmetric, operates in normalized space.
 
-    Terms follow Xin et al. 2025 nomenclature:
-      tip_pos: L_fingertip_pos / L_thumb_pos -- wrist->tip vector (Xin Eqs. 1-2)
+    Terms follow Xin et al. 2025 nomenclature, with Run31 dense pose extension:
+      tip_pos: L_fingertip_pos / L_thumb_pos weight, applied to dense
+               MCP/PIP/DIP/TIP chain pose instead of wrist->TIP only.
       pinch:   L_pinch -- thumb->primary finger vector (Xin Eq. 3, fingers 1-3 only)
       tip_rot: L_fingertip_rot -- DIP/IP->TIP unit vector (Xin Eq. 4)
       pip_pos: PIP position (DexMV-style; not in Xin paper)
@@ -122,10 +143,8 @@ def xin_sk_per_finger(
     Returns:
         [N] non-negative scalar similarity (lower = more similar).
     """
-    # L_fingertip_pos / L_thumb_pos: wrist -> tip vector
-    v_a = tips_a[:, finger_idx, :]
-    v_b = tips_b[:, finger_idx, :]
-    tip_pos = ((v_a - v_b) ** 2).sum(dim=-1)
+    # Run31 dense L_fingertip_pos / L_thumb_pos: full finger chain pose.
+    tip_pos = dense_finger_pose(chain_a, chain_b, finger_idx)
 
     # L_pinch: thumb -> primary finger vector (index, middle, ring only -- Xin Sec. III-A)
     if finger_idx in (1, 2, 3):

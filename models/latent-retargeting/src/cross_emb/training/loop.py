@@ -9,7 +9,7 @@ Usage (Colab via shim):
         --dex_root  /content/drive/MyDrive/AIST-hand/dex-urdf \\
         --csv_path  /content/drive/MyDrive/AIST-hand/hograspnet_abl11.csv \\
         --ckpt_path /content/drive/MyDrive/AIST-hand/checkpoints/stage1_latest.pt \\
-        --b 20000 --n_steps 5000 --log_every 50 --ckpt_every 500
+        --b 20000 --n_steps 6000 --log_every 50 --ckpt_every 500
 """
 from __future__ import annotations
 
@@ -358,7 +358,7 @@ def main() -> None:
         #
         # Replaces the quaternion-based S_k (D_R + D_joints + D_ahg) with
         # symmetric Cartesian metrics from Xin et al. 2025:
-        #   - fingertip_pos:  wrist -> tip vector match
+        #   - finger_pose:    dense MCP/PIP/DIP/TIP chain match
         #   - pinch:          thumb -> primary finger vector match (index/mid/ring)
         #   - fingertip_rot:  last-segment unit vector match
         # Operates over the FULL hand (5 fingers in common_fingers ordering)
