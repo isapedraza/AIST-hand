@@ -5455,9 +5455,9 @@ Hipotesis: al inicio del training el modelo aun no aprendio (q_r_hat ~ 0) y por 
 
 **Implicacion forward**: para runs futuras, usar best_total o latest. O agregar warmup minimo al criterio val_score (ignorar primeros 5000 steps).
 
-### Diagnostico arquitectural: per-finger + Xin oracle no funciona
+### Observaciones empiricas (hechos)
 
-Comparacion estructural entre runs que funcionan y los que no:
+Comparacion estructural entre runs (datos observados, no inferencias):
 
 | Run | Arquitectura | Oracle | MCP flex | Independencia | Pinch |
 |-----|--------------|--------|----------|---------------|-------|
@@ -5468,14 +5468,37 @@ Comparacion estructural entre runs que funcionan y los que no:
 | Run 30 | per-finger 5x64 | Xin terms + D_R per-finger + sigmoid switching | ✗ | ? | ✗ |
 | Run 21 paper-sk | single 16 | Xin + D_R global weighted + sigmoid switching | parcial | ✗ | ✓ (mejor pulgar) |
 
-**Patrones**:
-1. Single latent + Xin terms → MCP flex funciona (27B, 21paper-sk parcial)
-2. Per-finger + Xin terms → MCP flex falla SIEMPRE (28, 29fix, 30)
-3. Per-finger + Yan-pure terms (D_joints chain L2 weighted) → MCP parcial (Run 20)
+Lo que se observa:
+- Runs 28, 29fix, 30 (per-finger + Xin terms) fallan al producir MCP flex
+- Runs 27B y 21 paper-sk (single latent) producen MCP flex
+- Run 20 (per-finger + Yan-pure no-Xin) tiene MCP parcial
 
-**Hipotesis del techo**: Xin terms cubren TIP (tip_pos, pinch, tip_rot) y PIP (pip_pos) explicitamente. MCP solo aparece en D_R cuaternionico. En per-finger, cada subespacio puede satisfacer su oraculo Xin via PIP+DIP sin tocar MCP. En single latent, el oraculo holistico fuerza coherencia inter-joint (MCP debe flexionar para que toda la mano matchee).
+### Hipotesis NO verificadas
 
-Run 20 funcionaba porque su Yan-pure oracle (D_joints weighted) penalizaba posiciones de TODOS los joints en el chain (MCP, PIP, DIP, TIP) per-finger. Al portar a Xin terms perdimos esa cobertura.
+NO SABEMOS la causa real. Posibles hipotesis (cada una requiere experimento explicito para validar):
+
+H1 -- **Oracle Xin sub-optimo para MCP en per-finger**: Xin terms (tip_pos, pinch, tip_rot, pip_pos) no incluyen MCP position directamente. Solo D_R cuaternionico toca MCP. Podria ser que el modelo satisfaga el oraculo via PIP+DIP sin necesitar MCP. Para validar: agregar `lam_mcp_pos` y reentrenar.
+
+H2 -- **Per-finger fragmenta el aprendizaje**: cada subespacio aprende su finger independiente. La coordinacion inter-joint del MCP podria perderse. Para validar: medir si los 5 subespacios convergen a representaciones distintas o redundantes. O ver si el decoder usa todos los subespacios.
+
+H3 -- **Bias del best_total**: el ckpt al ~90% del training tampoco es el optimo. Podria existir un mejor punto del training que no descargamos.
+
+H4 -- **Bug oculto en per-finger D_R fix**: el filtrado por SUBSPACE_LABEL_PREFIX podria tener edge case no detectado. Smoke tests pasaron pero no son exhaustivos.
+
+H5 -- **Distribucion del dataset**: valid_robot_poses.npz sintetico podria tener bias contra poses con MCP muy flexionado. Para validar: distribucion de MCP angles en el sampler.
+
+H6 -- **Capacidad arquitectural insuficiente**: z_dim=64 por subespacio podria ser insuficiente para encodar la fineza requerida.
+
+H7 -- **Combinacion de los anteriores**: el problema puede ser multifactorial.
+
+NINGUNA de estas se ha verificado experimentalmente. Lo unico solido es el patron observado.
+
+### Verificaciones pendientes para diagnosticar
+
+- Distribucion de MCP angle en valid_robot_poses.npz vs HOGraspNet humano
+- Output del decoder en poses extremas: ¿produce variedad de MCP angles o esta saturado?
+- Curva de loss per subspace durante training: ¿algun subespacio converge antes y los demas dejan de aprender?
+- Reproducir Run 20 con codigo actual (Yan-pure no-Xin) per-finger: si funciona = problema es el oraculo, si falla = problema es otro
 
 ### Problema operacional: wall-clock time
 
@@ -5497,8 +5520,16 @@ Modelos disponibles funcionales (con ckpt al ~90%+ training):
 
 Ningun run logra simultaneamente los 5 comportamientos buscados (open/close, independencia, MCP flex normal, thumb opposition, pinch real).
 
-### Techo identificado
+### Patron observado, causa desconocida
 
-El paradigma contrastive Stage 1 para hand control fine-motor parece tener un techo intrinseco. Per-finger fragmenta gradient signal entre subespacios. Single latent pierde control independiente. Xin terms son sub-optimos para MCP coverage en per-finger. Switching pinch (Xin / Run 21 paper-sk) requiere arquitectura single latent para funcionar.
+Lo que se ha observado: ninguna combinacion probada hasta ahora logra los 5 comportamientos simultaneos (open/close, independencia, MCP flex, thumb opp, pinch). Cada run alcanza 2-3 de 5.
 
-Reproducir Yan's success a hand scale puede requerir multi-robot training (Yan entrena con 5+ robots simultaneos, forzando latente embodiment-invariant) o cambio de paradigma (distillation desde optimizer, supervised pretraining con paired data sintetico).
+NO esta confirmado que sea un "techo del paradigma". Solo esta confirmado que las combinaciones especificas probadas no funcionaron. Las causas reales requieren experimentos adicionales para identificarse.
+
+Caminos no explorados que podrian romper o mover el patron observado:
+- Multi-robot training (Yan): no probado en hand scale
+- Distillation desde optimizer (Xin u otro): no probado
+- Per-finger con Yan-pure oracle (Run 20 oracle exacto) reproducido en codigo actual: no validado
+- Per-finger con `lam_mcp_pos` agregado: no probado
+- z_dim mas grande por subespacio: no probado
+- Otro encoder/decoder topology: no explorado
