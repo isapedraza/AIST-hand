@@ -197,6 +197,24 @@ def xin_sk_full(
     return s
 
 
+def global_pinch_similarity(
+    tips_a: torch.Tensor,
+    tips_b: torch.Tensor,
+) -> torch.Tensor:
+    """Full-hand thumb-to-primary-finger pinch-vector distance.
+
+    Compares thumb->index, thumb->middle, and thumb->ring relative vectors.
+    This is intentionally inter-finger only: it does not duplicate absolute
+    thumb tip or dense finger-chain position terms.
+    """
+    out = tips_a.new_zeros(tips_a.shape[0])
+    for finger_idx in (1, 2, 3):
+        g_a = tips_a[:, finger_idx, :] - tips_a[:, 0, :]
+        g_b = tips_b[:, finger_idx, :] - tips_b[:, 0, :]
+        out = out + ((g_a - g_b) ** 2).sum(dim=-1)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # D_R -- Yan-style rotation similarity (Yan et al. 2026, eq. 1).
 #

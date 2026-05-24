@@ -44,6 +44,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lam_pinch",        type=float, default=0.0, help="thumb->primary finger vector. Xin Eq.3.")
     p.add_argument("--lam_tip_rot",      type=float, default=0.0, help="DIP/IP->TIP unit vector. Xin Eq.4.")
     p.add_argument("--lam_dr",    type=float, default=0.0,  help="Weight for Yan-style D_R quaternion term added to S_k. 0 disables (default). Applied in both single-latent and per-finger paths; uniform sum over common-joint quaternions.")
+    p.add_argument("--lambda_global_c", type=float, default=0.0,
+                   help="Weight for auxiliary full-hand contrastive loss over z_total. 0 disables.")
+    p.add_argument("--global_lam_pinch", type=float, default=0.0,
+                   help="Weight for thumb->index/middle/ring pinch vectors in auxiliary full-hand S_k.")
+    p.add_argument("--global_lam_dr", type=float, default=0.0,
+                   help="Weight for full-hand Yan D_R in auxiliary full-hand S_k.")
     p.add_argument("--lambda_joint",    type=float, default=0.0,
                    help="Weight for L_joint (joint position regularization). 0 disables.")
     p.add_argument("--robot_yaml_path", default=None,

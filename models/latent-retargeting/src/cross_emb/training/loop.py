@@ -24,7 +24,7 @@ from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
-from .losses import d_r_yan, l_joint, load_l_joint_config, xin_sk_full, xin_sk_per_finger
+from .losses import d_r_yan, global_pinch_similarity, l_joint, load_l_joint_config, xin_sk_full, xin_sk_per_finger
 
 
 def _set_seed(seed: int) -> None:
@@ -260,6 +260,10 @@ def main() -> None:
         print(f"{'='*60}")
         print(f"  LATENT MODE : PER-FINGER (5 subspaces, z_dim={args.z_dim}, total={z_dim_total})")
         print(f"{'='*60}")
+    if args.single_latent and args.lambda_global_c > 0:
+        print("Aux global contrastive disabled for --single_latent; it is intended for per-finger z_total.")
+        args.lambda_global_c = 0.0
+
     E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
     D_X = SharedDecoder_D_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
@@ -377,14 +381,15 @@ def main() -> None:
         # --single_latent: one triplet on xin_sk_full over the whole hand.
         # else:            five triplets (one per finger subspace) on xin_sk_per_finger.
         metric_stats = {}
+        tips_all  = torch.cat([tips_h_sub,  tips_r_sub],  dim=0)   # [2B, Fc, 3]
+        chain_all = torch.cat([chain_h_sub, chain_r_sub], dim=0)   # [2B, Fc, 4, 3]
+        quats_all = torch.cat([quats_h_sub, quats_r_sub], dim=0)   # [2B, Jc, 4]
+        z_all_full = torch.cat([z_t, z_r], dim=0)                  # [2B, z_dim_total]
+        L_cont_global = torch.zeros((), device=DEVICE)
+
         if args.lambda_c <= 0:
             L_cont = torch.zeros((), device=DEVICE)
         else:
-            tips_all  = torch.cat([tips_h_sub,  tips_r_sub],  dim=0)   # [2B, Fc, 3]
-            chain_all = torch.cat([chain_h_sub, chain_r_sub], dim=0)   # [2B, Fc, 4, 3]
-            quats_all = torch.cat([quats_h_sub, quats_r_sub], dim=0)   # [2B, Jc, 4]
-            z_all_full = torch.cat([z_t, z_r], dim=0)                  # [2B, z_dim_total]
-
             if args.single_latent:
                 L_cont = torch.tensor(0.0, device=DEVICE)
                 B2 = z_all_full.shape[0]
@@ -535,6 +540,65 @@ def main() -> None:
                         + args.margin
                     ).mean()
 
+        L_cont_local = L_cont
+
+        if args.lambda_global_c > 0 and not args.single_latent and (args.global_lam_pinch > 0 or args.global_lam_dr > 0):
+            B2 = z_all_full.shape[0]
+            if B2 >= 3:
+                n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                anchors = torch.randperm(B2, device=DEVICE)[:n]
+                cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_a = cand_a + (cand_a >= anchors).long()
+                cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_b = cand_b + (cand_b >= anchors).long()
+                same = cand_b == cand_a
+                if same.any():
+                    cand_b[same] = (cand_b[same] + 1) % B2
+                    cand_b[same] += (cand_b[same] == anchors[same]).long()
+                    cand_b[same] %= B2
+
+                with torch.no_grad():
+                    tips_a   = tips_all[anchors]
+                    tips_ca  = tips_all[cand_a]
+                    tips_cb  = tips_all[cand_b]
+                    quats_a  = quats_all[anchors]
+                    quats_ca = quats_all[cand_a]
+                    quats_cb = quats_all[cand_b]
+
+                    S_a = tips_a.new_zeros(n)
+                    S_b = tips_a.new_zeros(n)
+                    if args.global_lam_pinch > 0:
+                        pinch_a = global_pinch_similarity(tips_a, tips_ca)
+                        pinch_b = global_pinch_similarity(tips_a, tips_cb)
+                        S_a = S_a + args.global_lam_pinch * pinch_a
+                        S_b = S_b + args.global_lam_pinch * pinch_b
+                    if args.global_lam_dr > 0:
+                        D_R_a = d_r_yan(quats_a, quats_ca)
+                        D_R_b = d_r_yan(quats_a, quats_cb)
+                        S_a = S_a + args.global_lam_dr * D_R_a
+                        S_b = S_b + args.global_lam_dr * D_R_b
+
+                    if args.log_metric_stats:
+                        S_pairs = torch.cat([S_a, S_b])
+                        metric_stats["global"] = (
+                            S_pairs.mean().item(),
+                            S_pairs.std().item(),
+                            S_pairs.min().item(),
+                            S_pairs.max().item(),
+                        )
+
+                    a_closer = S_a <= S_b
+                    pos_idx = torch.where(a_closer, cand_a, cand_b)
+                    neg_idx = torch.where(a_closer, cand_b, cand_a)
+
+                L_cont_global = torch.relu(
+                    (z_all_full[anchors] - z_all_full[pos_idx]).norm(dim=-1)
+                    - (z_all_full[anchors] - z_all_full[neg_idx]).norm(dim=-1)
+                    + args.margin
+                ).mean()
+
+        L_cont = L_cont_local
+
         if need_temp:
             # FK + run_dong_tips_only run in fp32 (pytorch-kinematics not validated
             # for fp16). `.float()` upcasts and preserves the autograd path back to MLPs.
@@ -566,11 +630,12 @@ def main() -> None:
         else:
             L_jnt = torch.zeros((), device=DEVICE)
 
-        L_total = (args.lambda_c   * L_cont
-                 + args.lambda_rec * L_rec
-                 + args.lambda_ltc * L_ltc
-                 + args.lambda_tmp * L_temp
-                 + args.lambda_joint * L_jnt)
+        L_total = (args.lambda_c        * L_cont_local
+                 + args.lambda_global_c * L_cont_global
+                 + args.lambda_rec      * L_rec
+                 + args.lambda_ltc      * L_ltc
+                 + args.lambda_tmp      * L_temp
+                 + args.lambda_joint    * L_jnt)
 
         optimizer.zero_grad()
         scaler.scale(L_total).backward()
@@ -597,6 +662,8 @@ def main() -> None:
             "losses": {
                 "total": L_total.item(),
                 "cont": L_cont.item(),
+                "cont_local": L_cont_local.item(),
+                "cont_global": L_cont_global.item(),
                 "rec": L_rec.item(),
                 "ltc": L_ltc.item(),
                 "temp": L_temp.item(),
@@ -638,8 +705,8 @@ def main() -> None:
             best_flag = " *best_total" if L_total.item() == best_total else ""
             print(
                 f"[step {step:05d}] loss total={L_total.item():.4f} "
-                f"cont={L_cont.item():.4f} rec={L_rec.item():.4f} "
-                f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
+                f"cont_local={L_cont_local.item():.4f} cont_global={L_cont_global.item():.4f} "
+                f"rec={L_rec.item():.4f} ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
                 f"jnt={L_jnt.item():.4f} lr={lr_now:.2e}{best_flag}"
             )
             if extra_human_count:
@@ -665,9 +732,12 @@ def main() -> None:
                 "losses": {
                     "total": L_total.item(),
                     "cont": L_cont.item(),
+                    "cont_local": L_cont_local.item(),
+                    "cont_global": L_cont_global.item(),
                     "rec": L_rec.item(),
                     "ltc": L_ltc.item(),
                     "temp": L_temp.item(),
+                    "jnt": L_jnt.item(),
                 },
                 "optimizer": optimizer.state_dict(),
             }, CKPT_PATH)
