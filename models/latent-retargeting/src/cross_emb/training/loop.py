@@ -9,7 +9,7 @@ Usage (Colab via shim):
         --dex_root  /content/drive/MyDrive/AIST-hand/dex-urdf \\
         --csv_path  /content/drive/MyDrive/AIST-hand/hograspnet_abl11.csv \\
         --ckpt_path /content/drive/MyDrive/AIST-hand/checkpoints/stage1_latest.pt \\
-        --b 20000 --n_steps 5000 --log_every 50 --ckpt_every 500
+        --b 20000 --n_steps 6000 --log_every 50 --ckpt_every 500
 """
 from __future__ import annotations
 

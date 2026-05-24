@@ -15,7 +15,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--extra_human_csv",   default=None, help="Optional static human anchor CSV, e.g. HaGRID open/fist Dong features.")
     # Training
     p.add_argument("--b",          type=int,   default=1000)
-    p.add_argument("--n_steps",    type=int,   default=10)
+    p.add_argument("--n_steps",    type=int,   default=6000)
     p.add_argument("--log_every",  type=int,   default=1)
     p.add_argument("--ckpt_every", type=int,   default=5)
     p.add_argument("--lr_warmup",  type=int,   default=500)
