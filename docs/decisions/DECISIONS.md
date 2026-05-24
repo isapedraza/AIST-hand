@@ -5316,3 +5316,94 @@ Run 29 añade per-finger + pip_pos + L_joint sobre la base del thumb fix.
   - `src/cross_emb/training/config.py`: nuevos flags `--lam_tip_pos`, `--lam_thumb_pos`, `--lam_tip_rot`, `--lam_pip_pos`.
   - `src/cross_emb/training/loop.py`: per-finger path usa `lam_thumb_pos` para sub=="thumb".
   - `notebooks/train_stage1_colab.ipynb`: config Run 29.
+
+---
+
+## Entry 96 -- 2026-05-23: Run 30 -- Xin sigmoid switching pinch (portado de run21-paper-sk)
+
+### Contexto
+
+Run 21 paper-sk produjo el mejor pulgar de todos los runs del proyecto, pero su arquitectura whole-hand (single latent, z_dim=16) colapsaba los demas dedos. El pulgar excepcional venia del **sigmoid switching pinch**, mecanismo fiel a Xin et al. 2025 (Eqs. 197, 216) que crea un "attractor de pinch" en el espacio latente:
+
+- Distingue regimen pinch (`d_i < eps1`) de regimen libre via sigmoide
+- Asimetria anchor/candidato con `target = l(d_anchor) * gamma_hat_anchor`
+- Stilde gating: suprime `tip_pos` cuando pinch activo para evitar double-counting de informacion geometrica
+
+Run 30 combina:
+- Arquitectura per-finger + per-finger D_R + `lam_thumb_pos=10` de Run 29
+- Switching pinch portado de Run 21 paper-sk (commit `49353dcde`)
+- Fix del double-counting heredado por Run 21 al adaptar Xin a wrist-local
+
+### Hipotesis
+
+Si Run 29 (per-finger + per-finger D_R + thumb boost) da MCPs + independencia + pulgar parcial, Run 30 agrega el attractor de pinch en cada subespacio non-thumb (index, middle, ring) para que el pulgar se especialice en pinch tal como en Run 21. Combinacion teorica: MCPs (27B) + independencia (20) + thumb_pos (Xin) + pinch perfecto (21 paper-sk).
+
+### Diseño per-finger del switching
+
+`xin_sk_per_finger(finger_idx)` ya operaba por dedo. El switching se monta dentro sin cambiar la estructura del loop. Cada subespacio non-thumb-non-pinky recibe su PROPIO `d`, su propia sigmoide, su propio target:
+
+| Subespacio | finger_idx | d usado | Pinch term | Stilde |
+|-----------|-----------|---------|-----------|--------|
+| thumb     | 0 | -- | no aplica | no aplica |
+| index     | 1 | `d_index = ||tip_index - tip_thumb||` | `s(d_index) * ||g_b - target||²` | `s(d_index, -w)` gates `tip_pos_index` |
+| middle    | 2 | `d_middle` | analogo | gates `tip_pos_middle` |
+| ring      | 3 | `d_ring` | analogo | gates `tip_pos_ring` |
+| pinky     | 4 | -- | no aplica (Xin no define) | no aplica |
+
+Ventaja vs Run 21 monolitico: cada subespacio especializa en pinch con un dedo especifico. Granularidad mas fina sin reformular nada.
+
+### Diferencias respecto a Run 21 paper-sk
+
+1. **Per-finger en lugar de whole-hand**: pinch se distribuye en 3 oraculos per-subspace en lugar de uno global.
+2. **Sin double-counting del thumb**: thumb aparece SOLO en `lam_thumb_pos * tip_pos[0]` (siempre activo). En Run 21 thumb aparecia tambien en `D_tip_pos` gated. La asimetria viene de que Xin tenia un termino world-thumb separado del wrist-relative thumb (su contexto NLopt+teleop con AVP necesita ambos), pero Run 21 los porto sin world frame -> ambos colapsaron a wrist-relative.
+3. **Sin `stilde[thumb] = sigmoid(d.min, -w)`**: la pieza inventada por Run 21 para gatear el thumb en su `D_tip_pos`. Ya no necesaria al eliminar el double-counting.
+
+### Diferencias respecto a Xin paper/codigo
+
+- **Contexto**: Xin usa NLopt online per-frame; nosotros triplet contrastive offline. La sigmoide actua como oraculo (no_grad), no como loss diferenciable.
+- **Roles**: Xin tiene human=referencia, robot=target; nosotros anchor=referencia, candidato=evaluado. Asimetria preservada (anchor juega rol fijo dentro de cada tripleta).
+- **Frame**: Xin trabaja en world frame (AVP teleop); nosotros wrist-local normalizado.
+- **Math**: las 4 fórmulas (`s(d)`, `l(d)`, `target = l(d)*gamma_hat`, `D_pinch = s*||g - target||²`) son **identicas**. Solo cambia donde se aplican.
+
+### Parametros
+
+Defaults idénticos a Xin paper y Run 21 paper-sk:
+- `pinch_eps1_m = 0.1` (transition threshold en metros)
+- `pinch_eps2_m = 0.01` (in-contact threshold)
+- `pinch_ref_hand_length_m = 0.197` (referencia para normalizar)
+- `pinch_sigmoid_w_m = 10.0` (sigmoid sharpness)
+
+Normalizacion: `eps_normalized = eps_m / ref_hand_length_m`. Resulta en `eps1=0.508`, `eps2=0.0508`, `sigmoid_w=1.97` en espacio wrist-local. Cada embodiment usa su propio `hand_length` para normalizar `d`, asi el threshold "50.8% del hand_length" aplica universal sin atar el codigo a un robot especifico.
+
+### Flag opt-in
+
+`--enable_pinch_switching` (default off). Con flag off, regresion bit-exacta vs Run 29 (verificado con `diff = 0.0` en `xin_sk_full`). Si Run 30 sale peor, simplemente se apaga el flag -- cero riesgo de romper Run 29.
+
+### Verificaciones realizadas
+
+- Helpers numericos: `_sigmoid_xin(d=eps1, w=10, eps1=0.508) = 0.5`; `_pinch_rescale(eps2)=0`, `(eps1)=eps1`, `(2*eps1)=2*eps1`.
+- Regression: con `enable_switching=False`, output identico al codigo Run 29 (diff = 0).
+- Switching activo: thumb y pinky sin cambio (no tienen pinch); index/middle/ring cambian valor de S como esperado.
+- Compatibilidad con resume desde ckpt Run 29: arquitectura del modelo no cambia (solo oraculo).
+
+### Hyperparams en config y notebook
+
+- Branch: `run30-pinch-switching` (desde `run29-thumb-pos`).
+- Resto identico a Run 29: SEED=21266, per-finger arch, `lam_dr=16.5`, `lam_thumb_pos=10.0`, `lam_pinch=10.0`, `lambda_joint=1.0`, LR=1e-3, MARGIN=0.05.
+
+### Archivos modificados
+
+- `src/cross_emb/training/losses.py`: helpers `_sigmoid_xin`, `_pinch_rescale`; `xin_sk_per_finger` y `xin_sk_full` con args opt-in `enable_switching, pinch_eps1/eps2/sigmoid_w`.
+- `src/cross_emb/training/config.py`: 5 flags nuevos.
+- `src/cross_emb/training/loop.py`: normaliza thresholds una vez al inicio (valida `eps2 < eps1`); propaga a `xin_sk_full` y `xin_sk_per_finger`.
+- `notebooks/train_stage1_colab.ipynb`: branch + bloque switching + CLI args nuevos.
+
+### Timing
+
+A esperar resultados de Run 29 primero. Si Run 29 cubre el pulgar suficiente, Run 30 puede no ser necesario. Si no, Run 30 esta listo para lanzar en Colab.
+
+### Riesgos identificados
+
+- **Eps mal calibrados para Shadow Hand**: defaults vienen de Xin (mano humana). Si Shadow tiene proporciones distintas, `eps1=0.508` (fraccion del hand_length) podria activarse mas o menos frecuente. Mitigacion: logging diagnostico revelara fraccion real.
+- **Subespacio pinky sin pinch**: igual que Run 29, no nuevo.
+- **Sigmoide saturada**: con `w=1.97` y `d ∈ [0, ~1]` no se satura agresivamente.
