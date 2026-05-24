@@ -342,17 +342,27 @@ def main() -> None:
         extra_human_count = batch.get("extra_human_count", 0)
         extra_human_by_class = batch.get("extra_human_by_class", {})
 
+        need_temp = args.lambda_tmp > 0
         with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
             z_t  = E_h(quats_h)       # [B, 5*z_dim]
-            z_t1 = E_h(quats_h_t1)
             z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
 
-            q_r_hat    = D_r(D_X(z_r))
-            z_h_rt     = E_X(D_X(z_t))
-            q_r_hat_t1 = D_r(D_X(z_t1))
+            q_r_hat = D_r(D_X(z_r))
 
-            L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
-            L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
+            if args.lambda_ltc > 0:
+                z_h_rt = E_X(D_X(z_t))
+                L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
+            else:
+                L_ltc = torch.zeros((), device=DEVICE)
+
+            if args.lambda_rec > 0:
+                L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
+            else:
+                L_rec = torch.zeros((), device=DEVICE)
+
+            if need_temp:
+                z_t1       = E_h(quats_h_t1)
+                q_r_hat_t1 = D_r(D_X(z_t1))
 
         # --- Contrastive loss with Xin Cartesian S_k ---
         #
@@ -366,187 +376,190 @@ def main() -> None:
         #
         # --single_latent: one triplet on xin_sk_full over the whole hand.
         # else:            five triplets (one per finger subspace) on xin_sk_per_finger.
-        tips_all  = torch.cat([tips_h_sub,  tips_r_sub],  dim=0)   # [2B, Fc, 3]
-        chain_all = torch.cat([chain_h_sub, chain_r_sub], dim=0)   # [2B, Fc, 4, 3]
-        quats_all = torch.cat([quats_h_sub, quats_r_sub], dim=0)   # [2B, Jc, 4]
-        z_all_full = torch.cat([z_t, z_r], dim=0)                  # [2B, z_dim_total]
         metric_stats = {}
-
-        if args.single_latent:
-            L_cont = torch.tensor(0.0, device=DEVICE)
-            B2 = z_all_full.shape[0]
-            if B2 >= 3:
-                n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
-                anchors = torch.randperm(B2, device=DEVICE)[:n]
-                cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
-                cand_a = cand_a + (cand_a >= anchors).long()
-                cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
-                cand_b = cand_b + (cand_b >= anchors).long()
-                same = cand_b == cand_a
-                if same.any():
-                    cand_b[same] = (cand_b[same] + 1) % B2
-                    cand_b[same] += (cand_b[same] == anchors[same]).long()
-                    cand_b[same] %= B2
-
-                with torch.no_grad():
-                    tips_a   = tips_all[anchors]
-                    tips_ca  = tips_all[cand_a]
-                    tips_cb  = tips_all[cand_b]
-                    chain_a  = chain_all[anchors]
-                    chain_ca = chain_all[cand_a]
-                    chain_cb = chain_all[cand_b]
-
-                    S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
-                                      lam_tip_pos=args.lam_tip_pos, lam_thumb_pos=args.lam_thumb_pos,
-                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos)
-                    S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
-                                      lam_tip_pos=args.lam_tip_pos, lam_thumb_pos=args.lam_thumb_pos,
-                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos)
-
-                    # Yan-style D_R term: uniform sum over common-joint quaternions.
-                    # Run 27B ablation. lam_dr=0 (default) skips this branch and
-                    # preserves Run 25/26 behavior exactly.
-                    if args.lam_dr > 0:
-                        quats_a  = quats_all[anchors]
-                        quats_ca = quats_all[cand_a]
-                        quats_cb = quats_all[cand_b]
-                        D_R_a = d_r_yan(quats_a, quats_ca)
-                        D_R_b = d_r_yan(quats_a, quats_cb)
-                        S_a = S_a + args.lam_dr * D_R_a
-                        S_b = S_b + args.lam_dr * D_R_b
-
-                    if args.log_metric_stats:
-                        S_pairs = torch.cat([S_a, S_b])
-                        metric_stats["hand"] = (
-                            S_pairs.mean().item(),
-                            S_pairs.std().item(),
-                            S_pairs.min().item(),
-                            S_pairs.max().item(),
-                        )
-                        if args.lam_dr > 0:
-                            DR_pairs = torch.cat([D_R_a, D_R_b])
-                            metric_stats["D_R"] = (
-                                DR_pairs.mean().item(),
-                                DR_pairs.std().item(),
-                                DR_pairs.min().item(),
-                                DR_pairs.max().item(),
-                            )
-
-                    a_closer = S_a <= S_b
-                    pos_idx = torch.where(a_closer, cand_a, cand_b)
-                    neg_idx = torch.where(a_closer, cand_b, cand_a)
-
-                L_cont = torch.relu(
-                    (z_all_full[anchors] - z_all_full[pos_idx]).norm(dim=-1)
-                    - (z_all_full[anchors] - z_all_full[neg_idx]).norm(dim=-1)
-                    + args.margin
-                ).mean()
+        if args.lambda_c <= 0:
+            L_cont = torch.zeros((), device=DEVICE)
         else:
-            z_t_subs = z_t.chunk(5, dim=-1)   # (z_thumb, z_index, z_middle, z_ring, z_pinky)
-            z_r_subs = z_r.chunk(5, dim=-1)
-            L_cont = torch.tensor(0.0, device=DEVICE)
-            for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
-                if sub not in common_fingers:
-                    continue
-                finger_idx = common_fingers.index(sub)
+            tips_all  = torch.cat([tips_h_sub,  tips_r_sub],  dim=0)   # [2B, Fc, 3]
+            chain_all = torch.cat([chain_h_sub, chain_r_sub], dim=0)   # [2B, Fc, 4, 3]
+            quats_all = torch.cat([quats_h_sub, quats_r_sub], dim=0)   # [2B, Jc, 4]
+            z_all_full = torch.cat([z_t, z_r], dim=0)                  # [2B, z_dim_total]
 
-                z_h_k = z_t_subs[k]                          # [B, z_dim]
-                z_r_k = z_r_subs[k]
-                z_all_k = torch.cat([z_h_k, z_r_k], dim=0)   # [2B, z_dim]
-                B2 = z_all_k.shape[0]
-                if B2 < 3:
-                    continue
-                n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+            if args.single_latent:
+                L_cont = torch.tensor(0.0, device=DEVICE)
+                B2 = z_all_full.shape[0]
+                if B2 >= 3:
+                    n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                    anchors = torch.randperm(B2, device=DEVICE)[:n]
+                    cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                    cand_a = cand_a + (cand_a >= anchors).long()
+                    cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                    cand_b = cand_b + (cand_b >= anchors).long()
+                    same = cand_b == cand_a
+                    if same.any():
+                        cand_b[same] = (cand_b[same] + 1) % B2
+                        cand_b[same] += (cand_b[same] == anchors[same]).long()
+                        cand_b[same] %= B2
 
-                anchors = torch.randperm(B2, device=DEVICE)[:n]
-                cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
-                cand_a = cand_a + (cand_a >= anchors).long()
-                cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
-                cand_b = cand_b + (cand_b >= anchors).long()
-                same = cand_b == cand_a
-                if same.any():
-                    cand_b[same] = (cand_b[same] + 1) % B2
-                    cand_b[same] += (cand_b[same] == anchors[same]).long()
-                    cand_b[same] %= B2
+                    with torch.no_grad():
+                        tips_a   = tips_all[anchors]
+                        tips_ca  = tips_all[cand_a]
+                        tips_cb  = tips_all[cand_b]
+                        chain_a  = chain_all[anchors]
+                        chain_ca = chain_all[cand_a]
+                        chain_cb = chain_all[cand_b]
 
-                # Triplet selection metrics feed the hard S_a <= S_b mask only.
-                # Gradient flows exclusively through z_all_k below.
-                with torch.no_grad():
-                    tips_a   = tips_all[anchors]                  # [n, Fc, 3]
-                    tips_ca  = tips_all[cand_a]
-                    tips_cb  = tips_all[cand_b]
-                    chain_a  = chain_all[anchors]                 # [n, Fc, 4, 3]
-                    chain_ca = chain_all[cand_a]
-                    chain_cb = chain_all[cand_b]
+                        S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
+                                          lam_tip=args.lam_tip, lam_thumb_tip=args.lam_thumb_tip,
+                                          lam_finger=args.lam_finger, lam_thumb_finger=args.lam_thumb_finger,
+                                          lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot)
+                        S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
+                                          lam_tip=args.lam_tip, lam_thumb_tip=args.lam_thumb_tip,
+                                          lam_finger=args.lam_finger, lam_thumb_finger=args.lam_thumb_finger,
+                                          lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot)
 
-                    eff_tip_pos = args.lam_thumb_pos if sub == "thumb" else args.lam_tip_pos
-                    S_a = xin_sk_per_finger(
-                        tips_a, tips_ca, chain_a, chain_ca,
-                        finger_idx=finger_idx,
-                        lam_tip_pos=eff_tip_pos, lam_pinch=args.lam_pinch,
-                        lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
-                    )
-                    S_b = xin_sk_per_finger(
-                        tips_a, tips_cb, chain_a, chain_cb,
-                        finger_idx=finger_idx,
-                        lam_tip_pos=eff_tip_pos, lam_pinch=args.lam_pinch,
-                        lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
-                    )
-
-                    if args.lam_dr > 0:
-                        prefixes = SUBSPACE_LABEL_PREFIX[sub]
-                        jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
-                        if jidx:
-                            quats_a_k  = quats_all[anchors][:, jidx, :]
-                            quats_ca_k = quats_all[cand_a][:, jidx, :]
-                            quats_cb_k = quats_all[cand_b][:, jidx, :]
-                            D_R_a = d_r_yan(quats_a_k, quats_ca_k)
-                            D_R_b = d_r_yan(quats_a_k, quats_cb_k)
+                        if args.lam_dr > 0:
+                            quats_a  = quats_all[anchors]
+                            quats_ca = quats_all[cand_a]
+                            quats_cb = quats_all[cand_b]
+                            D_R_a = d_r_yan(quats_a, quats_ca)
+                            D_R_b = d_r_yan(quats_a, quats_cb)
                             S_a = S_a + args.lam_dr * D_R_a
                             S_b = S_b + args.lam_dr * D_R_b
 
-                    if args.log_metric_stats:
-                        S_pairs = torch.cat([S_a, S_b])
-                        metric_stats[sub] = (
-                            S_pairs.mean().item(),
-                            S_pairs.std().item(),
-                            S_pairs.min().item(),
-                            S_pairs.max().item(),
+                        if args.log_metric_stats:
+                            S_pairs = torch.cat([S_a, S_b])
+                            metric_stats["hand"] = (
+                                S_pairs.mean().item(),
+                                S_pairs.std().item(),
+                                S_pairs.min().item(),
+                                S_pairs.max().item(),
+                            )
+                            if args.lam_dr > 0:
+                                DR_pairs = torch.cat([D_R_a, D_R_b])
+                                metric_stats["D_R"] = (
+                                    DR_pairs.mean().item(),
+                                    DR_pairs.std().item(),
+                                    DR_pairs.min().item(),
+                                    DR_pairs.max().item(),
+                                )
+
+                        a_closer = S_a <= S_b
+                        pos_idx = torch.where(a_closer, cand_a, cand_b)
+                        neg_idx = torch.where(a_closer, cand_b, cand_a)
+
+                    L_cont = torch.relu(
+                        (z_all_full[anchors] - z_all_full[pos_idx]).norm(dim=-1)
+                        - (z_all_full[anchors] - z_all_full[neg_idx]).norm(dim=-1)
+                        + args.margin
+                    ).mean()
+            else:
+                z_t_subs = z_t.chunk(5, dim=-1)   # (z_thumb, z_index, z_middle, z_ring, z_pinky)
+                z_r_subs = z_r.chunk(5, dim=-1)
+                L_cont = torch.tensor(0.0, device=DEVICE)
+                for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
+                    if sub not in common_fingers:
+                        continue
+                    finger_idx = common_fingers.index(sub)
+
+                    z_h_k = z_t_subs[k]                          # [B, z_dim]
+                    z_r_k = z_r_subs[k]
+                    z_all_k = torch.cat([z_h_k, z_r_k], dim=0)   # [2B, z_dim]
+                    B2 = z_all_k.shape[0]
+                    if B2 < 3:
+                        continue
+                    n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+
+                    anchors = torch.randperm(B2, device=DEVICE)[:n]
+                    cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                    cand_a = cand_a + (cand_a >= anchors).long()
+                    cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                    cand_b = cand_b + (cand_b >= anchors).long()
+                    same = cand_b == cand_a
+                    if same.any():
+                        cand_b[same] = (cand_b[same] + 1) % B2
+                        cand_b[same] += (cand_b[same] == anchors[same]).long()
+                        cand_b[same] %= B2
+
+                    with torch.no_grad():
+                        tips_a   = tips_all[anchors]
+                        tips_ca  = tips_all[cand_a]
+                        tips_cb  = tips_all[cand_b]
+                        chain_a  = chain_all[anchors]
+                        chain_ca = chain_all[cand_a]
+                        chain_cb = chain_all[cand_b]
+
+                        eff_tip    = args.lam_thumb_tip    if sub == "thumb" else args.lam_tip
+                        eff_finger = args.lam_thumb_finger if sub == "thumb" else args.lam_finger
+                        S_a = xin_sk_per_finger(
+                            tips_a, tips_ca, chain_a, chain_ca,
+                            finger_idx=finger_idx,
+                            lam_tip=eff_tip, lam_finger=eff_finger,
+                            lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                        )
+                        S_b = xin_sk_per_finger(
+                            tips_a, tips_cb, chain_a, chain_cb,
+                            finger_idx=finger_idx,
+                            lam_tip=eff_tip, lam_finger=eff_finger,
+                            lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
                         )
 
-                    a_closer = S_a <= S_b
-                    pos_idx = torch.where(a_closer, cand_a, cand_b)
-                    neg_idx = torch.where(a_closer, cand_b, cand_a)
+                        if args.lam_dr > 0:
+                            prefixes = SUBSPACE_LABEL_PREFIX[sub]
+                            jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
+                            if jidx:
+                                quats_a_k  = quats_all[anchors][:, jidx, :]
+                                quats_ca_k = quats_all[cand_a][:, jidx, :]
+                                quats_cb_k = quats_all[cand_b][:, jidx, :]
+                                D_R_a = d_r_yan(quats_a_k, quats_ca_k)
+                                D_R_b = d_r_yan(quats_a_k, quats_cb_k)
+                                S_a = S_a + args.lam_dr * D_R_a
+                                S_b = S_b + args.lam_dr * D_R_b
 
-                L_cont = L_cont + torch.relu(
-                    (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
-                    - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
-                    + args.margin
-                ).mean()
+                        if args.log_metric_stats:
+                            S_pairs = torch.cat([S_a, S_b])
+                            metric_stats[sub] = (
+                                S_pairs.mean().item(),
+                                S_pairs.std().item(),
+                                S_pairs.min().item(),
+                                S_pairs.max().item(),
+                            )
 
-        # FK + run_dong_tips_only run in fp32 (pytorch-kinematics not validated
-        # for fp16). `.float()` upcasts and preserves the autograd path back to MLPs.
-        q_r_hat_fk    = q_r_hat.float()
-        q_r_hat_t1_fk = q_r_hat_t1.float()
-        if args.zero_wrj:
-            q_r_hat_fk    = q_r_hat_fk.clone()
-            q_r_hat_t1_fk = q_r_hat_t1_fk.clone()
-            q_r_hat_fk[:, 0:2] = 0.0
-            q_r_hat_t1_fk[:, 0:2] = 0.0
+                        a_closer = S_a <= S_b
+                        pos_idx = torch.where(a_closer, cand_a, cand_b)
+                        neg_idx = torch.where(a_closer, cand_b, cand_a)
 
-        # Fuse t and t+1 FK calls into one batched forward, then split.
-        B_fk = q_r_hat_fk.shape[0]
-        q_combined    = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)    # [2B, J]
-        fk_combined   = sampler.robot_rnd.run_fk(q_combined)
-        tips_all, tip_labels = sampler.robot_rnd.run_dong_tips_only(fk_combined, HAND_CONFIG)
-        common_idx_r  = [tip_labels.index(f) for f in common_fingers]
-        human_labels  = ["thumb", "index", "middle", "ring", "pinky"]
-        common_idx_h  = [human_labels.index(f) for f in common_fingers]
-        tips_r_all    = tips_all.to(DEVICE)[:, common_idx_r, :]          # [2B, Fc, 3]
-        tips_r_t_sub  = tips_r_all[:B_fk]
-        tips_r_t1_sub = tips_r_all[B_fk:]
-        tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
-        L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
+                    L_cont = L_cont + torch.relu(
+                        (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
+                        - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
+                        + args.margin
+                    ).mean()
+
+        if need_temp:
+            # FK + run_dong_tips_only run in fp32 (pytorch-kinematics not validated
+            # for fp16). `.float()` upcasts and preserves the autograd path back to MLPs.
+            q_r_hat_fk    = q_r_hat.float()
+            q_r_hat_t1_fk = q_r_hat_t1.float()
+            if args.zero_wrj:
+                q_r_hat_fk    = q_r_hat_fk.clone()
+                q_r_hat_t1_fk = q_r_hat_t1_fk.clone()
+                q_r_hat_fk[:, 0:2] = 0.0
+                q_r_hat_t1_fk[:, 0:2] = 0.0
+
+            B_fk = q_r_hat_fk.shape[0]
+            q_combined    = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)
+            fk_combined   = sampler.robot_rnd.run_fk(q_combined)
+            tips_all, tip_labels = sampler.robot_rnd.run_dong_tips_only(fk_combined, HAND_CONFIG)
+            common_idx_r  = [tip_labels.index(f) for f in common_fingers]
+            human_labels  = ["thumb", "index", "middle", "ring", "pinky"]
+            common_idx_h  = [human_labels.index(f) for f in common_fingers]
+            tips_r_all    = tips_all.to(DEVICE)[:, common_idx_r, :]
+            tips_r_t_sub  = tips_r_all[:B_fk]
+            tips_r_t1_sub = tips_r_all[B_fk:]
+            tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
+            L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
+        else:
+            L_temp = torch.zeros((), device=DEVICE)
 
         if args.lambda_joint > 0 and l_joint_w_pos:
             L_jnt = l_joint(q_r_hat.float(), robot_joint_names, l_joint_w_pos)
