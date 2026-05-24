@@ -5407,3 +5407,98 @@ A esperar resultados de Run 29 primero. Si Run 29 cubre el pulgar suficiente, Ru
 - **Eps mal calibrados para Shadow Hand**: defaults vienen de Xin (mano humana). Si Shadow tiene proporciones distintas, `eps1=0.508` (fraccion del hand_length) podria activarse mas o menos frecuente. Mitigacion: logging diagnostico revelara fraccion real.
 - **Subespacio pinky sin pinch**: igual que Run 29, no nuevo.
 - **Sigmoide saturada**: con `w=1.97` y `d ∈ [0, ~1]` no se satura agresivamente.
+
+---
+
+## Entry 97 -- 2026-05-24: Resultados Run 29 fix y Run 30 + diagnostico de techo arquitectural
+
+### Resultados Run 29 fix (per-finger D_R correcto)
+
+Branch: `run29-thumb-pos` con commit `5b4e5c51e` (fix de D_R filtrado por SUBSPACE_LABEL_PREFIX).
+
+**Best_val ckpt (step=3000 / 15000, 20%)**: comportamiento INVERTIDO.
+- Mano humana abierta → robot flexionada
+- Mano humana cerrada → robot abierta
+- val_score=2.46, rs=0.388 (peor que Run 20 baseline 0.320)
+- cont loss=0.07 muy bajo -- triplet trivialmente satisfecha
+
+**Best_total ckpt (step=13607 / 15000, 90%)**: mejor, pero todavia mal.
+- Comportamiento NO invertido
+- MCPs no flexionan cuando humano cierra puño -- se quedan rectos
+- PIP y DIP si flexionan
+- Cuando humano abre, mano robot ya estaba flexionada
+- total loss=0.91
+
+### Resultados Run 30 (single-finger + switching pinch)
+
+Branch: `run30-pinch-switching`, commit `cb344c1fb`. Best_total ckpt probado.
+
+**Comportamiento**: casi identico a Run 29 fix best_total. Pinches no se realizan correctamente. Switching pinch no rescato la limitacion arquitectural per-finger.
+
+### Bug critico del criterio best_val
+
+`val_score = rs + nds + lambda_tmp*nvs` favorece sistematicamente checkpoints tempranos en runs per-finger. Tabla de evidencia:
+
+| Run | step capturado | % training | val_score | Calidad |
+|-----|----------------|------------|-----------|---------|
+| 27A | 3500 / 15000 | 23% | 2.71 | mal |
+| **27B** | **14000 / 15000** | **93%** | **2.75** | **mejor del proyecto** |
+| 28 | 3500 / 15000 | 23% | 2.71 | mal |
+| 28b | 1000 / 15000 | 7% | 2.41 | erratico flexionado |
+| 29 | 5000 / 15000 | 33% | 2.66 | mal |
+| 29b | 1500 / 15000 | 10% | 2.40 | mal |
+| 29fix | 3000 / 15000 | 20% | 2.46 | invertido |
+
+Hipotesis: al inicio del training el modelo aun no aprendio (q_r_hat ~ 0) y por coincidencia las quaterniones identidad matchean partial human → rs/nds bajos sin que el modelo sea util. Best_val captura ese minimo prematuro. Run 27B fue excepcion: capturo al 93% porque el criterio val_score no decrecio mas hasta entonces.
+
+**Implicacion retroactiva**: varios runs anteriores reportados como "malos" probablemente tienen best_total o latest ckpts que NUNCA SE PROBARON. Auditoria pendiente.
+
+**Implicacion forward**: para runs futuras, usar best_total o latest. O agregar warmup minimo al criterio val_score (ignorar primeros 5000 steps).
+
+### Diagnostico arquitectural: per-finger + Xin oracle no funciona
+
+Comparacion estructural entre runs que funcionan y los que no:
+
+| Run | Arquitectura | Oracle | MCP flex | Independencia | Pinch |
+|-----|--------------|--------|----------|---------------|-------|
+| Run 20 | per-finger 5x16 | Yan-pure (D_R weighted + D_joints weighted + D_ahg) | parcial | ✓ | ✗ |
+| **Run 27B** | single 320 | Xin terms + D_R global | ✓ (mejor del proyecto) | ✗ (bloque) | ✗ |
+| Run 28 | per-finger 5x64 | Xin terms + D_R global (BUG) | ✗ | erratico | ✗ |
+| Run 29 fix | per-finger 5x64 | Xin terms + D_R per-finger | ✗ | ? | ✗ |
+| Run 30 | per-finger 5x64 | Xin terms + D_R per-finger + sigmoid switching | ✗ | ? | ✗ |
+| Run 21 paper-sk | single 16 | Xin + D_R global weighted + sigmoid switching | parcial | ✗ | ✓ (mejor pulgar) |
+
+**Patrones**:
+1. Single latent + Xin terms → MCP flex funciona (27B, 21paper-sk parcial)
+2. Per-finger + Xin terms → MCP flex falla SIEMPRE (28, 29fix, 30)
+3. Per-finger + Yan-pure terms (D_joints chain L2 weighted) → MCP parcial (Run 20)
+
+**Hipotesis del techo**: Xin terms cubren TIP (tip_pos, pinch, tip_rot) y PIP (pip_pos) explicitamente. MCP solo aparece en D_R cuaternionico. En per-finger, cada subespacio puede satisfacer su oraculo Xin via PIP+DIP sin tocar MCP. En single latent, el oraculo holistico fuerza coherencia inter-joint (MCP debe flexionar para que toda la mano matchee).
+
+Run 20 funcionaba porque su Yan-pure oracle (D_joints weighted) penalizaba posiciones de TODOS los joints en el chain (MCP, PIP, DIP, TIP) per-finger. Al portar a Xin terms perdimos esa cobertura.
+
+### Problema operacional: wall-clock time
+
+Cada run tarda ~2 horas en Colab T4 (B=50k, 15k steps, AMP, torch.compile). Iterar sobre arquitectura/oraculo se vuelve costoso cuando cada experiment es 2h + descargar ckpt + live retarget + interpretar.
+
+Esto agrava el problema de exploracion: hipotesis fallidas consumen 2h cada una. Run 29fix, Run 30 = ~4h gastadas en runs que no funcionaron.
+
+Mitigaciones posibles (no implementadas):
+- Mejor criterio best_val (warmup minimo) para no descartar runs por bug del criterio
+- Eval qualitative cada N steps en lugar de solo al final
+- Smoke test arquitectura con pocos steps antes de full 15k
+
+### Estado del proyecto
+
+Modelos disponibles funcionales (con ckpt al ~90%+ training):
+- Run 27B: single latent, smooth open/close, MCPs OK, sin independencia, sin pinch, sin thumb. "Funciona" pero rendimiento limitado a apertura/cierre.
+- Run 20: per-finger 5x16, independencia, abducciones, thumb parcial, MCPs solo en puño extremo, sin pinch.
+- Run 21 paper-sk: single latent z_dim=16, mejor pulgar absoluto, demas dedos colapsan.
+
+Ningun run logra simultaneamente los 5 comportamientos buscados (open/close, independencia, MCP flex normal, thumb opposition, pinch real).
+
+### Techo identificado
+
+El paradigma contrastive Stage 1 para hand control fine-motor parece tener un techo intrinseco. Per-finger fragmenta gradient signal entre subespacios. Single latent pierde control independiente. Xin terms son sub-optimos para MCP coverage en per-finger. Switching pinch (Xin / Run 21 paper-sk) requiere arquitectura single latent para funcionar.
+
+Reproducir Yan's success a hand scale puede requerir multi-robot training (Yan entrena con 5+ robots simultaneos, forzando latente embodiment-invariant) o cambio de paradigma (distillation desde optimizer, supervised pretraining con paired data sintetico).
