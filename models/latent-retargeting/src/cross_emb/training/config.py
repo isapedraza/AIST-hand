@@ -43,6 +43,16 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lam_tip_rot",   type=float, default=10.0, help="Weight for L_fingertip_rot (DIP->tip unit vector) in Xin S_k (Xin Eq. 4).")
     p.add_argument("--lam_pip_pos",   type=float, default=1.0,  help="Weight for PIP position term in Xin S_k (DexMV-style; not in Xin paper).")
     p.add_argument("--lam_dr",    type=float, default=0.0,  help="Weight for Yan-style D_R quaternion term added to S_k. 0 disables (default). Active only in --single_latent path; uniform sum over common-joint quaternions.")
+    p.add_argument("--enable_pinch_switching", action="store_true",
+                   help="Enable Xin-style sigmoid switching pinch (Run 30). Default off = Run 29 simple squared distance.")
+    p.add_argument("--pinch_eps1_m", type=float, default=0.1,
+                   help="Pinch wrist transition threshold in meters (Xin paper, Run 21 paper-sk). Normalized internally by pinch_ref_hand_length_m.")
+    p.add_argument("--pinch_eps2_m", type=float, default=0.01,
+                   help="Pinch in-contact threshold in meters. Below this, target collapses to thumb (Xin paper).")
+    p.add_argument("--pinch_ref_hand_length_m", type=float, default=0.197,
+                   help="Reference hand length used to normalize eps thresholds to wrist-local space. Default = Xin paper convention.")
+    p.add_argument("--pinch_sigmoid_w_m", type=float, default=10.0,
+                   help="Pinch sigmoid sharpness in 1/m. Higher = sharper transition. Default = Xin paper / Run 21 paper-sk.")
     p.add_argument("--lambda_joint",    type=float, default=0.0,
                    help="Weight for L_joint (joint position regularization). 0 disables.")
     p.add_argument("--robot_yaml_path", default=None,

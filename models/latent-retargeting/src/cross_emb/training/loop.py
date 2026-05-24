@@ -191,6 +191,26 @@ def main() -> None:
     )
     print(f"zero_wrj={args.zero_wrj} | scheduler=none (Yan-pure, constant lr={args.lr}) | resume={args.resume_ckpt or 'none'}")
 
+    # Xin pinch switching: normalize meter-space thresholds to wrist-local space once.
+    # Skipped if --enable_pinch_switching is off (Run 29 default).
+    if args.enable_pinch_switching:
+        if args.pinch_eps2_m >= args.pinch_eps1_m:
+            raise ValueError(
+                f"pinch_eps2_m must be less than pinch_eps1_m. Got "
+                f"eps2={args.pinch_eps2_m}, eps1={args.pinch_eps1_m}."
+            )
+        pinch_eps1      = args.pinch_eps1_m      / args.pinch_ref_hand_length_m
+        pinch_eps2      = args.pinch_eps2_m      / args.pinch_ref_hand_length_m
+        pinch_sigmoid_w = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
+        print(
+            f"Pinch switching ON | eps1={pinch_eps1:.4f} eps2={pinch_eps2:.4f} "
+            f"sigmoid_w={pinch_sigmoid_w:.4f} (normalized; ref={args.pinch_ref_hand_length_m}m)"
+        )
+    else:
+        pinch_eps1      = 0.0
+        pinch_eps2      = 0.0
+        pinch_sigmoid_w = 0.0
+
     # ---------------------------------------------------------------------------
     # Sampler
     # ---------------------------------------------------------------------------
@@ -398,10 +418,14 @@ def main() -> None:
 
                     S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
                                       lam_tip_pos=args.lam_tip_pos, lam_thumb_pos=args.lam_thumb_pos,
-                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos)
+                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
+                                      enable_switching=args.enable_pinch_switching,
+                                      pinch_eps1=pinch_eps1, pinch_eps2=pinch_eps2, pinch_sigmoid_w=pinch_sigmoid_w)
                     S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
                                       lam_tip_pos=args.lam_tip_pos, lam_thumb_pos=args.lam_thumb_pos,
-                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos)
+                                      lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
+                                      enable_switching=args.enable_pinch_switching,
+                                      pinch_eps1=pinch_eps1, pinch_eps2=pinch_eps2, pinch_sigmoid_w=pinch_sigmoid_w)
 
                     # Yan-style D_R term: uniform sum over common-joint quaternions.
                     # Run 27B ablation. lam_dr=0 (default) skips this branch and
@@ -485,12 +509,16 @@ def main() -> None:
                         finger_idx=finger_idx,
                         lam_tip_pos=eff_tip_pos, lam_pinch=args.lam_pinch,
                         lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
+                        enable_switching=args.enable_pinch_switching,
+                        pinch_eps1=pinch_eps1, pinch_eps2=pinch_eps2, pinch_sigmoid_w=pinch_sigmoid_w,
                     )
                     S_b = xin_sk_per_finger(
                         tips_a, tips_cb, chain_a, chain_cb,
                         finger_idx=finger_idx,
                         lam_tip_pos=eff_tip_pos, lam_pinch=args.lam_pinch,
                         lam_tip_rot=args.lam_tip_rot, lam_pip_pos=args.lam_pip_pos,
+                        enable_switching=args.enable_pinch_switching,
+                        pinch_eps1=pinch_eps1, pinch_eps2=pinch_eps2, pinch_sigmoid_w=pinch_sigmoid_w,
                     )
 
                     if args.lam_dr > 0:

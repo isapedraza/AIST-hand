@@ -95,6 +95,33 @@ def _last_segment_unit(chain: torch.Tensor, finger_idx: int, eps: float = 1e-6) 
     return r / (r.norm(dim=-1, keepdim=True) + eps)
 
 
+def _sigmoid_xin(d: torch.Tensor, w: float, eps1: float) -> torch.Tensor:
+    """Xin-style sigmoid switching weight (Xin 2025 Eq. 197, ported from Run 21 paper-sk).
+
+    sigmoid(x, c, w) = 1 / (1 + exp(w * (x - c)))
+
+    Positive w  -> gate ~1 when d << eps1, ~0 when d >> eps1 (pinch active gate).
+    Negative w  -> complement gate (tip_pos suppression when pinch is active).
+    """
+    return 1.0 / (1.0 + torch.exp(w * (d - eps1)))
+
+
+def _pinch_rescale(d: torch.Tensor, eps1: float, eps2: float) -> torch.Tensor:
+    """Piecewise distance rescale l(d) (Xin 2025 Eq. 216, ported from Run 21 paper-sk).
+
+    Three zones:
+      d < eps2:           target collapses to 0 (in-contact)
+      eps2 <= d <= eps1:  linear interp from 0 to eps1
+      d > eps1:           identity (target = d)
+    """
+    mid = eps1 / (eps1 - eps2) * (d - eps2)
+    return torch.where(
+        d < eps2,
+        torch.zeros_like(d),
+        torch.where(d > eps1, d, mid),
+    )
+
+
 def xin_sk_per_finger(
     tips_a: torch.Tensor,
     tips_b: torch.Tensor,
@@ -105,6 +132,10 @@ def xin_sk_per_finger(
     lam_pinch: float = 10.0,
     lam_tip_rot: float = 10.0,
     lam_pip_pos: float = 1.0,
+    enable_switching: bool = False,
+    pinch_eps1: float = 0.508,
+    pinch_eps2: float = 0.0508,
+    pinch_sigmoid_w: float = 1.97,
 ) -> torch.Tensor:
     """Per-finger Cartesian similarity. Symmetric, operates in normalized space.
 
@@ -114,10 +145,24 @@ def xin_sk_per_finger(
       tip_rot: L_fingertip_rot -- DIP/IP->TIP unit vector (Xin Eq. 4)
       pip_pos: PIP position (DexMV-style; not in Xin paper)
 
+    When enable_switching=True (Run 30+):
+      - Pinch uses Xin sigmoid switching with target rescaling (ported from Run 21
+        paper-sk / Xin code). gamma_hat and d come from anchor (tips_a); target is
+        l(d_a) * gamma_hat_a; D_pinch = s(d_a) * ||gamma_b - target||^2.
+      - tip_pos for fingers in (1,2,3) is gated by stilde = sigmoid(d_a, eps1, -w)
+        (complement of pinch gate). Thumb (finger_idx=0) and pinky (finger_idx=4)
+        are not gated -- Xin's tilde_s is only defined for primary fingers, and
+        thumb's tip_pos lives exclusively in lam_thumb_pos (no double-counting).
+
     Args:
         tips_a, tips_b:   [N, 5, 3]    wrist-relative, normalized by hand_length.
         chain_a, chain_b: [N, 5, 4, 3] MCP/PIP/DIP/TIP per finger, normalized.
         finger_idx:                    finger index in [0..4].
+        enable_switching:              if True, apply Xin sigmoid switching.
+        pinch_eps1, pinch_eps2:        thresholds already in normalized space
+                                       (eps_m / pinch_ref_hand_length_m).
+        pinch_sigmoid_w:               sigmoid sharpness already in normalized
+                                       space (w_m * pinch_ref_hand_length_m).
 
     Returns:
         [N] non-negative scalar similarity (lower = more similar).
@@ -125,15 +170,27 @@ def xin_sk_per_finger(
     # L_fingertip_pos / L_thumb_pos: wrist -> tip vector
     v_a = tips_a[:, finger_idx, :]
     v_b = tips_b[:, finger_idx, :]
-    tip_pos = ((v_a - v_b) ** 2).sum(dim=-1)
+    tip_pos_raw = ((v_a - v_b) ** 2).sum(dim=-1)
 
-    # L_pinch: thumb -> primary finger vector (index, middle, ring only -- Xin Sec. III-A)
+    # L_pinch + stilde gating (only for primary fingers index/middle/ring).
     if finger_idx in (1, 2, 3):
         g_a = tips_a[:, finger_idx, :] - tips_a[:, 0, :]
         g_b = tips_b[:, finger_idx, :] - tips_b[:, 0, :]
-        pinch = ((g_a - g_b) ** 2).sum(dim=-1)
+        if enable_switching:
+            d_a         = g_a.norm(dim=-1)
+            gamma_a_hat = g_a / d_a.clamp(min=1e-8).unsqueeze(-1)
+            s           = _sigmoid_xin(d_a,  pinch_sigmoid_w, pinch_eps1)
+            stilde      = _sigmoid_xin(d_a, -pinch_sigmoid_w, pinch_eps1)
+            target      = _pinch_rescale(d_a, pinch_eps1, pinch_eps2).unsqueeze(-1) * gamma_a_hat
+            pinch       = s * ((g_b - target) ** 2).sum(dim=-1)
+            tip_pos     = stilde * tip_pos_raw
+        else:
+            pinch   = ((g_a - g_b) ** 2).sum(dim=-1)
+            tip_pos = tip_pos_raw
     else:
-        pinch = torch.zeros_like(tip_pos)
+        # Thumb (0) and pinky (4): no pinch term, no stilde gating.
+        pinch   = torch.zeros_like(tip_pos_raw)
+        tip_pos = tip_pos_raw
 
     # L_fingertip_rot: DIP/IP -> TIP unit vector (Xin Eq. 4)
     r_a_hat = _last_segment_unit(chain_a, finger_idx)
@@ -158,12 +215,18 @@ def xin_sk_full(
     lam_pinch: float = 10.0,
     lam_tip_rot: float = 10.0,
     lam_pip_pos: float = 1.0,
+    enable_switching: bool = False,
+    pinch_eps1: float = 0.508,
+    pinch_eps2: float = 0.0508,
+    pinch_sigmoid_w: float = 1.97,
 ) -> torch.Tensor:
     """Full-hand symmetric S_k (sum over all 5 fingers).
 
     Thumb tip uses lam_thumb_pos (L_thumb_pos, Xin Eq. 1).
     Other fingers use lam_tip_pos (L_fingertip_pos, Xin Eq. 2).
     Matches Xin et al. 2025 weight structure: thumb tip = 10x other fingertips.
+
+    enable_switching / pinch_eps* / pinch_sigmoid_w propagate to xin_sk_per_finger.
     """
     s = tips_a.new_zeros(tips_a.shape[0])
     for f in range(5):
@@ -171,6 +234,8 @@ def xin_sk_full(
         s = s + xin_sk_per_finger(
             tips_a, tips_b, chain_a, chain_b, f,
             lam_tip_pos=eff_tip_pos, lam_pinch=lam_pinch, lam_tip_rot=lam_tip_rot, lam_pip_pos=lam_pip_pos,
+            enable_switching=enable_switching,
+            pinch_eps1=pinch_eps1, pinch_eps2=pinch_eps2, pinch_sigmoid_w=pinch_sigmoid_w,
         )
     return s
 
