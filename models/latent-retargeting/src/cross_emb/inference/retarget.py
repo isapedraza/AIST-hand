@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, CAMLayer
+from ..nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, CAMLayer, _identity_wrist_feature
 from ..nn.shared_modules import _mlp
 from ..nn.robot_modules  import RobotDecoder_D_r
 
@@ -28,13 +28,12 @@ class _LegacyHumanEncoder(nn.Module):
         self.proj_support   = nn.Linear(hidden_dim, z_dim)
         self.out_act = nn.Tanh()
 
-    def forward(self, quats):
-        B = quats.shape[0]
-        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
-        wrist[:, 0, 0] = 1.0
-        quats = torch.cat([wrist, quats], dim=1)
-        B, N, in_f = quats.shape
-        x = quats.reshape(B * N, in_f)
+    def forward(self, pose):
+        B = pose.shape[0]
+        wrist = _identity_wrist_feature(B, pose.shape[-1], pose.dtype, pose.device)
+        pose = torch.cat([wrist, pose], dim=1)
+        B, N, in_f = pose.shape
+        x = pose.reshape(B * N, in_f)
         x = self.layer1(x, self.cam)
         x = self.layer2(x, self.cam)
         x = self.layer3(x, self.cam)
@@ -76,9 +75,9 @@ _UPPER = np.array([
 
 class Retargeter:
     """
-    Human quats -> Shadow Hand qpos.
+    Human Dong pose -> Shadow Hand qpos.
 
-    Input : torch.Tensor [B, 20, 4]  Dong quaternions (joints 1-20, no wrist)
+    Input : torch.Tensor [B, 20, F]  F=4 for quats, F=6 for R6 (no wrist)
     Output: np.ndarray   [B, 24]     joint positions clipped to Shadow Hand limits
     """
 
@@ -86,19 +85,25 @@ class Retargeter:
         ck  = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
         n_j = ck["D_r"]["fc.weight"].shape[0]
         dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
+        human_in_dim = ck["E_h"]["layer1.linear.weight"].shape[1] // 2
+        if human_in_dim not in (4, 6):
+            raise ValueError(f"Unsupported checkpoint human input dim: {human_in_dim}")
+        cfg = ck.get("config", {}) or {}
+        self.human_rot_repr = cfg.get("human_rot_repr") or ("r6" if human_in_dim == 6 else "quat")
 
         if "proj_hand.0.weight" in ck["E_h"]:
             # Run 25+ single-latent encoder
             z_dim_total = ck["E_h"]["proj_hand.0.weight"].shape[0]
-            self.E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).eval()
+            self.E_h = HumanEncoder_E_h_single(in_dim=human_in_dim, hidden_dim=32, z_dim_total=z_dim_total).eval()
         elif "proj_precision.weight" in ck["E_h"]:
             # Legacy 3-subspace encoder (thumb / precision / support)
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
-            self.E_h = _LegacyHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
+            self.E_h = _LegacyHumanEncoder(in_dim=human_in_dim, hidden_dim=32, z_dim=z_dim).eval()
         else:
             # 5-subspace encoder (thumb / index / middle / ring / pinky)
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
-            self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
+            self.E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=z_dim).eval()
+        self.human_in_dim = human_in_dim
 
         self.D_X = _SharedDecoder_compat(in_dim=dx_in_dim, shared_dim=1024).eval()
         self.D_r = RobotDecoder_D_r(n_joints=n_j, shared_dim=1024).eval()
@@ -108,7 +113,11 @@ class Retargeter:
         self.D_r.load_state_dict(ck["D_r"])
 
     @torch.no_grad()
-    def __call__(self, quats: torch.Tensor) -> np.ndarray:
-        q = self.D_r(self.D_X(self.E_h(quats))).numpy()
+    def __call__(self, pose: torch.Tensor) -> np.ndarray:
+        if pose.ndim != 3 or pose.shape[1] != 20 or pose.shape[2] != self.human_in_dim:
+            raise ValueError(
+                f"Expected pose [B,20,{self.human_in_dim}] for {self.human_rot_repr}, got {tuple(pose.shape)}"
+            )
+        q = self.D_r(self.D_X(self.E_h(pose))).numpy()
         q[:, 0:2] = 0.0  # WRJ2, WRJ1 — not encoded in wrist-frame human signal
         return np.clip(q, _LOWER, _UPPER)

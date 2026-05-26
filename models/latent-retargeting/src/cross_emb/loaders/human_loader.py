@@ -55,6 +55,74 @@ _QUAT_COLS: list[str] = [
     f"q{j}_{c}" for j in range(1, 21) for c in ("w", "x", "y", "z")
 ]
 
+_R6_COLS: list[str] = [
+    f"q{j}_r6_{c}"
+    for j in range(1, 21)
+    for c in ("c1x", "c1y", "c1z", "c2x", "c2y", "c2z")
+]
+
+
+def _validate_human_rot_repr(human_rot_repr: str) -> str:
+    if human_rot_repr not in {"quat", "r6"}:
+        raise ValueError(f"human_rot_repr must be quat or r6, got {human_rot_repr!r}")
+    return human_rot_repr
+
+
+def _pose_cols_and_dim(human_rot_repr: str) -> tuple[list[str], int]:
+    human_rot_repr = _validate_human_rot_repr(human_rot_repr)
+    if human_rot_repr == "quat":
+        return _QUAT_COLS, 4
+    return _R6_COLS, 6
+
+
+def _require_cols(df: pd.DataFrame, cols: list[str], csv_path: str | Path, human_rot_repr: str) -> None:
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"{csv_path} is missing {human_rot_repr} columns. First missing: {missing[:5]}"
+        )
+
+
+def _pose_batch(pose: torch.Tensor, labels: list[str], tips: torch.Tensor, tip_labels: list[str], chain: torch.Tensor, human_rot_repr: str) -> dict:
+    out = {
+        "pose": pose,
+        "labels": labels,
+        "tips": tips,
+        "tip_labels": tip_labels,
+        "chain": chain,
+    }
+    if human_rot_repr == "quat":
+        out["quats"] = pose
+    return out
+
+
+def _pose_temporal_batch(
+    pose_t: torch.Tensor,
+    pose_t1: torch.Tensor,
+    labels: list[str],
+    tips_t: torch.Tensor,
+    tips_t1: torch.Tensor,
+    tip_labels: list[str],
+    chain_t: torch.Tensor,
+    chain_t1: torch.Tensor,
+    human_rot_repr: str,
+) -> dict:
+    out = {
+        "pose_t": pose_t,
+        "pose_t1": pose_t1,
+        "tips_t": tips_t,
+        "tips_t1": tips_t1,
+        "labels": labels,
+        "tip_labels": tip_labels,
+        "chain_t": chain_t,
+        "chain_t1": chain_t1,
+    }
+    if human_rot_repr == "quat":
+        out["quats_t"] = pose_t
+        out["quats_t1"] = pose_t1
+    return out
+
+
 _TIP_COLS: list[str] = [
     "THUMB_TIP_x",        "THUMB_TIP_y",        "THUMB_TIP_z",
     "INDEX_FINGER_TIP_x", "INDEX_FINGER_TIP_y", "INDEX_FINGER_TIP_z",
@@ -114,15 +182,18 @@ class HumanLoader:
         csv_path: str | Path,
         split: str = "train",
         device: str = "cpu",
+        human_rot_repr: str = "quat",
     ) -> None:
         if split not in _SPLIT_SUBJECTS:
             raise ValueError(f"split must be one of {list(_SPLIT_SUBJECTS)}, got '{split}'")
 
         self.device = torch.device(device)
+        self.human_rot_repr = _validate_human_rot_repr(human_rot_repr)
+        self.pose_cols, self.pose_dim = _pose_cols_and_dim(self.human_rot_repr)
         self.labels: list[str] = DONG_LABELS
         self.tip_labels: list[str] = TIP_LABELS
 
-        print(f"[HumanLoader] Loading {csv_path} (split={split}) ...")
+        print(f"[HumanLoader] Loading {csv_path} (split={split}, rot_repr={self.human_rot_repr}) ...")
         df = pd.read_csv(csv_path)
 
         # Filter by subject split
@@ -150,9 +221,10 @@ class HumanLoader:
         subject_hl = pd.Series(seg_lengths, index=df.index).groupby(df["subject_id"]).median()
         hl_per_frame = df["subject_id"].map(subject_hl).values.astype(np.float32)
 
-        # Quaternions: [N, 20, 4]
-        quats_np = df[_QUAT_COLS].values.astype(np.float32)  # [N, 80]
-        quats_np = quats_np.reshape(-1, 20, 4)
+        # Human rotation pose: [N, 20, F], F=4 for quat or F=6 for R6.
+        _require_cols(df, self.pose_cols, csv_path, self.human_rot_repr)
+        pose_np = df[self.pose_cols].values.astype(np.float32)
+        pose_np = pose_np.reshape(-1, 20, self.pose_dim)
 
         hl = hl_per_frame[:, None, None]  # [N, 1, 1]
 
@@ -166,7 +238,7 @@ class HumanLoader:
         chain_np = chain_np.reshape(-1, 5, 4, 3)
         chain_np = chain_np / hl[:, :, None, :]
 
-        self._quats = torch.from_numpy(quats_np).to(self.device)   # [N, 20, 4]
+        self._pose  = torch.from_numpy(pose_np).to(self.device)    # [N, 20, F]
         self._tips  = torch.from_numpy(tips_np).to(self.device)    # [N, 5, 3]
         self._chain = torch.from_numpy(chain_np).to(self.device)   # [N, 5, 4, 3]
         self._N = len(df)
@@ -184,7 +256,7 @@ class HumanLoader:
         self._valid_idx = torch.from_numpy(np.where(valid_mask)[0].astype(np.int64)).to(self.device)
 
         n_valid = self._valid_idx.shape[0]
-        print(f"[HumanLoader] Ready. quats={tuple(self._quats.shape)}, "
+        print(f"[HumanLoader] Ready. pose={tuple(self._pose.shape)} ({self.human_rot_repr}), "
               f"valid temporal pairs={n_valid:,} ({100*n_valid/self._N:.1f}%)")
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:
@@ -200,13 +272,14 @@ class HumanLoader:
         if seed is not None:
             torch.manual_seed(seed)
         idx = torch.randint(0, self._N, (B,), device=self.device)
-        return {
-            "quats":      self._quats[idx],
-            "labels":     self.labels,
-            "tips":       self._tips[idx],
-            "tip_labels": self.tip_labels,
-            "chain":      self._chain[idx],
-        }
+        return _pose_batch(
+            self._pose[idx],
+            self.labels,
+            self._tips[idx],
+            self.tip_labels,
+            self._chain[idx],
+            self.human_rot_repr,
+        )
 
     def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
         """
@@ -226,16 +299,17 @@ class HumanLoader:
         pos = torch.randint(0, self._valid_idx.shape[0], (B,), device=self.device)
         idx_t  = self._valid_idx[pos]
         idx_t1 = self._next_idx[idx_t]
-        return {
-            "quats_t":    self._quats[idx_t],
-            "quats_t1":   self._quats[idx_t1],
-            "tips_t":     self._tips[idx_t],
-            "tips_t1":    self._tips[idx_t1],
-            "labels":     self.labels,
-            "tip_labels": self.tip_labels,
-            "chain_t":    self._chain[idx_t],
-            "chain_t1":   self._chain[idx_t1],
-        }
+        return _pose_temporal_batch(
+            self._pose[idx_t],
+            self._pose[idx_t1],
+            self.labels,
+            self._tips[idx_t],
+            self._tips[idx_t1],
+            self.tip_labels,
+            self._chain[idx_t],
+            self._chain[idx_t1],
+            self.human_rot_repr,
+        )
 
 
 class StaticHumanAnchorLoader:
@@ -251,17 +325,21 @@ class StaticHumanAnchorLoader:
         self,
         csv_path: str | Path,
         device: str = "cpu",
+        human_rot_repr: str = "quat",
     ) -> None:
         self.device = torch.device(device)
+        self.human_rot_repr = _validate_human_rot_repr(human_rot_repr)
+        self.pose_cols, self.pose_dim = _pose_cols_and_dim(self.human_rot_repr)
         self.labels: list[str] = DONG_LABELS
         self.tip_labels: list[str] = TIP_LABELS
 
-        print(f"[StaticHumanAnchorLoader] Loading {csv_path} ...")
+        print(f"[StaticHumanAnchorLoader] Loading {csv_path} (rot_repr={self.human_rot_repr}) ...")
         df = pd.read_csv(csv_path)
         if "grasp_type" not in df.columns:
             raise ValueError(f"{csv_path} must include a grasp_type column")
 
-        quats_np = df[_QUAT_COLS].values.astype(np.float32).reshape(-1, 20, 4)
+        _require_cols(df, self.pose_cols, csv_path, self.human_rot_repr)
+        pose_np = df[self.pose_cols].values.astype(np.float32).reshape(-1, 20, self.pose_dim)
         labels_np = df["grasp_type"].values.astype(np.int64)
 
         # Normalize per sample by middle finger segment sum (same definition as HumanLoader).
@@ -285,7 +363,7 @@ class StaticHumanAnchorLoader:
         else:
             chain_np = np.repeat(tips_np[:, :, None, :], 4, axis=2)
 
-        self._quats = torch.from_numpy(quats_np).to(self.device)
+        self._pose = torch.from_numpy(pose_np).to(self.device)
         self._tips = torch.from_numpy(tips_np).to(self.device)
         self._chain = torch.from_numpy(chain_np).to(self.device)
         self._grasp_type = torch.from_numpy(labels_np).to(self.device)
@@ -296,7 +374,7 @@ class StaticHumanAnchorLoader:
             for c in self._classes
         }
         class_counts = {c: int((labels_np == c).sum()) for c in self._classes}
-        print(f"[StaticHumanAnchorLoader] Ready. quats={tuple(self._quats.shape)}, classes={class_counts}")
+        print(f"[StaticHumanAnchorLoader] Ready. pose={tuple(self._pose.shape)} ({self.human_rot_repr}), classes={class_counts}")
 
     def _sample_balanced_indices(self, B: int) -> torch.Tensor:
         if B <= 0:
@@ -314,25 +392,29 @@ class StaticHumanAnchorLoader:
 
     def get_batch(self, B: int) -> dict:
         idx = self._sample_balanced_indices(B)
-        return {
-            "quats": self._quats[idx],
-            "tips": self._tips[idx],
-            "chain": self._chain[idx],
-            "grasp_type": self._grasp_type[idx],
-            "labels": self.labels,
-            "tip_labels": self.tip_labels,
-        }
+        out = _pose_batch(
+            self._pose[idx],
+            self.labels,
+            self._tips[idx],
+            self.tip_labels,
+            self._chain[idx],
+            self.human_rot_repr,
+        )
+        out["grasp_type"] = self._grasp_type[idx]
+        return out
 
     def get_batch_temporal(self, B: int) -> dict:
         batch = self.get_batch(B)
-        return {
-            "quats_t": batch["quats"],
-            "quats_t1": batch["quats"],
-            "tips_t": batch["tips"],
-            "tips_t1": batch["tips"],
-            "chain_t": batch["chain"],
-            "chain_t1": batch["chain"],
-            "grasp_type": batch["grasp_type"],
-            "labels": batch["labels"],
-            "tip_labels": batch["tip_labels"],
-        }
+        out = _pose_temporal_batch(
+            batch["pose"],
+            batch["pose"],
+            batch["labels"],
+            batch["tips"],
+            batch["tips"],
+            batch["tip_labels"],
+            batch["chain"],
+            batch["chain"],
+            self.human_rot_repr,
+        )
+        out["grasp_type"] = batch["grasp_type"]
+        return out

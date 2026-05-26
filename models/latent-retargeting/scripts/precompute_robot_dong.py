@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Precompute robot Dong features (quats, chain positions, fingertip positions)
+Precompute robot Dong features (quats, R6, chain positions, fingertip positions)
 for an existing valid_robot_poses NPZ. Output is a new NPZ with the same `q`
 plus extra arrays so RobotLoader skips runtime FK + stage2 in `sample_dong`.
 
@@ -10,6 +10,7 @@ Input  NPZ schema:
 Output NPZ schema:
     q              [N, J]      float32
     quats          [N, K, 4]   float32   Dong quaternions per joint (wxyz, w>=0)
+    rot6           [N, K, 6]   float32   Dong rotations in R6 representation
     chain          [N, F, 4, 3] float32  chain link positions, wrist-local, /hand_length
     tips           [N, F, 3]   float32   fingertip positions, wrist-local, /hand_length
     joint_labels   [K]         str       label per quaternion slot
@@ -92,11 +93,15 @@ def main() -> None:
         tip_labels = list(meta_probe["tip_labels"])
         K = quats_probe.shape[1]
         F = len(tip_labels)
+        rot6_probe = meta_probe["rot6"]
+        if rot6_probe.shape[:2] != quats_probe.shape[:2]:
+            raise RuntimeError("rot6 and quats probe shapes do not align")
     print(f"[precompute] joint_labels({K})={joint_labels}")
     print(f"[precompute] tip_labels({F})={tip_labels}")
     print(f"[precompute] hand_length={hand_length:.6f}")
 
     quats_out = np.zeros((N, K, 4),     dtype=np.float32)
+    rot6_out  = np.zeros((N, K, 6),     dtype=np.float32)
     chain_out = np.zeros((N, F, 4, 3),  dtype=np.float32)
     tips_out  = np.zeros((N, F, 3),     dtype=np.float32)
 
@@ -108,11 +113,13 @@ def main() -> None:
         with torch.no_grad():
             fk    = loader.run_fk(q_batch)
             quats, _, meta = _dong_run_stage2(fk, config)
+            rot6  = meta["rot6"]
             tips  = meta["tips"] / hand_length
             chain_per_finger = {
                 f: meta["chain_positions"][f] / hand_length for f in tip_labels
             }
         quats_out[i:j] = quats.cpu().numpy()
+        rot6_out[i:j]  = rot6.cpu().numpy()
         tips_out[i:j]  = tips.cpu().numpy()
         for fi, f in enumerate(tip_labels):
             chain_out[i:j, fi] = chain_per_finger[f].cpu().numpy()
@@ -125,6 +132,7 @@ def main() -> None:
         out_path,
         q             = q_all.astype(np.float32, copy=False),
         quats         = quats_out,
+        rot6          = rot6_out,
         chain         = chain_out,
         tips          = tips_out,
         joint_labels  = np.array(joint_labels),

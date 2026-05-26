@@ -27,6 +27,19 @@ SUBSPACE_LABEL_PREFIX: dict[str, tuple[str, ...]] = {
 }
 
 
+def _identity_wrist_feature(B: int, in_f: int, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+    """Identity wrist node for quaternion or R6 hand-pose features."""
+    wrist = torch.zeros(B, 1, in_f, dtype=dtype, device=device)
+    if in_f == 4:
+        wrist[:, 0, 0] = 1.0
+    elif in_f == 6:
+        wrist[:, 0, 0] = 1.0
+        wrist[:, 0, 4] = 1.0
+    else:
+        raise ValueError(f"Unsupported human pose feature dim: {in_f}")
+    return wrist
+
+
 class CAMLayer(nn.Module):
     """
     Single CAM-GNN layer (Leng et al., IEEE VR 2021).
@@ -56,18 +69,20 @@ class HumanEncoder_E_h(nn.Module):
     """
     E_h: encodes hand pose to decoupled latent subspaces via CAM-GNN.
 
-    Input : quats [B, 20, 4]   Dong quaternions (joints 1-20, wrist prepended as identity)
-    Output: z     [B, 3*z_dim] concat of [z_thumb, z_precision, z_support], each [-1,1]
+    Input : pose  [B, 20, F]   Dong quats (F=4) or R6 rotations (F=6)
+    Output: z     [B, 5*z_dim] concat of one latent per finger, each [-1,1]
 
-    One shared CAM-GNN processes all 21 nodes. Three projection heads pool over
-    their respective node subsets: thumb (1-4), precision/index+middle (5-12),
-    support/ring+pinky (13-20). Wrist node 0 participates in CAM propagation only.
+    One shared CAM-GNN processes all 21 nodes. Five projection heads pool over
+    their respective finger node subsets. Wrist node 0 participates in CAM
+    propagation only.
     """
 
     N_JOINTS = 21
 
     def __init__(self, in_dim: int = 4, hidden_dim: int = 32, z_dim: int = 64):
         super().__init__()
+        if in_dim not in (4, 6):
+            raise ValueError(f"in_dim must be 4 (quat) or 6 (R6), got {in_dim}")
         self.cam    = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS).uniform_(-1, 1))
         self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
         self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
@@ -79,14 +94,13 @@ class HumanEncoder_E_h(nn.Module):
         self.proj_pinky  = nn.Linear(hidden_dim, z_dim)
         self.out_act = nn.Tanh()
 
-    def forward(self, quats: torch.Tensor) -> torch.Tensor:
-        # quats: [B, 20, 4] -- prepend identity wrist node -> [B, 21, 4]
-        B = quats.shape[0]
-        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
-        wrist[:, 0, 0] = 1.0
-        quats = torch.cat([wrist, quats], dim=1)           # [B, 21, 4]
-        B, N, in_f = quats.shape
-        x = quats.reshape(B * N, in_f)
+    def forward(self, pose: torch.Tensor) -> torch.Tensor:
+        # pose: [B, 20, F] -- prepend identity wrist node -> [B, 21, F]
+        B = pose.shape[0]
+        wrist = _identity_wrist_feature(B, pose.shape[-1], pose.dtype, pose.device)
+        pose = torch.cat([wrist, pose], dim=1)
+        B, N, in_f = pose.shape
+        x = pose.reshape(B * N, in_f)
         x = self.layer1(x, self.cam)
         x = self.layer2(x, self.cam)
         x = self.layer3(x, self.cam)
@@ -117,6 +131,8 @@ class HumanEncoder_E_h_single(nn.Module):
 
     def __init__(self, in_dim: int = 4, hidden_dim: int = 32, z_dim_total: int = 320):
         super().__init__()
+        if in_dim not in (4, 6):
+            raise ValueError(f"in_dim must be 4 (quat) or 6 (R6), got {in_dim}")
         self.cam    = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS).uniform_(-1, 1))
         self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
         self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
@@ -126,13 +142,12 @@ class HumanEncoder_E_h_single(nn.Module):
             nn.Tanh(),
         )
 
-    def forward(self, quats: torch.Tensor) -> torch.Tensor:
-        B = quats.shape[0]
-        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
-        wrist[:, 0, 0] = 1.0
-        quats = torch.cat([wrist, quats], dim=1)           # [B, 21, 4]
-        B, N, in_f = quats.shape
-        x = quats.reshape(B * N, in_f)
+    def forward(self, pose: torch.Tensor) -> torch.Tensor:
+        B = pose.shape[0]
+        wrist = _identity_wrist_feature(B, pose.shape[-1], pose.dtype, pose.device)
+        pose = torch.cat([wrist, pose], dim=1)
+        B, N, in_f = pose.shape
+        x = pose.reshape(B * N, in_f)
         x = self.layer1(x, self.cam)
         x = self.layer2(x, self.cam)
         x = self.layer3(x, self.cam)

@@ -13,6 +13,12 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--hand_config",       default=None, help="Override hand config YAML")
     p.add_argument("--valid_poses_path",  default=None, help="Path to valid_robot_poses.npz (mode=VALID_NPZ). If omitted, uses random uniform sampling.")
     p.add_argument("--extra_human_csv",   default=None, help="Optional static human anchor CSV, e.g. HaGRID open/fist Dong features.")
+    p.add_argument(
+        "--human_rot_repr",
+        default="quat",
+        choices=["quat", "r6"],
+        help="Human/robot Dong rotation representation used by E_h and RS: quat uses ABL11; r6 uses ABL14.",
+    )
     # Training
     p.add_argument("--b",          type=int,   default=1000)
     p.add_argument("--n_steps",    type=int,   default=6000)
