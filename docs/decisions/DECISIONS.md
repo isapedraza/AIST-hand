@@ -5180,3 +5180,50 @@ Mas precisa que Entry 91: en arquitectura single_latent (Run 26), ¿añadir un t
   - `src/cross_emb/training/loop.py`: wire en rama `single_latent`, log `D_R` en `log_metric_stats`.
   - `notebooks/train_stage1_colab.ipynb`: cell-12 `SINGLE_LATENT=True`, `LAM_DR=16.5`; cell-8 branch `run27b-dr-yan`.
   - `scripts/diag_dr_magnitude.py`: diagnostico de magnitudes (CPU-only, datos locales).
+
+## Entry 93 -- 2026-05-27: Run 28 propuesta -- hibrido 21SK + 27B + 20
+
+### Observaciones empiricas que motivan esta entrada
+
+Evaluacion cualitativa live de los modelos disponibles:
+
+| Run | Arquitectura | S_k | D_R | Pulgar | MCPs | Estabilidad |
+|-----|-------------|-----|-----|--------|------|-------------|
+| 20 | per-subspace 5x16 | D_R(1/sigma)+D_joints+D_ahg | ponderado | malo | malo | media |
+| 21 SK | whole-hand 16 | Xin (w_thumb=10, w_pinch=10) | ninguno | perfecto | ok | ok |
+| 27A | per-subspace 5x16 | Xin completo | ninguno | malo | malo, siempre doblado | mala |
+| 27B | single_latent 16 | Xin completo | uniforme Yan | cagado | mejor de todos | mejor de todos |
+
+Conclusion de la evaluacion:
+
+- Run 27A confirma que Xin S_k sin D_R = fingers siempre semi-flexionados. D_R es necesario para escapar del prior de semi-flexion.
+- Run 27B tiene los mejores MCPs y mayor estabilidad por la combinacion Xin + D_R uniforme. Falla en thumb porque single_latent 16-dim no puede controlar thumb independientemente de los demas dedos.
+- Run 21 SK tiene thumb perfecto por w_thumb_pos=10 en S_k Y arquitectura que concentra la supervision en thumb. Falla otros dedos porque whole-hand comprime todo en 16 dims.
+- Run 20 tiene la mejor arquitectura (per-subspace) pero S_k con 1/sigma subestima MCPs y D_joints/D_ahg no dan la senal correcta.
+
+### Hipotesis
+
+El problema de MCPs en Run 20 y el problema de thumb en Run 27B son el mismo problema visto desde angulos opuestos: la metrica S_k no supervisa correctamente la parte que falla.
+
+Solucion: combinar los tres elementos que funcionan.
+
+### Diseno Run 28 -- hibrido
+
+**Arquitectura**: per-subspace 5x16 (Run 20). Cada dedo tiene 16 dims propios. Thumb es independiente de los demas dedos -- puede controlarse sin comprometer los otros.
+
+**S_k**: Xin Cartesiano completo con pinch (Run 21 SK / 27B). Selecciona positivos que matchean funcionalmente: posicion de fingertips, direccion DIP->tip, distancia thumb-to-finger (pinch). No usar D_joints con 1/sigma ni D_ahg.
+
+**D_R**: uniforme Yan, `sum(1 - dot^2)` sobre joints comunes (Run 27B). Sin pesos 1/sigma. Todos los joints pesan igual incluyendo MCPs. Este termino es el que evita el colapso en semi-flexion (confirmado por 27A vs 27B).
+
+**Enfasis thumb**: w_thumb_pos > w_tip_pos en el subespacio thumb (como Run 21 SK). Dentro del loop per-subspace, el selector para el subespacio thumb usa un peso mayor en D_tip.
+
+**Implementacion**: branch `run27b-dr-yan`, que ya tiene Xin completo + D_R uniforme. Cambio minimo: habilitar `--lam_dr` cuando `--single_latent=False`. Actualmente `lam_dr` solo se activa dentro del bloque `if args.single_latent` en `loop.py`. Una linea de cambio desbloquea el hibrido completo.
+
+### Pregunta que responde
+
+¿La combinacion per-subspace + Xin S_k + D_R uniforme resuelve simultaneamente el problema de MCPs (que requiere D_R uniforme) y el problema de thumb (que requiere subespacio independiente)?
+
+### Archivos a modificar
+
+- `models/latent-retargeting/src/cross_emb/training/loop.py`: habilitar rama `lam_dr` cuando `single_latent=False`.
+- `notebooks/train_stage1_colab.ipynb`: `SINGLE_LATENT=False`, `LAM_DR=16.5`, `W_THUMB_POS=10`, `W_TIP_POS=1`.
