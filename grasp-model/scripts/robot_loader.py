@@ -527,6 +527,53 @@ class RobotLoader:
         tips = tips / hand_length
         return tips, tip_labels
 
+    def run_dong_chain_only(
+        self,
+        fk_out: dict[str, torch.Tensor],
+        hand_config_path: str | Path,
+    ) -> tuple[torch.Tensor, list[str]]:
+        """
+        Lightweight Dong path for Xin losses: returns the full 4-point chain
+        (MCP/PIP/DIP/TIP) per finger in wrist-local frame, normalized by
+        hand_length. Skips block3 rotations and `_dong_mat_to_quat` calls done
+        by `run_dong_stage2`, matching the cost profile of `run_dong_tips_only`.
+
+        Returns:
+            chain      : Tensor[B, F, 4, 3]   wrist-local, /hand_length
+            tip_labels : list[str]            len F (one per finger)
+
+        Assumes every finger config has chain length == 4. Fingers with chain
+        length < 2 are skipped (consistent with the rest of the Dong path).
+        """
+        config = _load_hand_config(hand_config_path)
+
+        def pos(link: str) -> torch.Tensor:
+            return fk_out[link][:, :3, 3]
+
+        wrist_pos  = pos(config["wrist_link"])
+        index_mcp  = pos(config["frame_index_mcp"])
+        middle_mcp = pos(config["frame_middle_mcp"])
+        ring_mcp   = pos(config["frame_ring_mcp"])
+        R_wrist = _dong_block1_wrist_frame(wrist_pos, index_mcp, middle_mcp, ring_mcp)
+
+        def local(link: str) -> torch.Tensor:
+            return _dong_world_to_local(pos(link), wrist_pos, R_wrist)
+
+        chains_list: list[torch.Tensor] = []
+        tip_labels: list[str] = []
+        for finger_name, finger_cfg in config["fingers"].items():
+            chain = finger_cfg["chain"]
+            if len(chain) < 2:
+                continue
+            chain_local = [local(link) for link in chain]      # list of [B, 3]
+            chains_list.append(torch.stack(chain_local, dim=1))  # [B, L, 3]
+            tip_labels.append(finger_name)
+
+        chain_t = torch.stack(chains_list, dim=1)              # [B, F, 4, 3]
+        hand_length = self._get_hand_length(config)
+        chain_t = chain_t / hand_length
+        return chain_t, tip_labels
+
     def run_dong_stage2(
         self,
         fk_out: dict[str, torch.Tensor],

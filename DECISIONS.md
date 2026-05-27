@@ -4616,4 +4616,34 @@ Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consi
 
 **Documentos relacionados**:
 - Entry 82: pipeline consolidado, runs 17-19.
+
+## Entry 84 -- 2026-05-26: D_ahg domina S_k en Run 20 -- descubrimiento post-hoc
+
+**Context**: Al regresar al commit de Run 20 (branch `feat/run20-regression`) para implementar nuevas losses, se realizó un diagnostico empirico de las magnitudes reales de D_R, D_joints y D_ahg en el dataset hograspnet_abl11.csv.
+
+**Diagnostico** (500 frames, split=train, w_r=w_joints=w_ahg=1.0):
+
+| subspace | D_R    | D_joints | D_ahg  | S_k total |
+|----------|--------|----------|--------|-----------|
+| thumb    | 0.043  | 0.109    | 0.742  | 0.894     |
+| index    | 0.087  | 0.093    | 0.814  | 0.995     |
+| middle   | 0.086  | 0.090    | 0.836  | 1.012     |
+| ring     | 0.092  | 0.083    | 0.854  | 1.029     |
+| pinky    | 0.103  | 0.101    | 0.803  | 1.008     |
+
+**D_ahg representa ~83-85% de S_k**. D_R y D_joints son ruido secundario (~5-11% cada uno) para la seleccion de triplets.
+
+**Por que ocurrio esto**: Entry 75 cambio D_ahg de `.mean()` a `.sum()` (correccion de desviacion de Yan et al.). D_ahg suma sobre `Fk*4 x 2*Fk` = 8 pares de angulos por subspace (Fk=1 dedo, 4 segmentos, 2 puntos criticos). Cada par contribuye ~0.1 rad en promedio. D_R esta acotado [0,1] y promedia ~0.05-0.10. D_joints en metros wrist-local (~0.09). El cambio mean→sum multiplicó la magnitud de D_ahg ~8x sin que nadie verificara el balance resultante. Runs 15-20 corrieron con esta configuracion.
+
+**Distincion conceptual D_R vs D_ahg**:
+- D_R mide rotaciones **locales** por joint (quaternion respecto al padre en la cadena cinematica). Sensible a angulos individuales, puede ser similar entre poses globalmente distintas (error acumulado en cadena).
+- D_ahg mide angulos **inter-joint desde la muneca** (vectores wrist→joint vs wrist→critical points). Captura la forma global de la mano como se ve desde la muneca -- descriptor de configuracion espacial agregada.
+
+**D_ahg como feature, no bug**: Es posible que D_ahg sea un mejor discriminador de tipo de agarre que D_R precisamente porque captura la forma global. Dos agarres con joints locales similares pueden tener D_ahg muy distinto si la configuracion espacial difiere. Run 20 funciono bien con D_ahg dominante -- no esta claro que rebalancear mejore.
+
+**Lo que no sabemos**: Si D_ahg correlaciona mejor con clase Feix que D_R. Sin esa verificacion, no se puede afirmar si el dominio de D_ahg es optimo o accidental.
+
+**Implicacion para runs futuros**: Cualquier cambio de pesos (w_ahg < 1.0) en S_k necesita verificacion empirica de que el nuevo balance no degrada la seleccion de triplets. El baseline es Run 20 con D_ahg ~85%.
+
+**Branch activo**: `feat/run20-regression` (commit e330f1d).
 - Entry 79: diagnostico MCP, propuesta axis decomposition.

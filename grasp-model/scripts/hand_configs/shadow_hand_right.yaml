@@ -24,3 +24,16 @@ fingers:
     chain: [rfknuckle, rfmiddle, rfdistal, rftip]
   pinky:
     chain: [lfknuckle, lfmiddle, lfdistal, lftip]
+
+# Xin Sec. III-B joint position regularization (used by L_joint).
+# Pulls these specific joints toward 0 to discourage unnatural configurations.
+# - abduction joints (FFJ4/MFJ4/RFJ4/LFJ4): keep fingers parallel by default
+# - thumb rotation (THJ5): heavier penalty would over-constrain opposition,
+#   so weight is 5x lower than abduction
+semantic_roles:
+  abduction:
+    joints: [FFJ4, MFJ4, RFJ4, LFJ4]
+    xin_position_weight: 0.5
+  thumb_rotation:
+    joints: [THJ5]
+    xin_position_weight: 0.1

@@ -124,6 +124,38 @@ def _parse_args() -> argparse.Namespace:
         default=5000,
         help="Batch size for eval (val/test). Smaller than train --b for speed.",
     )
+    # ---- Xin direct losses on human path FK(q_r_hat) ----
+    p.add_argument(
+        "--enable_xin_losses",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Add Xin retargeting metrics (tip_pos/pinch/tip_rot/pip_pos) as differentiable losses on q_r_hat. Default off keeps Run 20 baseline.",
+    )
+    p.add_argument("--lam_xin_global", type=float, default=0.6,
+                   help="Global scaler on L_xin. L_xin = lam_xin_global * L_xin_raw.mean(). Empirically gives ~15-17%% of L_total in CPU dry-run, in Xin paper weight regime.")
+    p.add_argument("--lam_thumb_pos", type=float, default=10.0)
+    p.add_argument("--lam_tip_pos",   type=float, default=1.0)
+    p.add_argument("--lam_pinch",     type=float, default=10.0)
+    p.add_argument("--lam_tip_rot",   type=float, default=10.0)
+    p.add_argument("--lam_pip_pos",   type=float, default=1.0)
+    p.add_argument(
+        "--enable_pinch_switching",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Apply Xin sigmoid pinch gate + stilde rescale. Only effective when --enable_xin_losses is on.",
+    )
+    p.add_argument("--lambda_joint",            type=float, default=1.0,
+                   help="Scalar on L_joint (Xin Sec. III-B). Joint weights come from hand_config YAML semantic_roles. Pulls abduction + thumb rotation toward 0.")
+    p.add_argument("--pinch_eps1_m",            type=float, default=0.1)
+    p.add_argument("--pinch_eps2_m",            type=float, default=0.01)
+    p.add_argument("--pinch_sigmoid_w_m",       type=float, default=10.0)
+    p.add_argument("--pinch_ref_hand_length_m", type=float, default=0.197)
+    p.add_argument(
+        "--xin_dry_run",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Probe one batch through the Xin pipeline, print breakdown + grad norms, exit. No training loop runs.",
+    )
     return p.parse_args()
 
 
@@ -170,6 +202,30 @@ def main():
     from human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
     from robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
     from shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
+    from xin_losses import xin_total, load_l_joint_config, l_joint
+
+    # Normalize Xin pinch thresholds into the hand-length-ratio space used by
+    # tips_*_sub / chain_*_sub. HL_ref=0.197m -> eps1_rel = 0.508 etc.
+    pinch_eps1      = args.pinch_eps1_m      / args.pinch_ref_hand_length_m
+    pinch_eps2      = args.pinch_eps2_m      / args.pinch_ref_hand_length_m
+    pinch_sigmoid_w = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
+    if args.enable_xin_losses:
+        l_joint_w_pos = load_l_joint_config(HAND_CONFIG)
+        print(
+            f"Xin losses: ON | lam_xin_global={args.lam_xin_global} | "
+            f"lams thumb_pos={args.lam_thumb_pos} tip_pos={args.lam_tip_pos} "
+            f"pinch={args.lam_pinch} tip_rot={args.lam_tip_rot} pip_pos={args.lam_pip_pos} | "
+            f"switching={args.enable_pinch_switching} eps1={pinch_eps1:.4f} eps2={pinch_eps2:.4f} w={pinch_sigmoid_w:.4f}"
+        )
+        if l_joint_w_pos:
+            print(
+                f"L_joint: ON  | lambda_joint={args.lambda_joint} | "
+                f"weights={l_joint_w_pos}"
+            )
+        else:
+            print("L_joint: skipped (no semantic_roles in hand_config YAML)")
+    else:
+        l_joint_w_pos = {}
 
     # ---------------------------------------------------------------------------
     # Sampler
@@ -414,6 +470,107 @@ def main():
         }
 
     # ---------------------------------------------------------------------------
+    # Dry-run probe: validate Xin contributes signal before committing to a
+    # training run. Loads one batch, runs forward + backward, prints per-
+    # component breakdown and grad norms, exits. Always uses Xin pipeline
+    # regardless of --enable_xin_losses (the whole point is to inspect Xin).
+    # ---------------------------------------------------------------------------
+    if args.xin_dry_run:
+        print("\n=== XIN DRY RUN ===")
+        for m in (E_h, E_r, E_X, D_X, D_r):
+            for p_ in m.parameters():
+                if p_.grad is not None:
+                    p_.grad = None
+
+        batch = sampler.get_batch_temporal(args.b)
+        quats_h_dr     = batch["quats_h"]
+        q_r_dr         = batch["q_r"]
+        if args.zero_wrj:
+            q_r_dr = q_r_dr.clone(); q_r_dr[:, 0:2] = 0.0
+        quats_h_sub_dr = batch["quats_h_sub"]
+        tips_h_sub_dr  = batch["tips_h_sub"]
+        chain_h_sub_dr = batch["chain_h_sub"]
+        common_fingers_dr = batch["common_fingers"]
+        human_labels_dr   = ["thumb", "index", "middle", "ring", "pinky"]
+        common_idx_h_dr   = [human_labels_dr.index(f) for f in common_fingers_dr]
+
+        z_t_dr     = E_h(quats_h_dr)
+        q_r_hat_dr = D_r(D_X(z_t_dr)).float()
+        if args.zero_wrj:
+            q_r_hat_dr = q_r_hat_dr.clone(); q_r_hat_dr[:, 0:2] = 0.0
+
+        fk_dr = sampler.robot_rnd.run_fk(q_r_hat_dr)
+        tips_r_dr, tip_labels_dr   = sampler.robot_rnd.run_dong_tips_only(fk_dr, HAND_CONFIG)
+        chain_r_dr, chain_labels_dr = sampler.robot_rnd.run_dong_chain_only(fk_dr, HAND_CONFIG)
+        tip_idx_dr   = [tip_labels_dr.index(f)   for f in common_fingers_dr]
+        chain_idx_dr = [chain_labels_dr.index(f) for f in common_fingers_dr]
+        tips_r_sub_dr  = tips_r_dr.to(DEVICE)[:, tip_idx_dr, :]
+        chain_r_sub_dr = chain_r_dr.to(DEVICE)[:, chain_idx_dr, :, :]
+        # Subset human side to common fingers too -- chain_h_sub already done by sampler.
+        tips_h_sub_aligned  = tips_h_sub_dr[:, common_idx_h_dr, :]
+
+        L_xin_raw_dr, bd_dr = xin_total(
+            tips_h_sub_aligned, tips_r_sub_dr,
+            chain_h_sub_dr, chain_r_sub_dr,
+            lam_thumb_pos = args.lam_thumb_pos,
+            lam_tip_pos   = args.lam_tip_pos,
+            lam_pinch     = args.lam_pinch,
+            lam_tip_rot   = args.lam_tip_rot,
+            lam_pip_pos   = args.lam_pip_pos,
+            enable_switching = args.enable_pinch_switching,
+            eps1 = pinch_eps1, eps2 = pinch_eps2, sigmoid_w = pinch_sigmoid_w,
+            return_breakdown = True,
+        )
+        L_xin_scaled = args.lam_xin_global * L_xin_raw_dr.mean()
+        L_xin_scaled.backward()
+
+        def _grad_norm(params):
+            total = 0.0
+            for p_ in params:
+                if p_.grad is not None:
+                    total += p_.grad.detach().norm().item() ** 2
+            return total ** 0.5
+
+        g_eh = _grad_norm(list(getattr(E_h, "_orig_mod", E_h).parameters()))
+        g_dx = _grad_norm(list(getattr(D_X, "_orig_mod", D_X).parameters()))
+        g_dr = _grad_norm(list(getattr(D_r, "_orig_mod", D_r).parameters()))
+
+        raw_mean = L_xin_raw_dr.mean().item()
+        scaled   = L_xin_scaled.item()
+        tp_mean  = bd_dr["tip_pos"].mean().item()
+        pn_mean  = bd_dr["pinch"].mean().item()
+        tr_mean  = bd_dr["tip_rot"].mean().item()
+        pp_mean  = bd_dr["pip_pos"].mean().item()
+        finite   = all(
+            torch.isfinite(t).all().item() for t in (
+                L_xin_raw_dr, bd_dr["tip_pos"], bd_dr["pinch"],
+                bd_dr["tip_rot"], bd_dr["pip_pos"],
+            )
+        )
+
+        print(f"batch B={args.b}  switching={args.enable_pinch_switching}")
+        print(f"L_xin_raw (mean over B): {raw_mean:.6f}")
+        print(f"L_xin     (scaled)     : {scaled:.6f}   (lam_xin_global={args.lam_xin_global})")
+        print(f"breakdown (mean over B):")
+        print(f"  tip_pos sum : {tp_mean:.6f}")
+        print(f"  pinch   sum : {pn_mean:.6f}")
+        print(f"  tip_rot sum : {tr_mean:.6f}")
+        print(f"  pip_pos sum : {pp_mean:.6f}")
+        print(f"grad norms (after L_xin.backward()):")
+        print(f"  E_h : {g_eh:.6e}")
+        print(f"  D_X : {g_dx:.6e}")
+        print(f"  D_r : {g_dr:.6e}")
+        print(f"finite check : {'pass' if finite else 'FAIL'}")
+        print("===================")
+
+        any_grad = max(g_eh, g_dx, g_dr) > 1e-8
+        if not finite or not any_grad:
+            print("FAIL: Xin produced no usable signal (NaN/inf or zero gradients).")
+            sys.exit(1)
+        print("PASS: Xin signal present.")
+        sys.exit(0)
+
+    # ---------------------------------------------------------------------------
     # Training loop
     # ---------------------------------------------------------------------------
     CKPT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -602,7 +759,50 @@ def main():
         tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
         L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
 
-        L_total = args.lambda_c * L_cont + args.lambda_rec * L_rec + args.lambda_ltc * L_ltc + args.lambda_tmp * L_temp
+        # Xin losses on q_r_hat (time t only). Second FK helper extracts the
+        # 4-point chain (MCP/PIP/DIP/TIP); cost profile matches tips_only.
+        L_xin = torch.tensor(0.0, device=DEVICE)
+        xin_breakdown = None
+        if args.enable_xin_losses:
+            chain_r_all, chain_labels = sampler.robot_rnd.run_dong_chain_only(
+                fk_combined, HAND_CONFIG
+            )
+            chain_idx_r   = [chain_labels.index(f) for f in common_fingers]
+            chain_r_all   = chain_r_all.to(DEVICE)[:, chain_idx_r, :, :]    # [2B, Fc, 4, 3]
+            chain_r_t_sub = chain_r_all[:B_fk]                              # [B, Fc, 4, 3]
+
+            L_xin_raw, xin_breakdown = xin_total(
+                tips_h_sub, tips_r_t_sub,
+                chain_h_sub, chain_r_t_sub,
+                lam_thumb_pos = args.lam_thumb_pos,
+                lam_tip_pos   = args.lam_tip_pos,
+                lam_pinch     = args.lam_pinch,
+                lam_tip_rot   = args.lam_tip_rot,
+                lam_pip_pos   = args.lam_pip_pos,
+                enable_switching = args.enable_pinch_switching,
+                eps1      = pinch_eps1,
+                eps2      = pinch_eps2,
+                sigmoid_w = pinch_sigmoid_w,
+                return_breakdown = True,
+            )
+            L_xin = args.lam_xin_global * L_xin_raw.mean()
+
+        # L_joint (Xin Sec. III-B): pulls listed joints toward 0. Reads weights
+        # from hand_config YAML semantic_roles. Active only with --enable_xin_losses.
+        L_joint = torch.tensor(0.0, device=DEVICE)
+        if args.enable_xin_losses and l_joint_w_pos:
+            L_joint = l_joint(
+                q_r_hat_fk, sampler.robot_rnd.chain_joint_names, l_joint_w_pos
+            )
+
+        L_total = (
+            args.lambda_c   * L_cont
+            + args.lambda_rec * L_rec
+            + args.lambda_ltc * L_ltc
+            + args.lambda_tmp * L_temp
+            + L_xin
+            + args.lambda_joint * L_joint
+        )
 
         optimizer.zero_grad()
         # GradScaler scales loss before backward to keep fp16 grads in range,
@@ -636,6 +836,8 @@ def main():
                 "rec": L_rec.item(),
                 "ltc": L_ltc.item(),
                 "temp": L_temp.item(),
+                "xin": L_xin.item() if args.enable_xin_losses else 0.0,
+                "joint": L_joint.item() if args.enable_xin_losses else 0.0,
             },
         }
 
@@ -671,11 +873,15 @@ def main():
         if step % args.log_every == 0:
             lr_now = optimizer.param_groups[0]["lr"]
             best_flag = " *best_total" if L_total.item() == best_total else ""
+            xin_str = (
+                f" xin={L_xin.item():.4f} joint={L_joint.item():.4f}"
+                if args.enable_xin_losses else ""
+            )
             print(
                 f"[step {step:05d}] loss total={L_total.item():.4f} "
                 f"cont={L_cont.item():.4f} rec={L_rec.item():.4f} "
-                f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
-                f"lr={lr_now:.2e}{best_flag}"
+                f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f}"
+                f"{xin_str} lr={lr_now:.2e}{best_flag}"
             )
             if extra_human_count:
                 open_count = extra_human_by_class.get(28, 0)
@@ -703,6 +909,8 @@ def main():
                     "rec": L_rec.item(),
                     "ltc": L_ltc.item(),
                     "temp": L_temp.item(),
+                    "xin": L_xin.item() if args.enable_xin_losses else 0.0,
+                    "joint": L_joint.item() if args.enable_xin_losses else 0.0,
                 },
                 "optimizer": optimizer.state_dict(),
             }, CKPT_PATH)
