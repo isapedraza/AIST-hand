@@ -4712,3 +4712,78 @@ TIP pasa de peso minimo (0.09) a maximo (0.46). MCP posicion de maximo (0.53) a 
 **Run 24 config**: seed=21266 (mismo basin que Run 20), Xin OFF, todo lo demas igual a Run 20. Ablacion limpia de sigma S_k.
 
 **Supuesto**: si la brecha de 50 deg viene de triplets mal seleccionados, Run 24 deberia producir MCP mas alto al pasar puno humano por E_h -> D_X -> D_r. Test post-run: repetir el diagnostico de esta entry con el nuevo checkpoint.
+
+## Entry 87 -- 2026-05-27: Diagnostico de alineacion latente + Run 24 redefinido (normalize_z)
+
+### Resultado S_k con distribucion continua (hipotesis Entry 86 rechazada)
+
+Se corrio `diagnose_sk_triplets.py` primero con pool estratificado 50/50 (500 robot fist MCP>=1.0 + 500 robot open MCP<=0.3), luego con 2000 poses aleatorias del NPZ completo (distribucion continua).
+
+**Resultado pool estratificado** (primer test, diseno defectuoso):
+- 1/sigma: 98.5% de positivos = robot fist. Mean MCP = 59.4 deg
+- sigma:   99.0% de positivos = robot fist. Mean MCP = 59.6 deg
+- Diseno trivial: solo dos opciones extremas. Pregunta incorrecta.
+
+**Resultado distribucion continua** (diseno correcto):
+- Pool MCP: media=35.8 deg, std=0.331, p10=9.1, p50=37.6, p90=60.3 deg
+- 1/sigma: positivos con MCP medio = 53.2 deg
+- sigma:   positivos con MCP medio = 55.2 deg
+- Diferencia = +2.0 deg (umbral de relevancia: <2 deg = equivalentes)
+
+**Conclusion**: hipotesis de Entry 86 rechazada. S_k selecciona correctamente poses robot similares a puno humano bajo ambos esquemas. El cambio 1/sigma -> sigma no afecta calidad de positivos de forma significativa. Run 24 como ablacion pura de sigma S_k no tendra impacto en MCP.
+
+### Diagnostico de alineacion en espacio latente (causa raiz confirmada)
+
+Se corrio `diagnose_latent_alignment.py` con checkpoint Run 20 (step=11000). Metricas:
+
+| Metrica | Valor | Significado |
+|---------|-------|-------------|
+| d_pos (z_H_fist vs z_R_fist) | 4.61 | distancia humano-puno a robot-puno |
+| d_neg (z_H_fist vs z_R_open) | 4.66 | distancia humano-puno a robot-abierta |
+| d_gap = d_neg - d_pos | +0.048 | separacion relativa (margin=0.1) |
+| d_ref_rr (z_R_fist vs z_R_fist) | 1.45 | escala natural del espacio robot |
+| d_sep (z_R_fist vs z_R_open) | 2.69 | separacion robot fist vs open |
+| z_H norm (media) | 4.28 | magnitud de embeddings humanos |
+| z_R norm (media) | 1.62 | magnitud de embeddings robot |
+| d_pos / d_ref_rr | 3.18x | z_H esta 3x mas lejos de z_R de lo natural |
+
+**Hallazgos**:
+1. z_H y z_R tienen normas muy distintas (4.28 vs 1.62, factor 2.6x). Viven en esferas distintas.
+2. d_pos=4.61 >> d_ref=1.45: z_H(puno) esta 3.18x mas lejos de z_R(puno) que la escala natural del espacio robot.
+3. d_gap=0.048 < margin=0.1: L_cont ESTA activo (no saturado), pero la separacion es insuficiente. Triplets correctos pero d_gap casi cero.
+4. Causa: L_cont solo exige orden relativo (d_pos < d_neg). No exige co-localizacion absoluta. Con margin pequeno, el modelo satisface la loss con z_H apenas desplazado -- no necesita llegar a la region robot.
+
+**Test post-hoc de L2 normalizacion** (sobre checkpoint Run 20 existente):
+
+| Metrica | Sin normalizar | Con L2-norm |
+|---------|---------------|-------------|
+| d_pos | 4.68 | 1.43 |
+| d_neg | 4.69 | 1.44 |
+| d_ref_rr | 1.44 | 0.88 |
+| d_sep | 2.66 | 1.69 |
+| d_gap | 0.014 | 0.013 |
+| d_pos/d_ref_rr | 3.25x | 1.63x |
+
+Normalizacion post-hoc reduce d_pos de 4.68 a 1.43. Esto confirma que las **direcciones** de z_H y z_R ya apuntan parcialmente en la direccion correcta -- solo la escala era el problema. Despues de normalizar, d_pos=1.43 < d_sep=1.69: z_H(puno) queda dentro de la region robot-puno en la esfera unitaria.
+
+d_gap no mejora (0.014 -> 0.013) porque la discriminacion direccional es debil. El training con normalizacion activa deberia aprender mejores direcciones.
+
+**Por que Yan no tiene este problema** (hipotesis): Yan entrena con 6 robots simultaneamente. Multiples robots anclan z_R en la misma region desde perspectivas distintas, proporcionando gradiente mas consistente hacia E_h. Con 1 robot, la senyal es mas debil y z_H puede derivar a otra region sin violar L_cont. Yan usa exactamente los mismos hiperparametros (lambda_c=10, lambda_rec=5, lambda_ltc=1, lambda_tmp=0.1, margin=0.05).
+
+### Run 24 redefinido: normalize_z + lambda_c=20
+
+**Cambios respecto a Run 20**:
+- `--normalize_z`: F.normalize por subespacio (16-dim) al output de E_h y E_X
+- `lambda_c=20` (era 10): compensar d_gap debil con 1 robot
+- S_k pesos: mantenidos en 1/sigma (sigma no ayuda segun test de distribucion continua)
+- Seed=21266, todo lo demas identico a Run 20
+
+**Implementacion** (commit 12d6c0e66):
+- `human_modules.py`: parametro `normalize=True` en HumanEncoder_E_h
+- `shared_modules.py`: parametro `normalize=True` en SharedEncoder_E_X
+- `train_cross_emb.py`: flag `--normalize_z`
+- Verificacion: ambos producen norma=1.0 por subespacio en test unitario
+
+**Test de verificacion post-run**: correr `diagnose_latent_alignment.py` con checkpoint Run 24.
+- Esperado si funciona: d_pos/d_ref_rr cerca de 1.0 (de 3.18x actual), d_gap > 0.1
+- Esperado en inferencia: MCP mas alto al hacer puno humano
