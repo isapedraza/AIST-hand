@@ -4617,11 +4617,11 @@ Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consi
 **Documentos relacionados**:
 - Entry 82: pipeline consolidado, runs 17-19.
 
-## Entry 84 -- 2026-05-26: D_ahg domina S_k en Run 20 -- descubrimiento post-hoc
+## Entry 84 -- 2026-05-26: Magnitudes brutas de componentes S_k (CORRECCIÓN 2026-05-27)
 
 **Context**: Al regresar al commit de Run 20 (branch `feat/run20-regression`) para implementar nuevas losses, se realizó un diagnostico empirico de las magnitudes reales de D_R, D_joints y D_ahg en el dataset hograspnet_abl11.csv.
 
-**Diagnostico** (500 frames, split=train, w_r=w_joints=w_ahg=1.0):
+**Diagnostico de magnitudes brutas** (500 frames, split=train, **w_r=w_joints=w_ahg=1.0 -- pesos iguales, NO pesos reales de training**):
 
 | subspace | D_R    | D_joints | D_ahg  | S_k total |
 |----------|--------|----------|--------|-----------|
@@ -4631,19 +4631,84 @@ Nota: inference es open-loop, frame a frame, sin filtro de estado. Esto es consi
 | ring     | 0.092  | 0.083    | 0.854  | 1.029     |
 | pinky    | 0.103  | 0.101    | 0.803  | 1.008     |
 
-**D_ahg representa ~83-85% de S_k**. D_R y D_joints son ruido secundario (~5-11% cada uno) para la seleccion de triplets.
+**CORRECCIÓN (2026-05-27)**: La conclusion original "D_ahg domina S_k en Run 20 al 83-85%" es **incorrecta para training real**. El diagnostico uso w_ahg=1.0, pero Run 20 uso `W_AHG=0.07, W_R=1.0, W_JOINTS=1.2` (configuracion establecida desde Run 15 para alcanzar split 30/50/20). Con pesos reales (ejemplo index finger):
 
-**Por que ocurrio esto**: Entry 75 cambio D_ahg de `.mean()` a `.sum()` (correccion de desviacion de Yan et al.). D_ahg suma sobre `Fk*4 x 2*Fk` = 8 pares de angulos por subspace (Fk=1 dedo, 4 segmentos, 2 puntos criticos). Cada par contribuye ~0.1 rad en promedio. D_R esta acotado [0,1] y promedia ~0.05-0.10. D_joints en metros wrist-local (~0.09). El cambio mean→sum multiplicó la magnitud de D_ahg ~8x sin que nadie verificara el balance resultante. Runs 15-20 corrieron con esta configuracion.
+| componente | magnitud bruta | peso | contribucion | % de S_k |
+|---|---|---|---|---|
+| D_R | 0.087 | 1.0 | 0.087 | 34% |
+| D_joints | 0.093 | 1.2 | 0.112 | 44% |
+| D_ahg | 0.814 | 0.07 | 0.057 | 22% |
+
+Split real ~34/44/22, consistente con el objetivo 30/50/20 de Run 15. **D_ahg no dominaba S_k en training real.**
+
+**Por que Entry 75 cambio las magnitudes brutas**: Entry 75 cambio D_ahg de `.mean()` a `.sum()`. D_ahg suma sobre `Fk*4 x 2*Fk` = 8 pares de angulos por subspace. Esto multiplico la magnitud bruta de D_ahg ~8x. W_AHG=0.07 ya compensaba esto en training desde Run 15 -- el balance estaba correcto.
 
 **Distincion conceptual D_R vs D_ahg**:
-- D_R mide rotaciones **locales** por joint (quaternion respecto al padre en la cadena cinematica). Sensible a angulos individuales, puede ser similar entre poses globalmente distintas (error acumulado en cadena).
-- D_ahg mide angulos **inter-joint desde la muneca** (vectores wrist→joint vs wrist→critical points). Captura la forma global de la mano como se ve desde la muneca -- descriptor de configuracion espacial agregada.
-
-**D_ahg como feature, no bug**: Es posible que D_ahg sea un mejor discriminador de tipo de agarre que D_R precisamente porque captura la forma global. Dos agarres con joints locales similares pueden tener D_ahg muy distinto si la configuracion espacial difiere. Run 20 funciono bien con D_ahg dominante -- no esta claro que rebalancear mejore.
-
-**Lo que no sabemos**: Si D_ahg correlaciona mejor con clase Feix que D_R. Sin esa verificacion, no se puede afirmar si el dominio de D_ahg es optimo o accidental.
-
-**Implicacion para runs futuros**: Cualquier cambio de pesos (w_ahg < 1.0) en S_k necesita verificacion empirica de que el nuevo balance no degrada la seleccion de triplets. El baseline es Run 20 con D_ahg ~85%.
+- D_R mide rotaciones **locales** por joint (quaternion respecto al padre en la cadena cinematica).
+- D_ahg mide angulos **inter-joint desde la muneca** (vectores wrist→joint vs wrist→critical points). Captura forma global de la mano.
 
 **Branch activo**: `feat/run20-regression` (commit e330f1d).
 - Entry 79: diagnostico MCP, propuesta axis decomposition.
+
+## Entry 85 -- 2026-05-27: Diagnostico MCP -- bias de D_r en camino robot-robot puro
+
+**Pregunta**: puede D_r decodificar MCP cerrado? tiene bias estructural hacia MCP bajo?
+
+**Metodologia**: se cargaron 29,670 poses de `synthetic_close_hand_shadow_qpos.npz` (MCP ~1.566 rad, ~90 deg -- cerca del limite del URDF de 1.571 rad). Se paso cada pose por el autoencoder robot completo: `E_r -> E_X -> D_X -> D_r -> q_hat`. Se compararon q_hat[MCP] vs q_orig[MCP]. Indices verificados contra `joint_names` del NPZ: FFJ3=q24[3], MFJ3=q24[7], RFJ3=q24[11], LFJ3=q24[16]. Formato verificado: qpos24 en radianes crudos, mismo formato que q_r en training.
+
+**Resultados** (orig=1.566 rad en todos):
+
+| Joint | Run20 hat (step=11k) | Run20 err | Run23-Xin hat (step=15k) | Run23-Xin err |
+|-------|----------------------|-----------|--------------------------|---------------|
+| FFJ3  | 1.485 rad            | -4.6 deg  | 1.433 rad                | -7.6 deg      |
+| MFJ3  | 1.511 rad            | -3.2 deg  | 1.497 rad                | -4.0 deg      |
+| RFJ3  | 1.539 rad            | -1.6 deg  | 1.512 rad                | -3.1 deg      |
+| LFJ3  | 1.518 rad            | -2.8 deg  | 1.473 rad                | -5.4 deg      |
+
+**Interpretacion**: el bias existe y es sistematico (siempre negativo, nunca reconstruye el maximo). Sin embargo, el rango total de MCP flex en URDF es 105 deg (-15 a +90). Los errores son 1.6-4.6 deg en Run 20 = 1.5-4.4% del rango. Esto es ruido menor. El problema visual observado (MCP apenas se mueve en inferencia) implica decenas de grados de error -- el bias de D_r solo no explica eso.
+
+**Xin losses empeoraron D_r**: Run 23 con Xin activo tiene mayor bias que Run 20 en todos los joints (FFJ3: -7.6 deg vs -4.6 deg). Xin losses estan tirando D_r en direccion equivocada para MCP en el camino robot-robot. Esto es consistente con el reporte cualitativo: Run 23 se siente similar a Run 20 pero MCP no mejoro.
+
+**Conclusion**: D_r puede decodificar MCP (no es bias catastrofico). El cuello de botella principal no es D_r -- es la alineacion en espacio latente. z_H de pose humana de puno no esta llegando a la region donde D_r produce MCP alto.
+
+**Pendiente (Entry 86)**: mismo test con pose humana real de puno del dataset: E_h -> E_X -> D_X -> D_r -> medir MCP en q_hat. Eso cuantificara el error de alineacion real.
+
+## Entry 86 -- 2026-05-27: Test alineacion z_H/z_R + diagnostico raiz MCP + Run 24
+
+**Test de alineacion** (camino humano: E_h -> D_X -> D_r, validado por Yan sec. 3 y retarget.py linea 106):
+
+HaGRID clase=29 (1000 frames de puno explicito) vs clase=28 (3000 frames mano abierta):
+
+| Joint | human_fist | human_open | diff   | robot_fist (Entry 85) | brecha |
+|-------|-----------|------------|--------|----------------------|--------|
+| FFJ3  | 0.550 rad | 0.349 rad  | +0.200 | 1.485 rad            | -53.6 deg |
+| MFJ3  | 0.553 rad | 0.458 rad  | +0.095 | 1.511 rad            | -54.9 deg |
+| RFJ3  | 0.678 rad | 0.551 rad  | +0.127 | 1.539 rad            | -49.4 deg |
+| LFJ3  | 0.625 rad | 0.535 rad  | +0.090 | 1.518 rad            | -51.2 deg |
+
+E_h distingue puno de mano abierta (diff +0.09 a +0.20 rad). Pero la brecha con robot_fist es ~50 deg en todos los joints. z_H de puno no llega a la region del espacio latente donde D_r produce MCP alto.
+
+**Diagnostico raiz**: S_k usa pesos 1/sigma (inverso de varianza). Los joints mas discriminativos para puno reciben MENOS peso:
+- D_R: MCP rotacion tiene sigma alto (varia mucho entre open/closed) -> peso bajo
+- D_joints: TIP posicion tiene sigma alto (se mueve hacia la palma en puno) -> peso 0.09 (minimo)
+
+Consecuencia: S_k selecciona como "positivo" robot poses que comparten features estables (baja varianza) con la pose humana, pero pueden tener MCP abierto. L_cont empuja z_H(puno) hacia z_R(mcp_abierto). El modelo aprende alineacion equivocada para MCP extremo.
+
+**Fix (Run 24)**: invertir a sigma (no 1/sigma). sigma_i proporcional a 1/w_i actual. Renormalizar.
+
+Nuevos pesos D_R (sigma) [mcp, pip, dip, tip=0]:
+- thumb: [0.3609, 0.1712, 0.4679, 0.0]
+- index: [0.3375, 0.3416, 0.3209, 0.0]
+- middle: [0.5165, 0.2682, 0.2153, 0.0]
+- ring: [0.4436, 0.2957, 0.2607, 0.0]
+- pinky: [0.5047, 0.2455, 0.2498, 0.0]
+
+Nuevos pesos D_joints (sigma) [mcp_pos, pip_pos, dip_pos, tip_pos]:
+- index: [0.0778, 0.1688, 0.2977, 0.4557]  (tip: 0.09 -> 0.46)
+- middle/ring/pinky: similar, tip ~0.46-0.47
+
+TIP pasa de peso minimo (0.09) a maximo (0.46). MCP posicion de maximo (0.53) a minimo (0.07). Ahora S_k penaliza mas cuando los fingertips no coinciden -- directamente discrimina puno de mano abierta.
+
+**Run 24 config**: seed=21266 (mismo basin que Run 20), Xin OFF, todo lo demas igual a Run 20. Ablacion limpia de sigma S_k.
+
+**Supuesto**: si la brecha de 50 deg viene de triplets mal seleccionados, Run 24 deberia producir MCP mas alto al pasar puno humano por E_h -> D_X -> D_r. Test post-run: repetir el diagnostico de esta entry con el nuevo checkpoint.

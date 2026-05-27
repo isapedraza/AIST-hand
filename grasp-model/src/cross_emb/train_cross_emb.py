@@ -326,26 +326,35 @@ def main():
     # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
     # Order per subspace: [mcp, pip, dip, tip]. tip=0 (always identity in Dong).
     # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
+    #
+    # Run 24: switched from 1/sigma to sigma weighting (Entry 86).
+    # Rationale: high-variance segments (MCP rotation, TIP position) are the most
+    # discriminative for fist vs open hand. 1/sigma suppressed exactly those segments,
+    # causing S_k to select wrong robot triplets for extreme MCP poses (50 deg gap
+    # measured in Entry 86). sigma weighting derived by inverting 1/sigma weights and
+    # renormalizing -- no raw data recomputation needed.
     # ---------------------------------------------------------------------------
     _sk_w = {
-        "thumb":  [0.258, 0.544, 0.199, 0.0],
-        "index":  [0.329, 0.325, 0.346, 0.0],
-        "middle": [0.188, 0.362, 0.451, 0.0],
-        "ring":   [0.238, 0.357, 0.405, 0.0],
-        "pinky":  [0.197, 0.405, 0.398, 0.0],
+        "thumb":  [0.3609, 0.1712, 0.4679, 0.0],
+        "index":  [0.3375, 0.3416, 0.3209, 0.0],
+        "middle": [0.5165, 0.2682, 0.2153, 0.0],
+        "ring":   [0.4436, 0.2957, 0.2607, 0.0],
+        "pinky":  [0.5047, 0.2455, 0.2498, 0.0],
     }
     sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
 
-    # D_joints per-segment weights: w_j = (1/sigma_j) / sum(1/sigma)
+    # D_joints per-segment weights: w_j = sigma_j / sum(sigma)  (Run 24: inverted from 1/sigma)
     # sigma_j = std(||chain_j_a - chain_j_b||) over HOGraspNet train pairs, human only.
-    # Order per subspace: [mcp, pip, dip, tip]. MCP highest weight (least variation).
+    # Order per subspace: [mcp_pos, pip_pos, dip_pos, tip_pos].
+    # TIP now has highest weight (~0.46): tip moves most toward palm in fist -- most
+    # discriminative. MCP position barely moves regardless of open/closed -- lowest weight.
     # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
     _sk_wj = {
-        "thumb":  [0.4499, 0.2534, 0.1484, 0.1484],
-        "index":  [0.5282, 0.2435, 0.1381, 0.0902],
-        "middle": [0.5630, 0.2259, 0.1267, 0.0844],
-        "ring":   [0.5743, 0.2364, 0.1134, 0.0759],
-        "pinky":  [0.5459, 0.2465, 0.1241, 0.0835],
+        "thumb":  [0.1131, 0.2009, 0.3430, 0.3430],
+        "index":  [0.0778, 0.1688, 0.2977, 0.4557],
+        "middle": [0.0685, 0.1706, 0.3042, 0.4567],
+        "ring":   [0.0623, 0.1513, 0.3153, 0.4711],
+        "pinky":  [0.0707, 0.1565, 0.3108, 0.4620],
     }
     sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
 
