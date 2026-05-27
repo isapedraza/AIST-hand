@@ -66,8 +66,10 @@ class HumanEncoder_E_h(nn.Module):
 
     N_JOINTS = 21
 
-    def __init__(self, in_dim: int = 4, hidden_dim: int = 32, z_dim: int = 64):
+    def __init__(self, in_dim: int = 4, hidden_dim: int = 32, z_dim: int = 64,
+                 normalize: bool = False):
         super().__init__()
+        self.normalize = normalize
         self.cam    = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS).uniform_(-1, 1))
         self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
         self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
@@ -96,4 +98,10 @@ class HumanEncoder_E_h(nn.Module):
         z_middle = self.out_act(self.proj_middle(x[:, SUBSPACE_NODES["middle"], :].max(dim=1).values))
         z_ring   = self.out_act(self.proj_ring(  x[:, SUBSPACE_NODES["ring"],   :].max(dim=1).values))
         z_pinky  = self.out_act(self.proj_pinky( x[:, SUBSPACE_NODES["pinky"],  :].max(dim=1).values))
+        if self.normalize:
+            z_thumb  = F.normalize(z_thumb,  dim=-1)
+            z_index  = F.normalize(z_index,  dim=-1)
+            z_middle = F.normalize(z_middle, dim=-1)
+            z_ring   = F.normalize(z_ring,   dim=-1)
+            z_pinky  = F.normalize(z_pinky,  dim=-1)
         return torch.cat([z_thumb, z_index, z_middle, z_ring, z_pinky], dim=-1)  # [B, 5*z_dim]

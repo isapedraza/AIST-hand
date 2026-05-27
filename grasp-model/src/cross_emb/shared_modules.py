@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def _mlp(dims: list[int]) -> nn.Sequential:
@@ -25,13 +27,19 @@ class SharedEncoder_E_X(nn.Module):
     Shared across all robots.
     """
 
-    def __init__(self, shared_dim: int = 1024, z_dim: int = 64):
+    def __init__(self, shared_dim: int = 1024, z_dim: int = 64, normalize: bool = False):
         super().__init__()
+        self.z_dim = z_dim
+        self.normalize = normalize
         self.net = _mlp([shared_dim, 256, 256, 256, 256, 256, 256, 256, N_SUBSPACES * z_dim])
 
     def forward(self, x):
         """x: [B, shared_dim] -> z: [B, N_SUBSPACES*z_dim]"""
-        return self.net(x)
+        z = self.net(x)
+        if self.normalize:
+            B = z.shape[0]
+            z = F.normalize(z.view(B, N_SUBSPACES, self.z_dim), dim=-1).view(B, -1)
+        return z
 
 
 class SharedDecoder_D_X(nn.Module):

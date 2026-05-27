@@ -79,6 +79,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
+    p.add_argument("--normalize_z", action="store_true", default=False,
+                   help="L2-normalize E_h and E_X outputs per subspace before contrastive loss. "
+                        "Fixes scale mismatch (z_H norm >> z_R norm) observed in Run 20.")
     p.add_argument(
         "--zero_wrj",
         action=argparse.BooleanOptionalAction,
@@ -272,9 +275,11 @@ def main():
     # ---------------------------------------------------------------------------
     # Models
     # ---------------------------------------------------------------------------
-    E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
+    E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=args.z_dim,
+                           normalize=args.normalize_z).to(DEVICE)
     E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
-    E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim=args.z_dim).to(DEVICE)
+    E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim=args.z_dim,
+                            normalize=args.normalize_z).to(DEVICE)
     D_X = SharedDecoder_D_X(z_dim=args.z_dim, shared_dim=args.shared_dim).to(DEVICE)
     D_r = RobotDecoder_D_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
 
@@ -839,6 +844,7 @@ def main():
             "D_X":  _sd(D_X),
             "D_r":  _sd(D_r),
             "zero_wrj": args.zero_wrj,
+            "normalize_z": args.normalize_z,
             "losses": {
                 "total": L_total.item(),
                 "cont": L_cont.item(),
@@ -912,6 +918,7 @@ def main():
                 "D_X":  _sd(D_X),
                 "D_r":  _sd(D_r),
                 "zero_wrj": args.zero_wrj,
+            "normalize_z": args.normalize_z,
                 "losses": {
                     "total": L_total.item(),
                     "cont": L_cont.item(),
