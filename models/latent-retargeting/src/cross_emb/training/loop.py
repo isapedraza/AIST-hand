@@ -21,7 +21,7 @@ import torch
 
 from cross_emb.loaders import CrossEmbodimentSampler
 from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, HumanEncoder_E_h_hybrid
-from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
+from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r, RobotDecoder_D_r_residual
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
 from .losses import d_r_yan, l_joint, load_l_joint_config, xin_sk_full, xin_sk_per_finger
@@ -52,6 +52,7 @@ def _compute_eval_metrics(
     D_r,
     hand_config: Path,
     zero_wrj: bool,
+    residual_decoder: bool = False,
 ) -> dict | None:
     """Run retargeting on a split and return RS/NDS/NVS/rec metrics.
 
@@ -89,8 +90,8 @@ def _compute_eval_metrics(
             # Retarget: human Dong -> latent -> robot joint angles.
             z_t        = E_h_(quats_h)
             z_t1       = E_h_(quats_h_t1)
-            q_r_hat    = D_r_(D_X_(z_t)).float()
-            q_r_hat_t1 = D_r_(D_X_(z_t1)).float()
+            q_r_hat    = (D_r_(z_t)    if residual_decoder else D_r_(D_X_(z_t))).float()
+            q_r_hat_t1 = (D_r_(z_t1)  if residual_decoder else D_r_(D_X_(z_t1))).float()
             if zero_wrj:
                 q_r_hat    = q_r_hat.clone();    q_r_hat[:, 0:2]    = 0.0
                 q_r_hat_t1 = q_r_hat_t1.clone(); q_r_hat_t1[:, 0:2] = 0.0
@@ -136,7 +137,7 @@ def _compute_eval_metrics(
 
             # L_rec on data pair: how well does the decoder reconstruct sampled q_r?
             z_r_       = E_X_(E_r_(q_r_data))
-            q_r_hat_rd = D_r_(D_X_(z_r_))
+            q_r_hat_rd = D_r_(z_r_) if residual_decoder else D_r_(D_X_(z_r_))
             rec        = (q_r_data - q_r_hat_rd).norm(dim=-1).mean().item()
 
             rs_sum  += rs
@@ -250,6 +251,8 @@ def main() -> None:
     # a single triplet on xin_sk_full.
     if args.single_latent and args.hybrid:
         raise ValueError("--single_latent and --hybrid are mutually exclusive.")
+    if args.residual_decoder and not args.hybrid:
+        raise ValueError("--residual_decoder requires --hybrid.")
     if args.single_latent:
         z_dim_total = args.z_dim_total
         E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).to(DEVICE)
@@ -272,7 +275,13 @@ def main() -> None:
     E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
     D_X = SharedDecoder_D_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
-    D_r = RobotDecoder_D_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
+    if args.hybrid and args.residual_decoder:
+        D_r = RobotDecoder_D_r_residual(
+            z_dim_global=args.z_dim_global, z_dim_finger=args.z_dim, n_joints=J
+        ).to(DEVICE)
+        print(f"  DECODER     : RESIDUAL (D_base[{args.z_dim_global}→{J}] + 5×D_k per finger)")
+    else:
+        D_r = RobotDecoder_D_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
 
     if args.resume_ckpt:
         ckpt = torch.load(args.resume_ckpt, map_location=DEVICE)
@@ -356,9 +365,9 @@ def main() -> None:
             z_t1 = E_h(quats_h_t1)
             z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
 
-            q_r_hat    = D_r(D_X(z_r))
+            q_r_hat    = D_r(z_r)    if args.residual_decoder else D_r(D_X(z_r))
             z_h_rt     = E_X(D_X(z_t))
-            q_r_hat_t1 = D_r(D_X(z_t1))
+            q_r_hat_t1 = D_r(z_t1)  if args.residual_decoder else D_r(D_X(z_t1))
 
             L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
             L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
@@ -719,6 +728,7 @@ def main() -> None:
                 val_sampler, args.n_eval_batches, args.b_eval,
                 E_h, E_r, E_X, D_X, D_r,
                 HAND_CONFIG, args.zero_wrj,
+                residual_decoder=args.residual_decoder,
             )
             if last_val_metrics is not None:
                 score = (
@@ -796,6 +806,7 @@ def main() -> None:
         test_sampler, args.n_eval_batches, args.b_eval,
         E_h, E_r, E_X, D_X, D_r,
         HAND_CONFIG, args.zero_wrj,
+        residual_decoder=args.residual_decoder,
     )
     if test_metrics is not None:
         score = test_metrics["rs"] + test_metrics["nds"] + args.lambda_tmp * test_metrics["nvs"]

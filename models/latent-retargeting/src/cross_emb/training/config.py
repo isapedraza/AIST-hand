@@ -54,6 +54,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Use HumanEncoder_E_h_hybrid (Idea I): 1 coarse global head + 5 fine per-finger heads. z_dim_total = z_dim_global + 5*z_dim. Mutually exclusive with --single_latent.")
     p.add_argument("--z_dim_global", type=int, default=64,
                    help="Dimension of the coarse global block in --hybrid mode. Default 64 (parity with one finger head).")
+    p.add_argument("--residual_decoder", action="store_true",
+                   help="Run 36: use structured residual decoder for --hybrid mode. "
+                        "D_base(z_global) -> base pose; D_k(z_k) -> per-finger residual. "
+                        "Requires --hybrid. Closes the shortcut where the optimizer ignores z_global.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(

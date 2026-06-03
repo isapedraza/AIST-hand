@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from ..nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, HumanEncoder_E_h_hybrid, CAMLayer
 from ..nn.shared_modules import _mlp
-from ..nn.robot_modules  import RobotDecoder_D_r
+from ..nn.robot_modules  import RobotDecoder_D_r, RobotDecoder_D_r_residual
 
 
 class _LegacyHumanEncoder(nn.Module):
@@ -84,37 +84,46 @@ class Retargeter:
 
     def __init__(self, ckpt_path: str | Path):
         ck  = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-        n_j = ck["D_r"]["fc.weight"].shape[0]
-        dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
+
+        # Detect residual decoder by presence of D_base.weight key
+        self._residual_decoder = "D_base.weight" in ck["D_r"]
 
         if "proj_global.0.weight" in ck["E_h"] and "proj_thumb.weight" in ck["E_h"]:
-            # Idea I hybrid encoder: 1 coarse global head + 5 fine per-finger heads
             z_dim_global = ck["E_h"]["proj_global.0.weight"].shape[0]
             z_dim        = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = HumanEncoder_E_h_hybrid(in_dim=4, hidden_dim=32,
                                                z_dim=z_dim, z_dim_global=z_dim_global).eval()
         elif "proj_hand.0.weight" in ck["E_h"]:
-            # Run 25+ single-latent encoder
             z_dim_total = ck["E_h"]["proj_hand.0.weight"].shape[0]
             self.E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).eval()
         elif "proj_precision.weight" in ck["E_h"]:
-            # Legacy 3-subspace encoder (thumb / precision / support)
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = _LegacyHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
         else:
-            # 5-subspace encoder (thumb / index / middle / ring / pinky)
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
 
-        self.D_X = _SharedDecoder_compat(in_dim=dx_in_dim, shared_dim=1024).eval()
-        self.D_r = RobotDecoder_D_r(n_joints=n_j, shared_dim=1024).eval()
+        if self._residual_decoder:
+            n_j          = ck["D_r"]["D_base.weight"].shape[0]
+            z_dim_global = ck["D_r"]["D_base.weight"].shape[1]
+            z_dim_finger = ck["D_r"]["D_thumb.weight"].shape[1]
+            self.D_X = None
+            self.D_r = RobotDecoder_D_r_residual(
+                z_dim_global=z_dim_global, z_dim_finger=z_dim_finger, n_joints=n_j
+            ).eval()
+        else:
+            n_j       = ck["D_r"]["fc.weight"].shape[0]
+            dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
+            self.D_X = _SharedDecoder_compat(in_dim=dx_in_dim, shared_dim=1024).eval()
+            self.D_r = RobotDecoder_D_r(n_joints=n_j, shared_dim=1024).eval()
+            self.D_X.load_state_dict(ck["D_X"])
 
         self.E_h.load_state_dict(ck["E_h"])
-        self.D_X.load_state_dict(ck["D_X"])
         self.D_r.load_state_dict(ck["D_r"])
 
     @torch.no_grad()
     def __call__(self, quats: torch.Tensor) -> np.ndarray:
-        q = self.D_r(self.D_X(self.E_h(quats))).numpy()
+        z = self.E_h(quats)
+        q = self.D_r(z).numpy() if self._residual_decoder else self.D_r(self.D_X(z)).numpy()
         q[:, 0:2] = 0.0  # WRJ2, WRJ1 — not encoded in wrist-frame human signal
         return np.clip(q, _LOWER, _UPPER)
