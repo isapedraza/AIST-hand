@@ -248,6 +248,11 @@ def main() -> None:
     # routes the shared E_X/D_X through a single z_dim_total latent rather
     # than 5 per-finger subspaces. Per-finger contrastive loop is replaced by
     # a single triplet on xin_sk_full.
+    if args.global_oracle and args.single_latent:
+        raise ValueError(
+            "--global_oracle requires per-finger latents; it is not compatible "
+            "with --single_latent."
+        )
     if args.single_latent:
         z_dim_total = args.z_dim_total
         E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).to(DEVICE)
@@ -263,6 +268,10 @@ def main() -> None:
     if args.single_latent and args.lambda_global_c > 0:
         print("Aux global contrastive disabled for --single_latent; it is intended for per-finger z_total.")
         args.lambda_global_c = 0.0
+    if args.global_oracle:
+        print("  CONTRASTIVE : GLOBAL ORACLE (Idea A) -- global pos/neg select, per-subspace triplets")
+        if args.lambda_global_c > 0:
+            print("  Note: --lambda_global_c is redundant under --global_oracle (global selection already feeds the 5 subspaces).")
 
     E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim_total=z_dim_total).to(DEVICE)
@@ -390,7 +399,86 @@ def main() -> None:
         if args.lambda_c <= 0:
             L_cont = torch.zeros((), device=DEVICE)
         else:
-            if args.single_latent:
+            if args.global_oracle:
+                # Idea A: per-finger latents but ONE GLOBAL pos/neg selection.
+                # Oracle scores the whole hand (15 joints via d_r_yan + dense
+                # Cartesian via xin_sk_full), so MCP differences are visible at
+                # selection time. The SAME pos/neg is then applied as 5 separate
+                # triplets (one per z_k subspace) -> gradient flows independently,
+                # preserving per-finger specialization.
+                L_cont = torch.tensor(0.0, device=DEVICE)
+                B2 = z_all_full.shape[0]
+                if B2 >= 3:
+                    n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                    anchors = torch.randperm(B2, device=DEVICE)[:n]
+                    cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                    cand_a = cand_a + (cand_a >= anchors).long()
+                    cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                    cand_b = cand_b + (cand_b >= anchors).long()
+                    same = cand_b == cand_a
+                    if same.any():
+                        cand_b[same] = (cand_b[same] + 1) % B2
+                        cand_b[same] += (cand_b[same] == anchors[same]).long()
+                        cand_b[same] %= B2
+
+                    with torch.no_grad():
+                        tips_a   = tips_all[anchors]
+                        tips_ca  = tips_all[cand_a]
+                        tips_cb  = tips_all[cand_b]
+                        chain_a  = chain_all[anchors]
+                        chain_ca = chain_all[cand_a]
+                        chain_cb = chain_all[cand_b]
+
+                        S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
+                                          lam_tip=args.lam_tip, lam_thumb_tip=args.lam_thumb_tip,
+                                          lam_finger=args.lam_finger, lam_thumb_finger=args.lam_thumb_finger,
+                                          lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot)
+                        S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
+                                          lam_tip=args.lam_tip, lam_thumb_tip=args.lam_thumb_tip,
+                                          lam_finger=args.lam_finger, lam_thumb_finger=args.lam_thumb_finger,
+                                          lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot)
+
+                        if args.lam_dr > 0:
+                            quats_a  = quats_all[anchors]
+                            quats_ca = quats_all[cand_a]
+                            quats_cb = quats_all[cand_b]
+                            D_R_a = d_r_yan(quats_a, quats_ca)
+                            D_R_b = d_r_yan(quats_a, quats_cb)
+                            S_a = S_a + args.lam_dr * D_R_a
+                            S_b = S_b + args.lam_dr * D_R_b
+
+                        if args.log_metric_stats:
+                            S_pairs = torch.cat([S_a, S_b])
+                            metric_stats["global_oracle"] = (
+                                S_pairs.mean().item(),
+                                S_pairs.std().item(),
+                                S_pairs.min().item(),
+                                S_pairs.max().item(),
+                            )
+                            if args.lam_dr > 0:
+                                DR_pairs = torch.cat([D_R_a, D_R_b])
+                                metric_stats["D_R"] = (
+                                    DR_pairs.mean().item(),
+                                    DR_pairs.std().item(),
+                                    DR_pairs.min().item(),
+                                    DR_pairs.max().item(),
+                                )
+
+                        a_closer = S_a <= S_b
+                        pos_idx = torch.where(a_closer, cand_a, cand_b)
+                        neg_idx = torch.where(a_closer, cand_b, cand_a)
+
+                    # Same global pos/neg -> 5 per-subspace triplets.
+                    for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
+                        if sub not in common_fingers:
+                            continue
+                        z_sub = z_all_full[:, k * args.z_dim:(k + 1) * args.z_dim]
+                        L_cont = L_cont + torch.relu(
+                            (z_sub[anchors] - z_sub[pos_idx]).norm(dim=-1)
+                            - (z_sub[anchors] - z_sub[neg_idx]).norm(dim=-1)
+                            + args.margin
+                        ).mean()
+            elif args.single_latent:
                 L_cont = torch.tensor(0.0, device=DEVICE)
                 B2 = z_all_full.shape[0]
                 if B2 >= 3:

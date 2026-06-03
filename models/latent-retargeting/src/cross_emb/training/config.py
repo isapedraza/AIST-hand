@@ -56,6 +56,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Override path to robot.yaml (semantic_roles -> L_joint weights). Defaults to repo_root/robot/hands/shadow_hand/robot.yaml")
     p.add_argument("--single_latent", action="store_true",
                    help="Use HumanEncoder_E_h_single (one projection head, z_dim_total) and xin_sk_full instead of 5 per-finger subspaces.")
+    p.add_argument("--global_oracle", action="store_true",
+                   help="Idea A: keep per-finger latents but select ONE global pos/neg pair "
+                        "(xin_sk_full + lam_dr*d_r_yan over 15 joints) and apply it as 5 "
+                        "separate per-subspace triplets. Mutually exclusive with --single_latent.")
     p.add_argument("--z_dim_total", type=int, default=80,
                    help="Total latent dimension when --single_latent is set. Default 80 = 5*16 for capacity parity with the 5-subspace baseline.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
