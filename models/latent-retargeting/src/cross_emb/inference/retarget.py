@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, CAMLayer
+from ..nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, HumanEncoder_E_h_hybrid, CAMLayer
 from ..nn.shared_modules import _mlp
 from ..nn.robot_modules  import RobotDecoder_D_r
 
@@ -87,7 +87,13 @@ class Retargeter:
         n_j = ck["D_r"]["fc.weight"].shape[0]
         dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
 
-        if "proj_hand.0.weight" in ck["E_h"]:
+        if "proj_global.0.weight" in ck["E_h"] and "proj_thumb.weight" in ck["E_h"]:
+            # Idea I hybrid encoder: 1 coarse global head + 5 fine per-finger heads
+            z_dim_global = ck["E_h"]["proj_global.0.weight"].shape[0]
+            z_dim        = ck["E_h"]["proj_thumb.weight"].shape[0]
+            self.E_h = HumanEncoder_E_h_hybrid(in_dim=4, hidden_dim=32,
+                                               z_dim=z_dim, z_dim_global=z_dim_global).eval()
+        elif "proj_hand.0.weight" in ck["E_h"]:
             # Run 25+ single-latent encoder
             z_dim_total = ck["E_h"]["proj_hand.0.weight"].shape[0]
             self.E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).eval()

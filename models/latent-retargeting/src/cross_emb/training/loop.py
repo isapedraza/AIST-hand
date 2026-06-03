@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 from cross_emb.loaders import CrossEmbodimentSampler
-from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single
+from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, HumanEncoder_E_h_hybrid
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
@@ -248,11 +248,20 @@ def main() -> None:
     # routes the shared E_X/D_X through a single z_dim_total latent rather
     # than 5 per-finger subspaces. Per-finger contrastive loop is replaced by
     # a single triplet on xin_sk_full.
+    if args.single_latent and args.hybrid:
+        raise ValueError("--single_latent and --hybrid are mutually exclusive.")
     if args.single_latent:
         z_dim_total = args.z_dim_total
         E_h = HumanEncoder_E_h_single(in_dim=4, hidden_dim=32, z_dim_total=z_dim_total).to(DEVICE)
         print(f"{'='*60}")
         print(f"  LATENT MODE : SINGLE (z_dim_total={z_dim_total})")
+        print(f"{'='*60}")
+    elif args.hybrid:
+        z_dim_total = args.z_dim_global + 5 * args.z_dim
+        E_h = HumanEncoder_E_h_hybrid(in_dim=4, hidden_dim=32,
+                                      z_dim=args.z_dim, z_dim_global=args.z_dim_global).to(DEVICE)
+        print(f"{'='*60}")
+        print(f"  LATENT MODE : HYBRID (z_global={args.z_dim_global} + 5x{args.z_dim} = {z_dim_total})")
         print(f"{'='*60}")
     else:
         z_dim_total = 5 * args.z_dim
@@ -372,7 +381,134 @@ def main() -> None:
         z_all_full = torch.cat([z_t, z_r], dim=0)                  # [2B, z_dim_total]
         metric_stats = {}
 
-        if args.single_latent:
+        if args.hybrid:
+            # Idea I: 6 blocks = 1 coarse global + 5 fine per-finger.
+            # z = [z_global | z_thumb | z_index | z_middle | z_ring | z_pinky].
+            # SIX independent triplets, each with its OWN oracle (NOT a shared
+            # global selection -- that is Idea A / Run 34, discarded):
+            #   - global block: whole-hand oracle (xin_sk_full + lam_dr*d_r_yan)
+            #   - each fine block k: per-finger oracle (xin_sk_per_finger)
+            # Independent sampling per block preserves compositionality: the
+            # decoder learns to combine a coordinated base (global) with local
+            # per-finger modulation.
+            G = args.z_dim_global
+            L_cont = torch.tensor(0.0, device=DEVICE)
+            B2 = z_all_full.shape[0]
+
+            # --- Global block triplet (whole-hand oracle) ---
+            if B2 >= 3:
+                n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                anchors = torch.randperm(B2, device=DEVICE)[:n]
+                cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_a = cand_a + (cand_a >= anchors).long()
+                cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_b = cand_b + (cand_b >= anchors).long()
+                same = cand_b == cand_a
+                if same.any():
+                    cand_b[same] = (cand_b[same] + 1) % B2
+                    cand_b[same] += (cand_b[same] == anchors[same]).long()
+                    cand_b[same] %= B2
+
+                with torch.no_grad():
+                    tips_a   = tips_all[anchors]
+                    tips_ca  = tips_all[cand_a]
+                    tips_cb  = tips_all[cand_b]
+                    chain_a  = chain_all[anchors]
+                    chain_ca = chain_all[cand_a]
+                    chain_cb = chain_all[cand_b]
+
+                    S_a = xin_sk_full(tips_a, tips_ca, chain_a, chain_ca,
+                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
+                    S_b = xin_sk_full(tips_a, tips_cb, chain_a, chain_cb,
+                                      lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid)
+
+                    if args.lam_dr > 0:
+                        quats_a  = quats_all[anchors]
+                        quats_ca = quats_all[cand_a]
+                        quats_cb = quats_all[cand_b]
+                        D_R_a = d_r_yan(quats_a, quats_ca)
+                        D_R_b = d_r_yan(quats_a, quats_cb)
+                        S_a = S_a + args.lam_dr * D_R_a
+                        S_b = S_b + args.lam_dr * D_R_b
+
+                    if args.log_metric_stats:
+                        S_pairs = torch.cat([S_a, S_b])
+                        metric_stats["global"] = (
+                            S_pairs.mean().item(), S_pairs.std().item(),
+                            S_pairs.min().item(), S_pairs.max().item(),
+                        )
+                        if args.lam_dr > 0:
+                            DR_pairs = torch.cat([D_R_a, D_R_b])
+                            metric_stats["D_R"] = (
+                                DR_pairs.mean().item(), DR_pairs.std().item(),
+                                DR_pairs.min().item(), DR_pairs.max().item(),
+                            )
+
+                    a_closer = S_a <= S_b
+                    pos_idx = torch.where(a_closer, cand_a, cand_b)
+                    neg_idx = torch.where(a_closer, cand_b, cand_a)
+
+                z_glob = z_all_full[:, :G]
+                L_cont = L_cont + torch.relu(
+                    (z_glob[anchors] - z_glob[pos_idx]).norm(dim=-1)
+                    - (z_glob[anchors] - z_glob[neg_idx]).norm(dim=-1)
+                    + args.margin
+                ).mean()
+
+            # --- Fine per-finger triplets (per-finger oracle, independent sampling) ---
+            for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
+                if sub not in common_fingers:
+                    continue
+                finger_idx = common_fingers.index(sub)
+                z_sub = z_all_full[:, G + k * args.z_dim: G + (k + 1) * args.z_dim]
+                if B2 < 3:
+                    continue
+                n = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                anchors = torch.randperm(B2, device=DEVICE)[:n]
+                cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_a = cand_a + (cand_a >= anchors).long()
+                cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_b = cand_b + (cand_b >= anchors).long()
+                same = cand_b == cand_a
+                if same.any():
+                    cand_b[same] = (cand_b[same] + 1) % B2
+                    cand_b[same] += (cand_b[same] == anchors[same]).long()
+                    cand_b[same] %= B2
+
+                with torch.no_grad():
+                    tips_a   = tips_all[anchors]
+                    tips_ca  = tips_all[cand_a]
+                    tips_cb  = tips_all[cand_b]
+                    chain_a  = chain_all[anchors]
+                    chain_ca = chain_all[cand_a]
+                    chain_cb = chain_all[cand_b]
+
+                    S_a = xin_sk_per_finger(
+                        tips_a, tips_ca, chain_a, chain_ca, finger_idx=finger_idx,
+                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
+                    )
+                    S_b = xin_sk_per_finger(
+                        tips_a, tips_cb, chain_a, chain_cb, finger_idx=finger_idx,
+                        lam_fp=args.lam_fp, lam_pinch=args.lam_pinch, lam_fr=args.lam_fr, lam_mid=args.lam_mid,
+                    )
+
+                    if args.log_metric_stats:
+                        S_pairs = torch.cat([S_a, S_b])
+                        metric_stats[sub] = (
+                            S_pairs.mean().item(), S_pairs.std().item(),
+                            S_pairs.min().item(), S_pairs.max().item(),
+                        )
+
+                    a_closer = S_a <= S_b
+                    pos_idx = torch.where(a_closer, cand_a, cand_b)
+                    neg_idx = torch.where(a_closer, cand_b, cand_a)
+
+                L_cont = L_cont + torch.relu(
+                    (z_sub[anchors] - z_sub[pos_idx]).norm(dim=-1)
+                    - (z_sub[anchors] - z_sub[neg_idx]).norm(dim=-1)
+                    + args.margin
+                ).mean()
+        elif args.single_latent:
             L_cont = torch.tensor(0.0, device=DEVICE)
             B2 = z_all_full.shape[0]
             if B2 >= 3:

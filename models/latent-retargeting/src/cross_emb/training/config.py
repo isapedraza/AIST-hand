@@ -41,7 +41,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--lam_pinch", type=float, default=10.0, help="Weight for pinch (thumb->primary) term in Xin Cartesian S_k.")
     p.add_argument("--lam_fr",    type=float, default=10.0, help="Weight for fingertip_rot (last-segment unit vector) term in Xin Cartesian S_k.")
     p.add_argument("--lam_mid",   type=float, default=1.0,  help="Weight for PIP position term in Xin Cartesian S_k (DexMV-style intermediate joint).")
-    p.add_argument("--lam_dr",    type=float, default=0.0,  help="Weight for Yan-style D_R quaternion term added to S_k. 0 disables (default). Active only in --single_latent path; uniform sum over common-joint quaternions.")
+    p.add_argument("--lam_dr",    type=float, default=0.0,  help="Weight for Yan-style D_R quaternion term added to S_k. 0 disables (default). Active in --single_latent and in --hybrid (global triplet); uniform sum over common-joint quaternions.")
     p.add_argument("--lambda_joint",    type=float, default=0.0,
                    help="Weight for L_joint (joint position regularization). 0 disables.")
     p.add_argument("--robot_yaml_path", default=None,
@@ -50,6 +50,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Use HumanEncoder_E_h_single (one projection head, z_dim_total) and xin_sk_full instead of 5 per-finger subspaces.")
     p.add_argument("--z_dim_total", type=int, default=320,
                    help="Total latent dimension when --single_latent is set. Default 320 = 5*64 for capacity parity with the 5-subspace baseline.")
+    p.add_argument("--hybrid", action="store_true",
+                   help="Use HumanEncoder_E_h_hybrid (Idea I): 1 coarse global head + 5 fine per-finger heads. z_dim_total = z_dim_global + 5*z_dim. Mutually exclusive with --single_latent.")
+    p.add_argument("--z_dim_global", type=int, default=64,
+                   help="Dimension of the coarse global block in --hybrid mode. Default 64 (parity with one finger head).")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(

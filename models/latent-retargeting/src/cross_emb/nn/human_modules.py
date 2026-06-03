@@ -140,3 +140,64 @@ class HumanEncoder_E_h_single(nn.Module):
         # Pool over joints 1-20 (exclude wrist, consistent with E_h convention).
         x_pool = x[:, 1:, :].max(dim=1).values             # [B, hidden]
         return self.proj_hand(x_pool)                      # [B, z_dim_total]
+
+
+class HumanEncoder_E_h_hybrid(nn.Module):
+    """E_h variant with a coarse global head + 5 fine per-finger heads (Idea I).
+
+    Combines the two existing encoders. A single shared 3x CAM-GNN backbone
+    feeds 6 projection heads:
+      - proj_global: max-pool over joints 1-20 (whole hand), like
+        HumanEncoder_E_h_single. Carries inter-finger coordination / closure.
+      - proj_thumb..proj_pinky: max-pool over each finger's SUBSPACE_NODES,
+        identical to HumanEncoder_E_h. Carry independent per-finger control.
+
+    Output: z = cat([z_global, z_thumb, z_index, z_middle, z_ring, z_pinky])
+            shape [B, z_dim_global + 5*z_dim], each block in [-1, 1].
+
+    The contrastive loss applies a whole-hand oracle (xin_sk_full + D_R) on the
+    z_global block and a per-finger oracle (xin_sk_per_finger) on each fine
+    block, so the global head learns coordination and the fine heads learn
+    detail. The robot side (E_X) stays a plain MLP of size z_dim_total; block
+    semantics are imposed by the contrastive triplets, not robot structure.
+    """
+
+    N_JOINTS = 21
+
+    def __init__(self, in_dim: int = 4, hidden_dim: int = 32, z_dim: int = 64, z_dim_global: int = 64):
+        super().__init__()
+        self.cam    = nn.Parameter(torch.empty(self.N_JOINTS, self.N_JOINTS).uniform_(-1, 1))
+        self.layer1 = CAMLayer(in_dim,     hidden_dim, self.N_JOINTS)
+        self.layer2 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
+        self.layer3 = CAMLayer(hidden_dim, hidden_dim, self.N_JOINTS)
+        self.proj_global = nn.Sequential(
+            nn.Linear(hidden_dim, z_dim_global),
+            nn.Tanh(),
+        )
+        self.proj_thumb  = nn.Linear(hidden_dim, z_dim)
+        self.proj_index  = nn.Linear(hidden_dim, z_dim)
+        self.proj_middle = nn.Linear(hidden_dim, z_dim)
+        self.proj_ring   = nn.Linear(hidden_dim, z_dim)
+        self.proj_pinky  = nn.Linear(hidden_dim, z_dim)
+        self.out_act = nn.Tanh()
+
+    def forward(self, quats: torch.Tensor) -> torch.Tensor:
+        B = quats.shape[0]
+        wrist = torch.zeros(B, 1, 4, dtype=quats.dtype, device=quats.device)
+        wrist[:, 0, 0] = 1.0
+        quats = torch.cat([wrist, quats], dim=1)           # [B, 21, 4]
+        B, N, in_f = quats.shape
+        x = quats.reshape(B * N, in_f)
+        x = self.layer1(x, self.cam)
+        x = self.layer2(x, self.cam)
+        x = self.layer3(x, self.cam)
+        x = x.view(B, N, -1)                              # [B, 21, hidden]
+        # Coarse: global max-pool over joints 1-20 (wrist excluded).
+        z_global = self.proj_global(x[:, 1:, :].max(dim=1).values)
+        # Fine: per-finger max-pool over SUBSPACE_NODES.
+        z_thumb  = self.out_act(self.proj_thumb( x[:, SUBSPACE_NODES["thumb"],  :].max(dim=1).values))
+        z_index  = self.out_act(self.proj_index( x[:, SUBSPACE_NODES["index"],  :].max(dim=1).values))
+        z_middle = self.out_act(self.proj_middle(x[:, SUBSPACE_NODES["middle"], :].max(dim=1).values))
+        z_ring   = self.out_act(self.proj_ring(  x[:, SUBSPACE_NODES["ring"],   :].max(dim=1).values))
+        z_pinky  = self.out_act(self.proj_pinky( x[:, SUBSPACE_NODES["pinky"],  :].max(dim=1).values))
+        return torch.cat([z_global, z_thumb, z_index, z_middle, z_ring, z_pinky], dim=-1)
