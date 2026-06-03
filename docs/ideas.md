@@ -188,12 +188,138 @@ pesos por tipo de joint configurables. ~5-10 líneas.
 
 ---
 
+## Idea I (PROPUESTA PRINCIPAL) -- Latente híbrido grueso+fino + oracle compuesto
+
+Esta es la propuesta consolidada a partir del análisis comparativo de los runs
+20, 21sk, 27B y 28-34 (junio 2026). Es la idea con más evidencia detrás.
+
+### El problema en una frase
+
+Ningún run logra a la vez: (1) cerrar los MCP de forma coordinada, (2) control
+independiente por dedo, (3) oposición de pulgar. Cada run consiguió uno o dos,
+nunca los tres.
+
+### Evidencia (hechos observados por run)
+
+| run | latente | oracle | comportamiento observado |
+|-----|---------|--------|--------------------------|
+| run20 | per-finger | quat (D_R + D_joints) | mimic, dedos independientes / MCP NO cierra |
+| 21sk | holístico (1 cabeza) | paper-Xin (switching + maquinaria pulgar) + D_R pesado 1/sigma | PULGAR PERFECTO / dedos desastre / MCP no cierra |
+| 27B | holístico (1 cabeza) | Xin simple + D_R UNIFORME (16.5) | MCP CIERRA / tieso / pulgar mediocre |
+| 28-34 | per-finger | Xin simple + D_R | MCP invertido / busca pinch / dedos colapsados |
+
+Nota: 27B y 21sk tienen la MISMA estructura holística pero resultados opuestos.
+Eso prueba que la estructura no lo explica todo: hay un segundo eje (el oracle).
+
+### Los dos ejes (marco derivado de la evidencia)
+
+**Eje 1 -- estructura del latente, decide la CAPACIDAD DE COORDINACIÓN:**
+- holístico (1 cabeza, pool global de los 20 joints): puede cerrar coordinado.
+- per-finger (5 cabezas, pool por dedo): control independiente, NO cierra.
+
+**Eje 2 -- contenido del oracle, decide QUÉ comportamiento se captura:**
+- D_R uniforme: enfatiza rotación de todos los joints igual, captura el MCP, cierra (27B).
+- D_R pesado 1/sigma: baja el peso del MCP, no cierra (21sk).
+- maquinaria pulgar (paper-Xin): oposición de pulgar perfecta (21sk).
+- señales per-finger: control fino (run20).
+
+Los dos ejes son independientes: la estructura habilita, el oracle dirige.
+
+### Ingredientes separables (cada uno probado por UN run)
+
+1. Cierre coordinado: latente holístico + D_R uniforme. (27B)
+2. Pulgar perfecto: maquinaria pulgar del paper-Xin (switching-gated pinch +
+   `D_thumb_pos` + peso del tip por min-distancia a cualquier dedo). (21sk)
+   IMPORTANTE: esta maquinaria se tiró en Run 25 y NO está en 27B/33/34.
+3. Control independiente por dedo: cabezas per-finger + triplets per-chunk. (run20)
+
+### La propuesta
+
+Un SOLO latente, dividido en 6 bloques (no 5 como run33): un bloque GRUESO
+(global) + 5 bloques FINOS (uno por dedo).
+
+```
+ENCODER (forward):
+  x = CAM-GNN(21 nodos)                              # backbone, igual que hoy
+  z_global = proj_global( maxpool(x[LOS 20 joints]) )   # GRUESO -- NUEVO (cabeza de 27B)
+  z_thumb  = proj_thumb(  maxpool(x[nodos pulgar]) )    # FINO  ┐
+  z_index  = proj_index(  maxpool(x[nodos índice]) )    # FINO  │ (igual que run33)
+  z_middle = ...                                        # FINO  │
+  z_ring   = ...                                        # FINO  │
+  z_pinky  = ...                                        # FINO  ┘
+  z = [ z_global | z_thumb | z_index | z_middle | z_ring | z_pinky ]
+
+CONTRASTIVE:
+  1 triplet sobre z_global   -> coordinación / cierre   (oracle whole-hand)
+  5 triplets sobre z_dedo    -> control independiente   (oracle per-finger)
+
+ORACLE (selección pos/neg, compuesto de los 3 ingredientes):
+  + D_R uniforme / MCP-pesado     -> cierre MCP        (de 27B)
+  + maquinaria pulgar (restaurar) -> oposición pulgar  (de 21sk paper-Xin)
+  + señales per-finger            -> control           (de run20)
+
+DECODER: recibe el vector z completo (los 6 bloques) -> ángulos de joints.
+```
+
+### Intuición grueso/fino (fácil)
+
+Es UN latente, como una mochila con compartimentos. run33 tiene 5 compartimentos
+(uno por dedo). El híbrido agrega 1 compartimento más, grande, que mira la mano
+entera.
+
+- Bloque GRUESO (`z_global`): "la mano cierra en conjunto" = coordinación, cierre.
+- Bloques FINOS (`z_dedo`): "este dedo además así" = ajuste local por dedo.
+
+El decoder combina los dos: el grueso pone el gesto base (cerrar coordinado), el
+fino lo modula dedo por dedo. Ejemplo trípode: grueso = "cierre parcial"; fino =
+"pulgar+índice+medio se tocan, anular y meñique recogidos distinto".
+
+### Por qué NO es lo mismo que run33
+
+run33 era per-finger (5 bloques) + una LOSS global sobre la suma de los 5 chunks.
+Esa suma es info fina apilada: NO contiene coordinación inter-dedo, porque ninguna
+cabeza fina la calculó nunca. No se puede recuperar "la mano cierra junta" sumando
+5 descripciones de dedos aislados.
+
+El híbrido arregla a nivel ENCODER (una cabeza nueva con pool global de los 20
+joints), no a nivel loss. Ese es el órgano de coordinación que a run33 le faltaba.
+run33 = arreglo en la loss. Híbrido = arreglo en el encoder. Distinto nivel.
+
+### Por qué Idea A no bastó
+
+Idea A asumió que el cuello era el ALCANCE DE LA SELECCIÓN (per-finger vs global).
+Pero run34 (selección global) falló igual que 28-33. La evidencia dice que el
+bloqueador es la DESCOMPOSICIÓN per-finger del latente en sí: sin un bloque que
+mire la mano entera, el cierre coordinado no tiene dónde vivir. Idea I cambia la
+ESTRUCTURA (añade el bloque grueso), no solo la selección.
+
+### Riesgos / incógnitas (honesto)
+
+- ¿El decoder aprende a usar z_global y z_dedo sin que uno domine al otro? run33
+  sugiere que mezclar mal no basta; la apuesta es la cabeza global DEDICADA.
+- ¿La maquinaria pulgar (switching) funciona como oracle de ranking sin romper los
+  demás dedos? 21sk dice que da pulgar perfecto pero rompía dedos: hay que aislar
+  su efecto, quizá aplicarla solo al triplet del bloque fino del pulgar.
+- Combinar 3 ingredientes de oracle puede crear interacciones no vistas. Probar
+  incremental: primero híbrido + D_R uniforme (cierre + control), luego añadir
+  maquinaria pulgar.
+
+### Relación con otras ideas
+
+- Idea H (D_R pesado boost MCP) es el ajuste fino del ingrediente 1 del oracle.
+- Idea B (5 decoders) es ortogonal: podría combinarse si el decoder único no separa bien.
+- Idea F (6D SO(3)) es ortogonal: mejora la representación de rotación en cualquier oracle.
+
+---
+
 ## Prioridad sugerida
 
-1. **Idea A** — oracle global + gradiente per-finger. Bajo costo, hipótesis directa, un run.
-2. **Idea B** — 5 decoders. Si Idea A falla y hay tiempo.
-3. **Idea D** — Xin como pérdida. Complementaria a cualquier arquitectura. Se puede añadir sobre el mejor run.
-4. **Idea E** — Sampler primitivas. Ataca zero-shot y posible bias de MCPs. Más costo que A/B.
-5. **Idea F** — Representación 6D SO(3). Bajo costo, descarta discontinuidades como fuente de ruido.
+1. **Idea I** — Latente híbrido grueso+fino + oracle compuesto. PROPUESTA PRINCIPAL: la más fundamentada (evidencia de runs 20/21sk/27B/28-34). Ataca cierre + control + pulgar a la vez.
+2. **Idea A** — oracle global + gradiente per-finger. DESCARTADA en la práctica: run34 falló igual que 28-33. La selección global no rescata el latente per-finger.
+3. **Idea H** — D_R pesado boost MCP. Ajuste fino del ingrediente de cierre del oracle de Idea I.
+4. **Idea B** — 5 decoders. Ortogonal a Idea I; combinable si el decoder único no separa bien.
+5. **Idea F** — Representación 6D SO(3). Ortogonal: mejora la rotación en cualquier oracle. Dataset abl14_6d ya generado.
+6. **Idea D** — Xin como pérdida. Complementaria a cualquier arquitectura.
+7. **Idea E** — Sampler primitivas. Ataca zero-shot y posible bias de MCPs.
 
 (Idea C descartada — era una malinterpretación de F, ver su sección.)
