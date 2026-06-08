@@ -1,7 +1,6 @@
 # Siguientes pasos
 
-Lista de ideas posteriores a Run 38. Solo las ideas 2 y 3 están desarrolladas
-(las discutidas a fondo). El resto queda como título pendiente de desarrollar.
+Lista de 8 ideas posteriores a Run 38, todas desarrolladas.
 
 Contexto que originó la lista (observaciones live, madrugada 2026-06-08):
 - El penúltimo modelo (Run 37, con alineación) es **igual o ligeramente mejor**
@@ -11,6 +10,60 @@ Contexto que originó la lista (observaciones live, madrugada 2026-06-08):
   en ambos modelos. Sugiere que el problema del MCP es en parte de **percepción**:
   desde el frente la cámara no informa con estabilidad la flexión del MCP.
 - Run 37 "falla" solo en cerrar MCP por completo, no como modelo total.
+
+---
+
+## Orden de ataque
+
+**Lógica: arreglar causas (foundacional) antes que parches (compensatorio); medir;
+agregar el parche solo para el residual.** Criterios: (A) valor de tesis y (B)
+mergeabilidad como delta limpio sobre **Run 20 limpio** (ablación pura → aceptar/
+descartar sin confundir resultados). Distinción clave:
+
+- **Foundacional** = arregla la causa raíz. Ideas 2, 8, 6, 4, 7.
+- **Compensatorio** = parcha el síntoma porque la causa sigue rota. **Idea 1**
+  (offset anchor de Run 37 + reweight MCP de Run 38). Existe para compensar fallas
+  de percepción/contrastive/anclaje. Si se arreglan las causas, **puede volverse
+  innecesario o dañino** (doble corrección → sobre-flexión). Por eso va **al final,
+  solo para residual** — no como base. Narrativa de tesis: "arreglé la raíz" >
+  "apilé compensaciones para forzar MCP".
+
+Problemas raíz: **P1** MCP no se ve (percepción), **P2** escala latente (Entry 87:
+z_H norm 4.28 vs z_R 1.62), **P3** un solo robot (anclaje débil = muleta multi-robot
+de Yan ausente), **P4** S_k ambiguo a escala mm.
+
+| Idea | Tipo | Causa | Depende de |
+|---|---|---|---|
+| 2 percepción | Foundacional | P1 raíz | — (ortogonal, deploy) |
+| 8 sampler/multi-robot | Foundacional | P3 raíz | — |
+| 7 6D rotation | Foundacional (rep) | calidad rep | — |
+| 6 InfoNCE+cosine | Foundacional | P2+P4+saturación | 8, 7 |
+| 4 Xin loss directa | Foundacional | D_r sin gradiente humano | 6 |
+| 3 CAM temporal | Estabilización | P1 deploy | 2 |
+| 1 combinar 37+38 | **Compensatorio** | residual MCP | foundacionales |
+| 5 auto-pesos | Meta | balanceo | 1/4/6 |
+
+**Secuencia (baseline = Run 20 LIMPIO, sin anchor ni reweight):**
+
+- **Fase 1 — foundacionales (deltas limpios sobre Run 20 limpio):**
+  - **2 percepción** ∥ **8 sampler** ∥ **7 6D** — tres raíces independientes, en paralelo.
+  - → **6 InfoNCE** (tras 8 + 7).
+  - → **4 Xin loss directa** (tras 6).
+- **Fase 2 — estabilización:** **3 CAM temporal** (tras 2).
+- **Fase 3 — compensación de residual:** **1 combinar 37+38** — SOLO si tras los
+  foundacionales el MCP sigue corto. Mide con la base ya arreglada; agrega offset
+  solo para el hueco restante. Red de seguridad, no fundamento.
+- **Fase 4 — meta:** **5 auto-pesos** (tras apilar losses de 1/4/6).
+
+**Atajo pragmático (tesis mínimamente funcional):** si el tiempo aprieta, el camino
+corto a un demo que funciona es **2 (percepción) + 3 (estabilización) + 1 (parche
+MCP)**. Da algo presentable; el resto (8→7→6→4→5) es la contribución de
+investigación más profunda.
+
+> Nota metodológica: la mergeabilidad premia los toggles limpios (4, 6, 7 son
+> flag-gated; 1 son deltas ya existentes; 2 es swap de deploy). Penaliza 3
+> (from-scratch, NO es merge-toggle) y 8 (validar primero como delta single-robot:
+> primitive Shadow ≈ eigengrasp Shadow, antes de ir multi-robot).
 
 ---
 
