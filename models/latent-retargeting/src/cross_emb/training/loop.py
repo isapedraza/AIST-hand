@@ -23,6 +23,7 @@ from cross_emb.loaders import CrossEmbodimentSampler
 from cross_emb.nn.human_modules import HumanEncoder_E_h, HumanEncoder_E_h_single, HumanEncoder_E_h_hybrid
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r, RobotDecoder_D_r_residual
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
+from .anchor_align import AnchorAligner
 from .config import _parse_args
 from .losses import d_r_yan, l_joint, load_l_joint_config, xin_sk_full, xin_sk_per_finger
 
@@ -209,6 +210,23 @@ def main() -> None:
     _probe = sampler.get_batch_temporal(1)
     J      = _probe["q_r"].shape[1]
     print(f"Robot joints J={J}")
+
+    # Run 37: supervised anchor aligner (co-locate human/robot latents at the
+    # labeled open/closed extremes -- attacks the modality gap directly).
+    anchor_aligner = None
+    if args.anchor_align:
+        if not EXTRA_HUMAN_CSV:
+            raise ValueError("--anchor_align requires --extra_human_csv (human open/closed anchors).")
+        if not (args.robot_anchor_close_npz and args.robot_anchor_open_npz):
+            raise ValueError("--anchor_align requires --robot_anchor_close_npz and --robot_anchor_open_npz.")
+        anchor_aligner = AnchorAligner(
+            human_csv       = EXTRA_HUMAN_CSV,
+            robot_close_npz = args.robot_anchor_close_npz,
+            robot_open_npz  = args.robot_anchor_open_npz,
+            device          = DEVICE,
+            zero_wrj        = args.zero_wrj,
+        )
+        print(f"  ANCHOR ALIGN: enabled (lambda_anchor={args.lambda_anchor}, n={args.anchor_n})")
 
     # L_joint configuration. Read xin_position_weight per joint from robot.yaml
     # semantic_roles (Xin et al. 2025: 0.5 for FFJ4/MFJ4/RFJ4/LFJ4 abduction,
@@ -681,11 +699,17 @@ def main() -> None:
         else:
             L_jnt = torch.zeros((), device=DEVICE)
 
+        if anchor_aligner is not None:
+            L_anchor = anchor_aligner.loss(E_h, E_r, E_X, n=args.anchor_n)
+        else:
+            L_anchor = torch.zeros((), device=DEVICE)
+
         L_total = (args.lambda_c   * L_cont
                  + args.lambda_rec * L_rec
                  + args.lambda_ltc * L_ltc
                  + args.lambda_tmp * L_temp
-                 + args.lambda_joint * L_jnt)
+                 + args.lambda_joint * L_jnt
+                 + args.lambda_anchor * L_anchor)
 
         optimizer.zero_grad()
         scaler.scale(L_total).backward()
@@ -716,6 +740,7 @@ def main() -> None:
                 "ltc": L_ltc.item(),
                 "temp": L_temp.item(),
                 "jnt": L_jnt.item(),
+                "anchor": L_anchor.item(),
             },
         }
 
@@ -756,7 +781,7 @@ def main() -> None:
                 f"[step {step:05d}] loss total={L_total.item():.4f} "
                 f"cont={L_cont.item():.4f} rec={L_rec.item():.4f} "
                 f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
-                f"jnt={L_jnt.item():.4f} lr={lr_now:.2e}{best_flag}"
+                f"jnt={L_jnt.item():.4f} anchor={L_anchor.item():.4f} lr={lr_now:.2e}{best_flag}"
             )
             if extra_human_count:
                 open_count = extra_human_by_class.get(28, 0)

@@ -59,6 +59,22 @@ def _parse_args() -> argparse.Namespace:
                         "D_base(z_global) -> base pose; D_k(z_k) -> per-finger residual. "
                         "Requires --hybrid. Closes the shortcut where the optimizer ignores z_global.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
+    p.add_argument("--anchor_align", action="store_true",
+                   help="Run 37: supervised anchor-alignment loss. Co-locates human and robot "
+                        "latents at the labeled open/closed extremes (HaGRID closed_fist/open_hand "
+                        "vs synthetic closed/open Shadow poses). Attacks the modality gap directly "
+                        "where the contrastive oracle fails on the closed region. Requires "
+                        "--extra_human_csv (human anchors) + --robot_anchor_close_npz/--robot_anchor_open_npz.")
+    p.add_argument("--lambda_anchor", type=float, default=1.0,
+                   help="Weight of L_anchor (centroid match at extremes). L_anchor starts ~8 at "
+                        "Run-20 init, so lambda_anchor=1.0 gives an initial contribution comparable "
+                        "to the other losses. Sweep ~0.5-3.0; too high collapses the latent early.")
+    p.add_argument("--anchor_n", type=int, default=512,
+                   help="Anchors sampled per side per step for the centroid estimate. Default 512.")
+    p.add_argument("--robot_anchor_close_npz", default=None,
+                   help="Path to synthetic_close_hand_shadow_qpos.npz (robot closed anchors).")
+    p.add_argument("--robot_anchor_open_npz", default=None,
+                   help="Path to synthetic_open_hand_shadow_qpos.npz (robot open anchors).")
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(
         "--zero_wrj",
