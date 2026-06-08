@@ -74,9 +74,9 @@ def _parse_args() -> argparse.Namespace:
         help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
     )
     p.add_argument("--margin",      type=float, default=0.05)
-    p.add_argument("--w_r",     type=float, default=1.0, help="Weight for D_R in S_k.")
-    p.add_argument("--w_joints", type=float, default=1.0, help="Weight for D_joints in S_k.")
-    p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
+    p.add_argument("--w_r",     type=float, default=2.5,  help="Weight for D_R in S_k. Run 38: 2.5 so D_R (sees MCP rotation) influence >= D_joints after tip-boost doubled D_joints magnitude.")
+    p.add_argument("--w_joints", type=float, default=1.0,  help="Weight for D_joints in S_k.")
+    p.add_argument("--w_ahg",   type=float, default=0.07, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(
@@ -266,30 +266,31 @@ def main():
     print(f"AMP: {'enabled (fp16)' if use_amp else 'disabled'}")
 
     # ---------------------------------------------------------------------------
-    # D_R per-joint weights: w_j = (1/sigma_j) / sum(1/sigma)
-    # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
-    # Order per subspace: [mcp, pip, dip, tip]. tip=0 (always identity in Dong).
-    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
-    # ---------------------------------------------------------------------------
+    # Run 38: uniform per-segment with MCP boost. D_R measures segment ROTATION,
+    # the only term that sees MCP (knuckle) flexion -- old 1/sigma down-weighted
+    # MCP (high variance) precisely where the closing signal lives. Order
+    # [MCP, PIP, DIP, TIP]; TIP=0 (no tip rotation). Renormalized per-finger at
+    # runtime, so these are relative: MCP=5 -> MCP gets 5/7 ~ 0.71 of D_R.
     _sk_w = {
-        "thumb":  [0.258, 0.544, 0.199, 0.0],
-        "index":  [0.329, 0.325, 0.346, 0.0],
-        "middle": [0.188, 0.362, 0.451, 0.0],
-        "ring":   [0.238, 0.357, 0.405, 0.0],
-        "pinky":  [0.197, 0.405, 0.398, 0.0],
+        "thumb":  [5.0, 1.0, 1.0, 0.0],
+        "index":  [5.0, 1.0, 1.0, 0.0],
+        "middle": [5.0, 1.0, 1.0, 0.0],
+        "ring":   [5.0, 1.0, 1.0, 0.0],
+        "pinky":  [5.0, 1.0, 1.0, 0.0],
     }
     sk_weights_dr = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
 
-    # D_joints per-segment weights: w_j = (1/sigma_j) / sum(1/sigma)
-    # sigma_j = std(||chain_j_a - chain_j_b||) over HOGraspNet train pairs, human only.
-    # Order per subspace: [mcp, pip, dip, tip]. MCP highest weight (least variation).
-    # Precomputed offline from hograspnet_abl11.csv (50k random pairs, 10k frames).
+    # Run 38: uniform per-segment with TIP boost. D_joints measures joint
+    # POSITION; MCP base is near-fixed under flexion (anchor), so the old
+    # 1/sigma over-weighted a dead point. TIP moves most when flexing -> boost
+    # it. Order [MCP, PIP, DIP, TIP]. Renormalized per-finger at runtime, so
+    # relative: TIP=3 -> TIP gets 3/6 = 0.5 of D_joints.
     _sk_wj = {
-        "thumb":  [0.4499, 0.2534, 0.1484, 0.1484],
-        "index":  [0.5282, 0.2435, 0.1381, 0.0902],
-        "middle": [0.5630, 0.2259, 0.1267, 0.0844],
-        "ring":   [0.5743, 0.2364, 0.1134, 0.0759],
-        "pinky":  [0.5459, 0.2465, 0.1241, 0.0835],
+        "thumb":  [1.0, 1.0, 1.0, 3.0],
+        "index":  [1.0, 1.0, 1.0, 3.0],
+        "middle": [1.0, 1.0, 1.0, 3.0],
+        "ring":   [1.0, 1.0, 1.0, 3.0],
+        "pinky":  [1.0, 1.0, 1.0, 3.0],
     }
     sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
 
