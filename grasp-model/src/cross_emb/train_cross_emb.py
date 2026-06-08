@@ -79,6 +79,21 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
+    # Run 37: supervised anchor-alignment loss. Co-locates human and robot
+    # latents at the labeled extremes (HaGRID closed/open vs synthetic robot
+    # closed/open). Trainable form of the offset that recovered closure on Run 20.
+    p.add_argument("--anchor_align", action="store_true",
+                   help="Run 37: enable supervised anchor-alignment loss (centroid match at extremes). "
+                        "Requires --extra_human_csv + --robot_anchor_close_npz + --robot_anchor_open_npz.")
+    p.add_argument("--lambda_anchor", type=float, default=1.0,
+                   help="Weight of L_anchor. L_anchor starts ~8 at Run-20 init, so 1.0 gives an "
+                        "initial contribution comparable to the other losses.")
+    p.add_argument("--anchor_n", type=int, default=512,
+                   help="Samples per extreme per step for the anchor centroid estimate.")
+    p.add_argument("--robot_anchor_close_npz", default=None,
+                   help="Path to synthetic_close_hand_shadow_qpos.npz (robot closed anchors).")
+    p.add_argument("--robot_anchor_open_npz", default=None,
+                   help="Path to synthetic_open_hand_shadow_qpos.npz (robot open anchors).")
     p.add_argument(
         "--zero_wrj",
         action=argparse.BooleanOptionalAction,
@@ -231,6 +246,24 @@ def main():
         D_r.load_state_dict(ckpt["D_r"])
         print(f"Resumed weights from {args.resume_ckpt} (step {ckpt.get('step', '?')})")
         print("Optimizer and scheduler reset fresh.")
+
+    # Run 37: supervised anchor aligner (co-locate human/robot latents at the
+    # labeled extremes). Trainable form of the offset that recovered closure.
+    anchor_aligner = None
+    if args.anchor_align:
+        from anchor_align import AnchorAligner
+        if EXTRA_HUMAN_CSV is None:
+            raise ValueError("--anchor_align requires --extra_human_csv (human open/closed anchors).")
+        if not (args.robot_anchor_close_npz and args.robot_anchor_open_npz):
+            raise ValueError("--anchor_align requires --robot_anchor_close_npz and --robot_anchor_open_npz.")
+        anchor_aligner = AnchorAligner(
+            human_csv       = EXTRA_HUMAN_CSV,
+            robot_close_npz = args.robot_anchor_close_npz,
+            robot_open_npz  = args.robot_anchor_open_npz,
+            device          = DEVICE,
+            zero_wrj        = args.zero_wrj,
+        )
+        print(f"  ANCHOR ALIGN: enabled (lambda_anchor={args.lambda_anchor}, n={args.anchor_n})")
 
     # torch.compile MUST run AFTER state_dict load: compiling traces the forward
     # graph; loading weights afterwards into the wrapped module is supported but
@@ -602,7 +635,14 @@ def main():
         tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
         L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
 
-        L_total = args.lambda_c * L_cont + args.lambda_rec * L_rec + args.lambda_ltc * L_ltc + args.lambda_tmp * L_temp
+        if anchor_aligner is not None:
+            L_anchor = anchor_aligner.loss(E_h, E_r, E_X, n=args.anchor_n)
+        else:
+            L_anchor = torch.zeros((), device=DEVICE)
+
+        L_total = (args.lambda_c * L_cont + args.lambda_rec * L_rec
+                   + args.lambda_ltc * L_ltc + args.lambda_tmp * L_temp
+                   + args.lambda_anchor * L_anchor)
 
         optimizer.zero_grad()
         # GradScaler scales loss before backward to keep fp16 grads in range,
@@ -636,6 +676,7 @@ def main():
                 "rec": L_rec.item(),
                 "ltc": L_ltc.item(),
                 "temp": L_temp.item(),
+                "anchor": L_anchor.item(),
             },
         }
 
@@ -675,6 +716,7 @@ def main():
                 f"[step {step:05d}] loss total={L_total.item():.4f} "
                 f"cont={L_cont.item():.4f} rec={L_rec.item():.4f} "
                 f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
+                f"anchor={L_anchor.item():.4f} "
                 f"lr={lr_now:.2e}{best_flag}"
             )
             if extra_human_count:
