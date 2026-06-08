@@ -520,6 +520,7 @@ def main():
                 D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
                 D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
                 _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
+                _w_joints  = _w_joints / _w_joints.sum().clamp(min=1e-8)  # renorm: keeps D_joints magnitude fixed when _sk_wj sums != 1 (no-op for sum==1 baseline)
                 D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
                 D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
 
