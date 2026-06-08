@@ -640,6 +640,24 @@ def main():
         else:
             L_anchor = torch.zeros((), device=DEVICE)
 
+        # Run 37: one-time connectivity proof. Guards the silent-disconnect
+        # failure (anchor computed but not in the autograd graph, so backward
+        # never updates the encoders). Aborts at step 0, not after hours. A
+        # tensor with requires_grad + grad_fn is in the graph that
+        # L_total.backward() traverses; the optimizer holds E_h/E_r/E_X params,
+        # so reaching the graph means reaching the update.
+        if step == 0 and anchor_aligner is not None:
+            connected = bool(L_anchor.requires_grad) and (L_anchor.grad_fn is not None)
+            gf = type(L_anchor.grad_fn).__name__ if L_anchor.grad_fn is not None else "None"
+            print(f"  [anchor check] step0 L_anchor={L_anchor.item():.4f} "
+                  f"requires_grad={L_anchor.requires_grad} grad_fn={gf} "
+                  f"-> {'CONNECTED' if connected else 'DISCONNECTED'}")
+            if not connected:
+                raise RuntimeError(
+                    "Run 37 ABORT: anchor loss is detached from the autograd graph "
+                    "(silent no-op). Check AnchorAligner.loss returns a grad-tracked tensor."
+                )
+
         L_total = (args.lambda_c * L_cont + args.lambda_rec * L_rec
                    + args.lambda_ltc * L_ltc + args.lambda_tmp * L_temp
                    + args.lambda_anchor * L_anchor)
