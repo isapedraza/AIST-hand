@@ -40,6 +40,31 @@ def _quat_wxyz_to_rot6d(q: torch.Tensor) -> torch.Tensor:
 
 ACTUATED_TYPES = {"revolute", "prismatic", "continuous"}
 
+_PRIM_TYPE_NAMES = ["FLEX", "ABD", "ROT"]
+
+
+def _parse_joint_to_child(urdf_path: Path) -> dict[str, str]:
+    root = ET.parse(urdf_path).getroot()
+    result: dict[str, str] = {}
+    for joint in root.findall("joint"):
+        name = joint.attrib.get("name")
+        child = joint.find("child")
+        if name and child is not None:
+            result[name] = child.attrib.get("link", "")
+    return result
+
+
+def _parse_link_to_parent(urdf_path: Path) -> dict[str, str]:
+    """Returns {child_link: parent_link} from URDF joint data."""
+    root = ET.parse(urdf_path).getroot()
+    result: dict[str, str] = {}
+    for joint in root.findall("joint"):
+        parent_el = joint.find("parent")
+        child_el  = joint.find("child")
+        if parent_el is not None and child_el is not None:
+            result[child_el.attrib.get("link", "")] = parent_el.attrib.get("link", "")
+    return result
+
 
 _HAND_CONFIG_CACHE: dict[str, dict] = {}
 
@@ -73,6 +98,7 @@ class RobotLoader:
         device: str = "cpu",
         continuous_range: float = math.pi,
         valid_poses_path: str | Path | None = None,
+        primitive_sample: bool = False,
     ):
         self.urdf_path = Path(urdf_path).expanduser().resolve()
         if not self.urdf_path.exists():
@@ -89,12 +115,13 @@ class RobotLoader:
         # Precompute specs in chain order and report missing metadata.
         self.specs_in_chain_order = self._build_specs_in_chain_order()
 
-        # Sampling mode: NPZ pool or random uniform.
-        # If NPZ also contains precomputed Dong fields (quats / chain / tips +
-        # joint_labels / tip_labels), enter DONG_CACHE mode and skip runtime
-        # FK/stage2 in sample_dong. Generate that NPZ via
-        # `precompute_robot_dong.py` from an existing q-only NPZ.
+        # Sampling mode: DONG_CACHE > PRIMITIVE_SAMPLE > RANDOM_UNIFORM.
+        # DONG_CACHE: pre-computed NPZ with Dong fields.
+        # PRIMITIVE_SAMPLE: DexGrasp-Zero M_h primitive space; no NPZ needed.
+        # RANDOM_UNIFORM: fallback, joints sampled independently.
         self._dong_cache: dict | None = None
+        self._primitive_mode: bool = False
+        self._primitives_lazy: dict[str, tuple] = {}  # hcp_key -> (primitives, jt_finger)
         if valid_poses_path is not None:
             p = Path(valid_poses_path).expanduser().resolve()
             if not p.exists():
@@ -135,7 +162,11 @@ class RobotLoader:
                 print(f"[RobotLoader] mode=VALID_NPZ  path={p}  n_poses={len(self._valid_poses):,}")
         else:
             self._valid_poses = None
-            print(f"[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)")
+            if primitive_sample:
+                self._primitive_mode = True
+                print(f"[RobotLoader] mode=PRIMITIVE_SAMPLE  (DexGrasp-Zero M_h, primitives built on first sample_dong call)")
+            else:
+                print(f"[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)")
 
     def _parse_urdf_metadata(self, urdf_path: Path) -> tuple[dict[str, JointSpec], str, list[str]]:
         root = ET.parse(urdf_path).getroot()
@@ -415,7 +446,10 @@ class RobotLoader:
             }
             return q, pose, self._dong_cache["joint_labels"], meta
 
-        q, _ = self.sample_q(num_samples, seed)
+        if self._primitive_mode:
+            q = self._sample_primitive_q(num_samples, hand_config_path, seed)
+        else:
+            q, _ = self.sample_q(num_samples, seed)
         fk_out = self.run_fk(q)
         config = _load_hand_config(hand_config_path)
         quats, labels, meta = _dong_run_stage2(fk_out, config)
@@ -425,6 +459,197 @@ class RobotLoader:
         meta["hand_length"] = hand_length
         pose = quats if rot_repr == "quat" else meta["rot6"]
         return q, pose, labels, meta
+
+    # =========================================================================
+    # PRIMITIVE SAMPLING — DexGrasp-Zero M_h construction (S1.B)
+    # =========================================================================
+    def _build_motion_primitives(
+        self,
+        hand_config_path: str | Path,
+        joint_to_finger: dict[str, str | None] | None = None,
+    ) -> dict[str, dict]:
+        """Classify each joint as FLEX/ABD/ROT via unit excitation in palm frame.
+
+        For each joint j, excites it by a small delta (all others fixed) and
+        measures the FINGERTIP displacement in the wrist/palm frame. Dominant
+        axis = primitive type (X=FLEX, Y=ABD, Z=ROT in Dong palm frame).
+        Pure kinematics — equivalent to DexGrasp-Zero S1.B without physics.
+        """
+        config = _load_hand_config(hand_config_path)
+        J = len(self.chain_joint_names)
+
+        if joint_to_finger is None:
+            joint_to_finger = self._build_joint_to_finger(hand_config_path)
+
+        # Fingertip link per finger (last link in chain).
+        finger_to_tip = {
+            fname: fcfg["chain"][-1]
+            for fname, fcfg in config["fingers"].items()
+            if fcfg.get("chain")
+        }
+
+        # Row 0 = q=0 (baseline), rows 1..J = unit excitation per joint.
+        q_batch = torch.zeros(J + 1, J, device=self.device)
+        for j, jname in enumerate(self.chain_joint_names):
+            spec = self.joint_specs.get(jname)
+            lo, hi = self._resolve_limits(spec) if spec else (-math.pi, math.pi)
+            dq = 0.05 * (hi - lo) if (hi - lo) > 1e-6 else 0.05
+            q_batch[j + 1, j] = dq
+
+        fk_out = self.run_fk(q_batch)
+
+        def _pos(link: str, i: int) -> torch.Tensor:
+            return fk_out[link][i, :3, 3]
+
+        wrist_pos  = _pos(config["wrist_link"],       0).unsqueeze(0)
+        index_mcp  = _pos(config["frame_index_mcp"],  0).unsqueeze(0)
+        middle_mcp = _pos(config["frame_middle_mcp"], 0).unsqueeze(0)
+        ring_mcp   = _pos(config["frame_ring_mcp"],   0).unsqueeze(0)
+        R_wrist = _dong_block1_wrist_frame(wrist_pos, index_mcp, middle_mcp, ring_mcp)[0]  # [3,3]
+
+        primitives: dict[str, dict] = {}
+        for j, jname in enumerate(self.chain_joint_names):
+            fname = joint_to_finger.get(jname)
+            if fname is None:
+                primitives[jname] = {"type": "FLEX", "sign": 1}
+                continue
+
+            tip_link = finger_to_tip.get(fname)
+            if tip_link is None or tip_link not in fk_out:
+                primitives[jname] = {"type": "FLEX", "sign": 1}
+                continue
+
+            # Measure FINGERTIP displacement: exciting joint j moves the tip.
+            # (Immediate child-link origin = joint pivot → zero displacement there.)
+            p_base  = fk_out[tip_link][0,     :3, 3]
+            p_delta = fk_out[tip_link][j + 1, :3, 3]
+            disp_local = R_wrist.T @ (p_delta - p_base)  # [3] in palm frame
+
+            if disp_local.abs().max().item() < 1e-7:
+                primitives[jname] = {"type": "FLEX", "sign": 1}
+                continue
+
+            dom = int(disp_local.abs().argmax().item())
+            primitives[jname] = {
+                "type": _PRIM_TYPE_NAMES[dom],
+                "sign": 1 if disp_local[dom].item() >= 0 else -1,
+            }
+
+        n_flex = sum(1 for v in primitives.values() if v["type"] == "FLEX")
+        n_abd  = sum(1 for v in primitives.values() if v["type"] == "ABD")
+        n_rot  = sum(1 for v in primitives.values() if v["type"] == "ROT")
+        print(f"[RobotLoader] M_h built: FLEX={n_flex} ABD={n_abd} ROT={n_rot} (J={J})")
+        return primitives
+
+    def _build_joint_to_finger(self, hand_config_path: str | Path) -> dict[str, str | None]:
+        """Assign each chain joint to a finger by kinematic ancestry.
+
+        A joint belongs to finger f if its child_link is an ancestor of f's
+        fingertip (and not shared with other fingers). Joints that influence
+        multiple fingers (wrist, palm joints) are left unassigned (None).
+        """
+        config = _load_hand_config(hand_config_path)
+        joint_to_child = _parse_joint_to_child(self.urdf_path)
+        link_to_parent = _parse_link_to_parent(self.urdf_path)
+
+        # For each finger, collect all ancestor links from tip up to root.
+        finger_ancestor_sets: dict[str, set[str]] = {}
+        for fname, fcfg in config["fingers"].items():
+            chain = fcfg.get("chain", [])
+            if not chain:
+                continue
+            ancestors: set[str] = set()
+            link: str | None = chain[-1]
+            while link:
+                ancestors.add(link)
+                link = link_to_parent.get(link)
+            finger_ancestor_sets[fname] = ancestors
+
+        # Joint j → finger f only if j's child is an ancestor of EXACTLY one finger.
+        result: dict[str, str | None] = {}
+        for jname in self.chain_joint_names:
+            child = joint_to_child.get(jname)
+            matched = [f for f, anc in finger_ancestor_sets.items() if child and child in anc]
+            result[jname] = matched[0] if len(matched) == 1 else None
+        return result
+
+    def _sample_primitive_q(
+        self,
+        num_samples: int,
+        hand_config_path: str | Path,
+        seed: int | None = None,
+    ) -> torch.Tensor:
+        """Sample [B, J] joint angles coupled by finger/primitive type (DexGrasp-Zero)."""
+        hcp_key = str(Path(hand_config_path).expanduser().resolve())
+        if hcp_key not in self._primitives_lazy:
+            jt_fgr = self._build_joint_to_finger(hand_config_path)
+            prims  = self._build_motion_primitives(hand_config_path, joint_to_finger=jt_fgr)
+            self._primitives_lazy[hcp_key] = (prims, jt_fgr)
+        primitives, joint_to_finger = self._primitives_lazy[hcp_key]
+
+        J = len(self.chain_joint_names)
+        B = num_samples
+        if seed is not None:
+            torch.manual_seed(int(seed))
+
+        fingers = sorted(set(f for f in joint_to_finger.values() if f is not None))
+
+        # One activation scalar per (finger, primitive_type).
+        # FLEX ∈ [0,1] (uni-directional flexion), ABD/ROT ∈ [-1,1].
+        activations: dict[tuple, torch.Tensor] = {}
+        for fname in fingers:
+            activations[(fname, "FLEX")] = torch.rand(B, device=self.device)
+            activations[(fname, "ABD")]  = torch.rand(B, device=self.device) * 2 - 1
+            activations[(fname, "ROT")]  = torch.rand(B, device=self.device) * 2 - 1
+
+        q = torch.zeros(B, J, device=self.device)
+        mimic_deferred: list[tuple[int, JointSpec]] = []
+
+        for i, jname in enumerate(self.chain_joint_names):
+            spec = self.joint_specs.get(jname)
+            if spec and spec.mimic_parent:
+                mimic_deferred.append((i, spec))
+                continue
+
+            lo, hi = self._resolve_limits(spec) if spec else (-math.pi, math.pi)
+            fname = joint_to_finger.get(jname)
+            prim  = primitives.get(jname, {"type": "FLEX", "sign": 1})
+
+            if fname is None:
+                q[:, i] = lo + torch.rand(B, device=self.device) * (hi - lo)
+                continue
+
+            alpha = activations.get((fname, prim["type"]))
+            if alpha is None:
+                q[:, i] = lo + torch.rand(B, device=self.device) * (hi - lo)
+                continue
+
+            if prim["type"] == "FLEX":
+                # Flexion is directional: map [0,1] into joint range aligned with sign.
+                if prim["sign"] > 0:
+                    q[:, i] = lo + alpha * (hi - lo)
+                else:
+                    q[:, i] = hi - alpha * (hi - lo)
+            else:
+                # ABD/ROT: [-1,1] → [lo, hi], scaled by primitive sign.
+                mid  = (lo + hi) * 0.5
+                half = (hi - lo) * 0.5
+                q[:, i] = mid + prim["sign"] * alpha * half
+
+        # Resolve mimic joints from parents (same logic as sample_q).
+        values = {jname: q[:, i] for i, jname in enumerate(self.chain_joint_names)}
+        for i, spec in mimic_deferred:
+            parent = spec.mimic_parent
+            if parent and parent in values:
+                v = values[parent] * spec.mimic_multiplier + spec.mimic_offset
+                lo, hi = self._resolve_limits(spec)
+                q[:, i] = torch.clamp(v, lo, hi)
+                values[spec.name] = q[:, i]
+            else:
+                lo, hi = self._resolve_limits(spec)
+                q[:, i] = lo + torch.rand(B, device=self.device) * (hi - lo)
+
+        return q
 
     def print_summary(self, num_samples: int, q_samples: torch.Tensor, fk_out: dict[str, torch.Tensor]) -> None:
         n_links = len(self.link_names)

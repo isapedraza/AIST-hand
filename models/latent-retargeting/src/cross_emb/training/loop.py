@@ -216,6 +216,7 @@ def main() -> None:
         extra_human_csv  = EXTRA_HUMAN_CSV,
         extra_human_ratio= args.extra_human_ratio,
         human_rot_repr   = args.human_rot_repr,
+        primitive_sample = args.primitive_sample,
     )
 
     _probe = sampler.get_batch_temporal(1)
@@ -239,6 +240,7 @@ def main() -> None:
             extra_human_csv  = None,
             extra_human_ratio= 0.0,
             human_rot_repr   = args.human_rot_repr,
+            primitive_sample = args.primitive_sample,
         )
         print(f"Val sampler: split=val, eval every {args.val_every} steps over {args.n_eval_batches} batches of B={args.b_eval}.")
 
@@ -669,6 +671,7 @@ def main() -> None:
         extra_human_csv  = None,
         extra_human_ratio= 0.0,
         human_rot_repr   = args.human_rot_repr,
+        primitive_sample = args.primitive_sample,
     )
     test_metrics = _compute_eval_metrics(
         test_sampler, args.n_eval_batches, args.b_eval,

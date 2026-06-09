@@ -68,6 +68,9 @@ def _parse_args() -> argparse.Namespace:
         default=True,
         help="Force Shadow WRJ2/WRJ1 targets and FK inputs to zero. Dong human input is wrist-local.",
     )
+    p.add_argument("--primitive_sample", action="store_true",
+                   help="Sample robot poses from DexGrasp-Zero primitive space (M_h). No valid_poses NPZ needed. "
+                        "Joints coupled by finger/type; primitives built from URDF FK at startup.")
     p.add_argument("--resume_ckpt", default=None, help="Path to checkpoint to resume from. Loads model weights only; optimizer and scheduler reset fresh.")
     p.add_argument("--T_0", type=int, default=2000, help="CosineAnnealingWarmRestarts period (steps). LR resets to --lr every T_0 steps.")
     p.add_argument(

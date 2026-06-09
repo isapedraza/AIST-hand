@@ -109,6 +109,7 @@ class CrossEmbodimentSampler:
         extra_human_csv: str | Path | None = None,
         extra_human_ratio: float = 0.0,
         human_rot_repr: str = "quat",
+        primitive_sample: bool = False,
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
         self.split = split
@@ -127,7 +128,12 @@ class CrossEmbodimentSampler:
                     "[CrossEmbodimentSampler] Extra human anchors enabled: "
                     f"ratio={self.extra_human_ratio:.3f}"
                 )
-        self.robot_rnd = RobotLoader(urdf_path, device=device, valid_poses_path=valid_poses_path)
+        self.robot_rnd = RobotLoader(
+            urdf_path,
+            device=device,
+            valid_poses_path=valid_poses_path,
+            primitive_sample=primitive_sample,
+        )
 
     def _batch_counts(self, B: int) -> tuple[int, int]:
         if self.extra_human_loader is None:
