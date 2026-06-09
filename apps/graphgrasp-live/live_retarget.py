@@ -11,6 +11,7 @@ Usage:
     python apps/graphgrasp-live/live_retarget.py --ckpt ... --camera 1 --calib 5.0
     python apps/graphgrasp-live/live_retarget.py --ckpt ... --source hamer --url https://xxxx.trycloudflare.com
     python apps/graphgrasp-live/live_retarget.py --ckpt ... --source wilor --url https://xxxx.trycloudflare.com
+    python apps/graphgrasp-live/live_retarget.py --ckpt ... --source hamer --url https://... --interpolate
 """
 
 import _repo_path  # noqa: F401 -- adds latent-retargeting/src to sys.path
@@ -33,6 +34,8 @@ def main():
                         help="Perception backend feeding Dong kinematics")
     parser.add_argument("--url", default=None,
                         help="Remote inference URL (required for --source hamer/wilor)")
+    parser.add_argument("--interpolate", action="store_true",
+                        help="Wrap source with SLERP interpolation (smooths freeze→jump for high-latency backends)")
     args = parser.parse_args()
 
     if args.source in ("hamer", "wilor") and not args.url:
@@ -46,6 +49,7 @@ def main():
     print(f"Camera     : {args.camera}")
     print(f"Calibration: {args.calib}s")
     print(f"Source     : {args.source}")
+    print(f"Interpolate: {args.interpolate}")
 
     retargeter = Retargeter(ckpt_path)
     if args.source == "hamer":
@@ -57,7 +61,12 @@ def main():
     else:
         from sources import MediaPipeSource
         source = MediaPipeSource(camera=args.camera, calib_seconds=args.calib)
-    sink       = MuJocoSink()
+
+    if args.interpolate:
+        from sources import InterpolatedSource
+        source = InterpolatedSource(source)
+
+    sink = MuJocoSink()
 
     print("Running. Q/ESC to quit.")
     while source.is_running() and sink.is_running():
