@@ -37,6 +37,13 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--w_r",     type=float, default=1.0, help="Weight for D_R in S_k (ahg mode).")
     p.add_argument("--w_joints", type=float, default=1.0, help="Weight for D_joints in S_k (ahg mode).")
     p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k (ahg mode). S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
+    # Contrastive loss mode
+    p.add_argument("--contrastive_mode", choices=["triplet", "infonce"], default="triplet",
+                   help="Contrastive loss type. 'triplet'=Yan margin loss (default). 'infonce'=NT-Xent adaptive (SiMHand Eq.2+3).")
+    p.add_argument("--infonce_tau", type=float, default=0.5,
+                   help="Temperature τ for InfoNCE/NT-Xent loss.")
+    p.add_argument("--infonce_n", type=int, default=512,
+                   help="Pool size N subsampled from [2B] per subspace for InfoNCE. 512 → 511 negatives per anchor.")
     # Xin S_k toggle (--sk_metric xin replaces D_joints+D_ahg with Xin Cartesian terms)
     p.add_argument("--sk_metric", choices=["ahg", "xin"], default="ahg",
                    help="Similarity metric for triplet selection. 'ahg'=current (D_R+D_joints+D_ahg). 'xin'=Xin Cartesian terms + optional D_R via --lam_dr.")

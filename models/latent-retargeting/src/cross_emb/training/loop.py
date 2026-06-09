@@ -25,7 +25,11 @@ from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
 from cross_emb.rotations import d_r_pose, rot6d_to_matrix
-from .losses import _sk_w, _sk_wj, _ahg, xin_sk_per_finger
+from .losses import (
+    _sk_w, _sk_wj, _ahg, xin_sk_per_finger,
+    compute_W_linear, nt_xent_adaptive,
+    compute_pairwise_S_ahg, compute_pairwise_S_xin,
+)
 
 
 def _set_seed(seed: int) -> None:
@@ -381,6 +385,50 @@ def main() -> None:
             B2  = z_all_k.shape[0]
             if B2 < 3:
                 continue
+
+            # -- InfoNCE path (--contrastive_mode infonce) ----------------------
+            if args.contrastive_mode == "infonce":
+                N_inf   = min(args.infonce_n, B2)
+                inf_idx = torch.randperm(B2, device=DEVICE)[:N_inf]
+                z_inf   = z_all_k[inf_idx]
+
+                with torch.no_grad():
+                    _seg_order = ["mcp", "pip", "dip", "tip"]
+                    _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
+                    _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
+                    _w_dr      = sk_weights_dr[sub][_dr_idx]
+                    _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
+
+                    if _use_xin:
+                        _fidx       = _finger_order.index(sub)
+                        _eff_tip    = args.lam_thumb_tip    if sub == "thumb" else args.lam_tip
+                        _eff_finger = args.lam_thumb_finger if sub == "thumb" else args.lam_finger
+                        tips_inf    = _tips_all_xin[inf_idx]
+                        chain_inf   = _chain_all_xin[inf_idx]
+                        S_pw = compute_pairwise_S_xin(
+                            tips_inf, chain_inf, finger_idx=_fidx,
+                            lam_tip=_eff_tip, lam_finger=_eff_finger,
+                            lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                            enable_switching=args.xin_switching,
+                            pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2,
+                            pinch_sigmoid_w=_pinch_sig_w,
+                            lam_dr=args.lam_dr,
+                            q_pool=q_all_k[inf_idx], w_dr=_w_dr, w_r=1.0,
+                            rot_repr=args.human_rot_repr,
+                        )
+                    else:
+                        S_pw = compute_pairwise_S_ahg(
+                            q_all_k[inf_idx], chain_all_k[inf_idx],
+                            w_dr=_w_dr, w_joints=sk_weights_joints[sub],
+                            w_r=args.w_r, w_joints_scale=args.w_joints, w_ahg=args.w_ahg,
+                            rot_repr=args.human_rot_repr,
+                        )
+                    W_pw = compute_W_linear(S_pw)
+
+                L_cont = L_cont + nt_xent_adaptive(z_inf, W_pw, tau=args.infonce_tau)
+                continue  # skip triplet path
+
+            # -- Triplet path (default) ----------------------------------------
             n   = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
 
             anchors = torch.randperm(B2, device=DEVICE)[:n]

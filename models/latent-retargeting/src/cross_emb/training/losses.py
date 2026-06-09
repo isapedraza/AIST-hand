@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
+from cross_emb.rotations import rot6d_to_matrix
 
 # D_R per-joint weights: w_j = (1/sigma_j) / sum(1/sigma)
 # sigma_j = std(1 - dot_j^2) over HOGraspNet train pairs, human only.
@@ -221,3 +223,177 @@ def _ahg(c1: torch.Tensor, c2: torch.Tensor) -> torch.Tensor:
     cos2 = torch.bmm(u_j2, u_c2.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6)
     ang2 = torch.acos(cos2)
     return (ang1 - ang2).abs().sum(dim=(-2, -1))                     # [n]
+
+
+# ---------------------------------------------------------------------------
+# InfoNCE / NT-Xent adaptive (SiMHand Eq. 2+3, --contrastive_mode infonce)
+# ---------------------------------------------------------------------------
+
+def compute_W_linear(S_matrix: torch.Tensor) -> torch.Tensor:
+    """[N,N] pairwise S_k distance → [N,N] weight matrix. Per-row (SiMHand Eq.2).
+
+    W[i,j] = (S_max_i - S_k[i,j]) / (S_max_i - S_min_i). Diagonal = 0.
+    """
+    N = S_matrix.shape[0]
+    mask_self = torch.eye(N, dtype=torch.bool, device=S_matrix.device)
+    S_inf = S_matrix.masked_fill(mask_self, float('inf'))
+    s_min = S_inf.min(dim=1, keepdim=True).values
+    S_ninf = S_matrix.masked_fill(mask_self, float('-inf'))
+    s_max = S_ninf.max(dim=1, keepdim=True).values
+    W = (s_max - S_matrix) / (s_max - s_min).clamp(min=1e-8)
+    return W.masked_fill(mask_self, 0.0)
+
+
+def nt_xent_adaptive(z_pool: torch.Tensor, W: torch.Tensor, tau: float = 0.5) -> torch.Tensor:
+    """NT-Xent with per-pair adaptive weights (SiMHand Eq. 2+3).
+
+    Positive = argmax W per row (dynamic nearest neighbor by S_k).
+    z_pool: [N, D]. W: [N, N] weight matrix, diagonal 0.
+    """
+    N = z_pool.shape[0]
+    device = z_pool.device
+    z = F.normalize(z_pool, dim=-1)
+    sim = torch.mm(z, z.T)                                          # [N, N]
+    mask_self = torch.eye(N, dtype=torch.bool, device=device)
+    pos_idx = W.masked_fill(mask_self, -1.0).argmax(dim=1)          # [N]
+    arange  = torch.arange(N, device=device)
+    w_pos   = W[arange, pos_idx]
+    pos_sim = sim[arange, pos_idx]
+    num     = torch.exp(w_pos * pos_sim / tau)
+    weighted = (W * sim / tau).masked_fill(mask_self, float('-inf'))
+    denom   = torch.exp(weighted).sum(dim=1)
+    return -torch.log(num / (denom + 1e-8)).mean()
+
+
+def compute_pairwise_S_ahg(
+    q_pool: torch.Tensor,
+    chain_pool: torch.Tensor,
+    w_dr: torch.Tensor,
+    w_joints: torch.Tensor,
+    w_r: float,
+    w_joints_scale: float,
+    w_ahg: float,
+    rot_repr: str = "quat",
+) -> torch.Tensor:
+    """Pairwise S_k (AHG mode): D_R + D_joints + D_ahg for all N×N pairs.
+
+    q_pool:     [N, Jk, F]   rotations (F=4 quat or F=6 r6)
+    chain_pool: [N, Fk, 4, 3] wrist-local joint positions
+    w_dr:       [Jk]  per-joint D_R weights
+    w_joints:   [4]   per-segment D_joints weights
+    Returns:    [N, N]
+    """
+    N  = q_pool.shape[0]
+    Fk = chain_pool.shape[1]
+
+    # D_R pairwise
+    if rot_repr == "r6":
+        R    = rot6d_to_matrix(q_pool)                              # [N, Jk, 3, 3]
+        Ra   = R.unsqueeze(1)                                       # [N, 1, Jk, 3, 3]
+        Rb   = R.unsqueeze(0)                                       # [1, N, Jk, 3, 3]
+        tr   = torch.matmul(Ra.transpose(-1, -2), Rb).diagonal(dim1=-2, dim2=-1).sum(-1)  # [N, N, Jk]
+        per_jdr = (1.0 - ((tr - 1) * 0.5).clamp(-1, 1)) * 0.5
+    else:
+        qa      = q_pool.unsqueeze(1)                               # [N, 1, Jk, 4]
+        qb      = q_pool.unsqueeze(0)
+        per_jdr = 1.0 - (qa * qb).sum(-1) ** 2                     # [N, N, Jk]
+    D_R = (w_dr * per_jdr).sum(dim=-1)                             # [N, N]
+
+    # D_joints pairwise
+    ca = chain_pool.unsqueeze(1)                                    # [N, 1, Fk, 4, 3]
+    cb = chain_pool.unsqueeze(0)                                    # [1, N, Fk, 4, 3]
+    D_joints = (w_joints * (ca - cb).norm(dim=-1)).sum(dim=(-2, -1))  # [N, N]
+
+    # D_ahg pairwise: compute per-sample angle histograms, diff pairwise
+    joints   = chain_pool.reshape(N, Fk * 4, 3)
+    critical = torch.cat([chain_pool[:, :, 0, :], chain_pool[:, :, 3, :]], dim=1)  # [N, 2*Fk, 3]
+    u_j = joints   / joints.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+    u_c = critical / critical.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+    ang = torch.acos(torch.bmm(u_j, u_c.transpose(1, 2)).clamp(-1 + 1e-6, 1 - 1e-6))  # [N, Fk*4, 2*Fk]
+    D_ahg = (ang.unsqueeze(1) - ang.unsqueeze(0)).abs().sum(dim=(-2, -1))              # [N, N]
+
+    return w_r * D_R + w_joints_scale * D_joints + w_ahg * D_ahg
+
+
+def compute_pairwise_S_xin(
+    tips_pool: torch.Tensor,
+    chain_pool: torch.Tensor,
+    finger_idx: int,
+    lam_tip: float,
+    lam_finger: float,
+    lam_pinch: float,
+    lam_tip_rot: float,
+    enable_switching: bool,
+    pinch_eps1: float,
+    pinch_eps2: float,
+    pinch_sigmoid_w: float,
+    lam_dr: float = 0.0,
+    q_pool: torch.Tensor | None = None,
+    w_dr: torch.Tensor | None = None,
+    w_r: float = 1.0,
+    rot_repr: str = "quat",
+) -> torch.Tensor:
+    """Pairwise S_k (Xin mode) for all N×N pairs, vectorized.
+
+    Mirrors xin_sk_per_finger with broadcasting over the N×N grid.
+    tips_pool:  [N, 5, 3]      all 5 fingers (wrist-relative, normalized)
+    chain_pool: [N, 5, 4, 3]   all 5 fingers MCP/PIP/DIP/TIP
+    Returns:    [N, N]
+    """
+    N   = tips_pool.shape[0]
+    out = tips_pool.new_zeros(N, N)
+
+    # tip_pos
+    if lam_tip > 0:
+        v  = tips_pool[:, finger_idx, :]                            # [N, 3]
+        tip_pos_raw = ((v.unsqueeze(1) - v.unsqueeze(0)) ** 2).sum(dim=-1)  # [N, N]
+        if enable_switching and finger_idx in (1, 2, 3):
+            d      = (tips_pool[:, finger_idx, :] - tips_pool[:, 0, :]).norm(dim=-1)  # [N]
+            stilde = _sigmoid_xin(d, -pinch_sigmoid_w, pinch_eps1)  # [N]
+            out    = out + lam_tip * stilde.unsqueeze(1) * tip_pos_raw
+        else:
+            out = out + lam_tip * tip_pos_raw
+
+    # dense finger pose
+    if lam_finger > 0:
+        ca = chain_pool[:, finger_idx, :, :].unsqueeze(1)          # [N, 1, 4, 3]
+        cb = chain_pool[:, finger_idx, :, :].unsqueeze(0)          # [1, N, 4, 3]
+        out = out + lam_finger * ((ca - cb) ** 2).sum(dim=-1).mean(dim=-1)  # [N, N]
+
+    # pinch
+    if lam_pinch > 0 and finger_idx in (1, 2, 3):
+        g  = tips_pool[:, finger_idx, :] - tips_pool[:, 0, :]      # [N, 3]
+        ga = g.unsqueeze(1)
+        gb = g.unsqueeze(0)
+        if enable_switching:
+            d        = g.norm(dim=-1)
+            gamma    = g / d.clamp(min=1e-8).unsqueeze(-1)
+            s        = _sigmoid_xin(d, pinch_sigmoid_w, pinch_eps1)
+            target   = _pinch_rescale(d, pinch_eps1, pinch_eps2).unsqueeze(-1) * gamma  # [N, 3]
+            pinch    = s.unsqueeze(1) * ((gb - target.unsqueeze(1)) ** 2).sum(dim=-1)   # [N, N]
+        else:
+            pinch = ((ga - gb) ** 2).sum(dim=-1)
+        out = out + lam_pinch * pinch
+
+    # tip_rot
+    if lam_tip_rot > 0:
+        r     = chain_pool[:, finger_idx, 3, :] - chain_pool[:, finger_idx, 2, :]
+        r_hat = r / r.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+        ra, rb = r_hat.unsqueeze(1), r_hat.unsqueeze(0)
+        out   = out + lam_tip_rot * ((ra - rb) ** 2).sum(dim=-1)
+
+    # optional D_R
+    if lam_dr > 0 and q_pool is not None and w_dr is not None:
+        if rot_repr == "r6":
+            R    = rot6d_to_matrix(q_pool)
+            Ra   = R.unsqueeze(1)
+            Rb   = R.unsqueeze(0)
+            tr   = torch.matmul(Ra.transpose(-1, -2), Rb).diagonal(dim1=-2, dim2=-1).sum(-1)
+            per_jdr = (1.0 - ((tr - 1) * 0.5).clamp(-1, 1)) * 0.5
+        else:
+            qa      = q_pool.unsqueeze(1)
+            qb      = q_pool.unsqueeze(0)
+            per_jdr = 1.0 - (qa * qb).sum(-1) ** 2
+        out = out + lam_dr * w_r * (w_dr * per_jdr).sum(dim=-1)
+
+    return out
