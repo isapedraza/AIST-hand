@@ -1,14 +1,16 @@
 """
 Live retargeting: perception -> Dong kinematics -> Shadow Hand (MuJoCo).
 
-Perception backend selectable: MediaPipe world landmarks (default) or HaMeR
-remote inference (--source hamer --url ...). HaMeR feeds the same Dong path and
-gives cleaner frontal MCP flexion (closes the fist where MediaPipe does not).
+Perception backend selectable: MediaPipe world landmarks (default), HaMeR, or
+WiLoR remote inference (--source {hamer,wilor} --url ...). HaMeR and WiLoR feed
+the same Dong path and give cleaner frontal MCP flexion (close the fist where
+MediaPipe does not). WiLoR is much faster on GPU (lighter ViT) than HaMeR's ViT-H.
 
 Usage:
     python apps/graphgrasp-live/live_retarget.py --ckpt /path/to/stage1_best_total.pt
     python apps/graphgrasp-live/live_retarget.py --ckpt ... --camera 1 --calib 5.0
     python apps/graphgrasp-live/live_retarget.py --ckpt ... --source hamer --url https://xxxx.trycloudflare.com
+    python apps/graphgrasp-live/live_retarget.py --ckpt ... --source wilor --url https://xxxx.trycloudflare.com
 """
 
 import _repo_path  # noqa: F401 -- adds latent-retargeting/src to sys.path
@@ -27,14 +29,14 @@ def main():
     parser.add_argument("--ckpt",   required=True, help="Path to Stage 1 checkpoint (.pt).")
     parser.add_argument("--camera", type=int,   default=0)
     parser.add_argument("--calib",  type=float, default=3.0, help="Calibration seconds")
-    parser.add_argument("--source", choices=["mediapipe", "hamer"], default="mediapipe",
+    parser.add_argument("--source", choices=["mediapipe", "hamer", "wilor"], default="mediapipe",
                         help="Perception backend feeding Dong kinematics")
     parser.add_argument("--url", default=None,
-                        help="HaMeR remote inference URL (required for --source hamer)")
+                        help="Remote inference URL (required for --source hamer/wilor)")
     args = parser.parse_args()
 
-    if args.source == "hamer" and not args.url:
-        parser.error("--source hamer requires --url")
+    if args.source in ("hamer", "wilor") and not args.url:
+        parser.error(f"--source {args.source} requires --url")
 
     ckpt_path = Path(args.ckpt)
     if not ckpt_path.is_absolute():
@@ -49,6 +51,9 @@ def main():
     if args.source == "hamer":
         from sources import HaMeRSource
         source = HaMeRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
+    elif args.source == "wilor":
+        from sources import WiLoRSource
+        source = WiLoRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
     else:
         from sources import MediaPipeSource
         source = MediaPipeSource(camera=args.camera, calib_seconds=args.calib)
