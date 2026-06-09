@@ -25,6 +25,19 @@ from .dong_math import dong_run_stage2, _dong_block1_wrist_frame, _dong_world_to
 # Backward-compat alias used by precompute scripts that imported _dong_run_stage2 directly.
 _dong_run_stage2 = dong_run_stage2
 
+
+def _quat_wxyz_to_rot6d(q: torch.Tensor) -> torch.Tensor:
+    """[..., 4] wxyz quaternion → [..., 6] rot6d (first two cols of rotation matrix).
+
+    Used to compute rot6 on-the-fly from cached quats, avoiding 3.6 GB of VRAM
+    that would otherwise be needed to pre-cache the rot6 field.
+    """
+    q = q / q.norm(dim=-1, keepdim=True).clamp(min=1e-8)
+    w, x, y, z = q.unbind(dim=-1)
+    c1 = torch.stack([1 - 2*(y*y + z*z), 2*(x*y + w*z), 2*(x*z - w*y)], dim=-1)
+    c2 = torch.stack([2*(x*y - w*z), 1 - 2*(x*x + z*z), 2*(y*z + w*x)], dim=-1)
+    return torch.cat([c1, c2], dim=-1)
+
 ACTUATED_TYPES = {"revolute", "prismatic", "continuous"}
 
 
@@ -94,25 +107,26 @@ class RobotLoader:
             cache_keys = ("quats", "chain", "tips", "joint_labels", "tip_labels")
             if all(k in data.files for k in cache_keys):
                 quats_np  = data["quats"]
-                rot6_np   = data["rot6"] if "rot6" in data.files else None
                 chain_np  = data["chain"]
                 tips_np   = data["tips"]
                 joint_labels = [str(s) for s in data["joint_labels"]]
                 tip_labels   = [str(s) for s in data["tip_labels"]]
                 cached_cfg = str(data["hand_config"]) if "hand_config" in data.files else None
+                has_rot6_npz = "rot6" in data.files
                 self._dong_cache = {
                     "quats": torch.from_numpy(quats_np).to(self.device),
-                    "rot6":  torch.from_numpy(rot6_np).to(self.device) if rot6_np is not None else None,
                     "chain": torch.from_numpy(chain_np).to(self.device),
                     "tips":  torch.from_numpy(tips_np).to(self.device),
                     "joint_labels": joint_labels,
                     "tip_labels":   tip_labels,
                     "hand_config":  cached_cfg,
                 }
+                # rot6 is NOT loaded into VRAM — computed on-the-fly from quats
+                # to save ~3.6 GB of device memory.
                 print(
                     f"[RobotLoader] mode=DONG_CACHE  path={p}  n_poses={len(self._valid_poses):,}  "
                     f"quats={tuple(quats_np.shape)} "
-                    f"rot6={tuple(rot6_np.shape) if rot6_np is not None else 'missing'} "
+                    f"rot6={'npz_present(on-the-fly)' if has_rot6_npz else 'missing'} "
                     f"chain={tuple(chain_np.shape)} tips={tuple(tips_np.shape)}"
                 )
                 if cached_cfg is not None:
@@ -384,15 +398,11 @@ class RobotLoader:
                 torch.manual_seed(int(seed))
             idx = torch.randint(0, len(self._valid_poses), (num_samples,), device=self.device)
             q     = self._valid_poses[idx]
+            quats_batch = self._dong_cache["quats"][idx]                  # [B, Jk, 4]
             if rot_repr == "quat":
-                pose = self._dong_cache["quats"][idx]
+                pose = quats_batch
             else:
-                if self._dong_cache.get("rot6") is None:
-                    raise ValueError(
-                        "Robot DONG_CACHE does not contain rot6. Regenerate it with "
-                        "models/latent-retargeting/scripts/precompute_robot_dong.py from this branch."
-                    )
-                pose = self._dong_cache["rot6"][idx]
+                pose = _quat_wxyz_to_rot6d(quats_batch)                  # [B, Jk, 6] on-the-fly
             chain = self._dong_cache["chain"][idx]                       # [B, F, 4, 3]
             tips  = self._dong_cache["tips"][idx]                        # [B, F, 3]
             tip_labels = self._dong_cache["tip_labels"]
@@ -401,9 +411,8 @@ class RobotLoader:
                 "tips":            tips,
                 "tip_labels":      tip_labels,
                 "chain_positions": chain_positions,
+                "rot6":            _quat_wxyz_to_rot6d(quats_batch),     # always available, no VRAM cost
             }
-            if self._dong_cache.get("rot6") is not None:
-                meta["rot6"] = self._dong_cache["rot6"][idx]
             return q, pose, self._dong_cache["joint_labels"], meta
 
         q, _ = self.sample_q(num_samples, seed)
