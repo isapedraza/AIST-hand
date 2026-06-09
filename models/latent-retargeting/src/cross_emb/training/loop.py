@@ -180,7 +180,7 @@ def main() -> None:
     if args.csv_path:
         CSV_PATH = Path(args.csv_path)
     elif args.human_rot_repr == "r6":
-        CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl14.csv"
+        CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl14_r6.csv"
     else:
         CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl11.csv"
     CKPT_PATH   = Path(args.ckpt_path)  if args.ckpt_path   else PACKAGE_ROOT / "checkpoints/stage1_latest.pt"

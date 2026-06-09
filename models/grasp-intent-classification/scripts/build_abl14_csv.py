@@ -18,7 +18,7 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PROCESSED = REPO_ROOT / "human" / "datasets" / "hograspnet" / "processed"
 DEFAULT_INPUT = PROCESSED / "hograspnet_abl11.csv"
-DEFAULT_OUTPUT = PROCESSED / "hograspnet_abl14.csv"
+DEFAULT_OUTPUT = PROCESSED / "hograspnet_abl14_r6.csv"
 
 QUAT_COLS = [f"q{j}_{c}" for j in range(1, 21) for c in ("w", "x", "y", "z")]
 R6_COLS = [
