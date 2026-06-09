@@ -15,6 +15,8 @@ import torch
 import torch.nn.functional as F
 import pytorch_kinematics as pk
 
+from cross_emb.rotations import matrix_to_rot6d
+
 EPS = 1e-8
 
 
@@ -152,6 +154,7 @@ def dong_run_stage2(
         return _dong_world_to_local(pos(link), wrist_pos, R_wrist)
 
     quats_list: list[torch.Tensor] = []
+    rot6_list: list[torch.Tensor] = []
     labels: list[str] = []
     finger_meta: dict = {}
     tips_list: list[torch.Tensor] = []
@@ -176,6 +179,7 @@ def dong_run_stage2(
         R_mcp = _dong_block3_mcp(mcp_l, pip_l)
         q_mcp = _dong_mat_to_quat(R_mcp)
         quats_list.append(q_mcp)
+        rot6_list.append(matrix_to_rot6d(R_mcp))
         labels.append(f"{finger_name}_mcp")
 
         if n == 2:
@@ -186,6 +190,7 @@ def dong_run_stage2(
             R_pip = _dong_block3_pip_only(mcp_l, pip_l, tip_l, R_mcp)
             q_pip = _dong_mat_to_quat(R_pip)
             quats_list.append(q_pip)
+            rot6_list.append(matrix_to_rot6d(R_pip))
             labels.append(f"{finger_name}_pip")
             finger_meta[finger_name] = {"R_mcp": R_mcp, "R_pip": R_pip}
             continue
@@ -195,12 +200,15 @@ def dong_run_stage2(
         q_pip = _dong_mat_to_quat(R_pip)
         q_dip = _dong_mat_to_quat(R_dip)
         quats_list.append(q_pip)
+        rot6_list.append(matrix_to_rot6d(R_pip))
         labels.append(f"{finger_name}_pip")
         quats_list.append(q_dip)
+        rot6_list.append(matrix_to_rot6d(R_dip))
         labels.append(f"{finger_name}_dip")
         finger_meta[finger_name] = {"R_mcp": R_mcp, "R_pip": R_pip, "R_dip": R_dip}
 
     quats = torch.stack(quats_list, dim=1)
+    rot6  = torch.stack(rot6_list, dim=1)
     tips  = torch.stack(tips_list, dim=1)
 
     meta = {
@@ -210,6 +218,7 @@ def dong_run_stage2(
         "tips": tips,
         "tip_labels": tip_labels,
         "chain_positions": chain_positions,
+        "rot6": rot6,
     }
     return quats, labels, meta
 

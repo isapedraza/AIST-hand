@@ -94,6 +94,7 @@ class RobotLoader:
             cache_keys = ("quats", "chain", "tips", "joint_labels", "tip_labels")
             if all(k in data.files for k in cache_keys):
                 quats_np  = data["quats"]
+                rot6_np   = data["rot6"] if "rot6" in data.files else None
                 chain_np  = data["chain"]
                 tips_np   = data["tips"]
                 joint_labels = [str(s) for s in data["joint_labels"]]
@@ -101,6 +102,7 @@ class RobotLoader:
                 cached_cfg = str(data["hand_config"]) if "hand_config" in data.files else None
                 self._dong_cache = {
                     "quats": torch.from_numpy(quats_np).to(self.device),
+                    "rot6":  torch.from_numpy(rot6_np).to(self.device) if rot6_np is not None else None,
                     "chain": torch.from_numpy(chain_np).to(self.device),
                     "tips":  torch.from_numpy(tips_np).to(self.device),
                     "joint_labels": joint_labels,
@@ -109,7 +111,9 @@ class RobotLoader:
                 }
                 print(
                     f"[RobotLoader] mode=DONG_CACHE  path={p}  n_poses={len(self._valid_poses):,}  "
-                    f"quats={tuple(quats_np.shape)} chain={tuple(chain_np.shape)} tips={tuple(tips_np.shape)}"
+                    f"quats={tuple(quats_np.shape)} "
+                    f"rot6={tuple(rot6_np.shape) if rot6_np is not None else 'missing'} "
+                    f"chain={tuple(chain_np.shape)} tips={tuple(tips_np.shape)}"
                 )
                 if cached_cfg is not None:
                     print(f"[RobotLoader] cached hand_config={cached_cfg}")
@@ -361,22 +365,34 @@ class RobotLoader:
         num_samples: int,
         hand_config_path: str | Path,
         seed: int | None = None,
+        rot_repr: str = "quat",
     ) -> tuple[torch.Tensor, torch.Tensor, list[str], dict]:
         """
-        Sample random configurations and compute Dong quaternions in one call.
+        Sample random configurations and compute Dong pose in one call.
 
         Returns:
             q            : Tensor[B, J]    sampled joint angles
-            quats        : Tensor[B, N, 4] Dong quaternions (wxyz, w>=0)
+            pose         : Tensor[B, N, 4] (quat) or [B, N, 6] (r6)
             joint_labels : list[str]
             meta         : dict (tips [B,F,3] normalized, tip_labels, chain_positions)
         """
+        if rot_repr not in {"quat", "r6"}:
+            raise ValueError(f"rot_repr must be quat or r6, got {rot_repr!r}")
+
         if self._dong_cache is not None and self._valid_poses is not None:
             if seed is not None:
                 torch.manual_seed(int(seed))
             idx = torch.randint(0, len(self._valid_poses), (num_samples,), device=self.device)
             q     = self._valid_poses[idx]
-            quats = self._dong_cache["quats"][idx]
+            if rot_repr == "quat":
+                pose = self._dong_cache["quats"][idx]
+            else:
+                if self._dong_cache.get("rot6") is None:
+                    raise ValueError(
+                        "Robot DONG_CACHE does not contain rot6. Regenerate it with "
+                        "models/latent-retargeting/scripts/precompute_robot_dong.py from this branch."
+                    )
+                pose = self._dong_cache["rot6"][idx]
             chain = self._dong_cache["chain"][idx]                       # [B, F, 4, 3]
             tips  = self._dong_cache["tips"][idx]                        # [B, F, 3]
             tip_labels = self._dong_cache["tip_labels"]
@@ -386,7 +402,9 @@ class RobotLoader:
                 "tip_labels":      tip_labels,
                 "chain_positions": chain_positions,
             }
-            return q, quats, self._dong_cache["joint_labels"], meta
+            if self._dong_cache.get("rot6") is not None:
+                meta["rot6"] = self._dong_cache["rot6"][idx]
+            return q, pose, self._dong_cache["joint_labels"], meta
 
         q, _ = self.sample_q(num_samples, seed)
         fk_out = self.run_fk(q)
@@ -396,7 +414,8 @@ class RobotLoader:
         meta["tips"] = meta["tips"] / hand_length
         meta["chain_positions"] = {f: v / hand_length for f, v in meta["chain_positions"].items()}
         meta["hand_length"] = hand_length
-        return q, quats, labels, meta
+        pose = quats if rot_repr == "quat" else meta["rot6"]
+        return q, pose, labels, meta
 
     def print_summary(self, num_samples: int, q_samples: torch.Tensor, fk_out: dict[str, torch.Tensor]) -> None:
         n_links = len(self.link_names)

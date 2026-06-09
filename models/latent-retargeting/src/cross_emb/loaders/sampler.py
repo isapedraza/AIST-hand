@@ -6,21 +6,21 @@ Wraps HumanLoader and RobotLoader into a single object.
 Each call to get_batch(B) / get_batch_temporal(B) returns a flat dict
 with everything the training loop needs for one step.
 
-Output contract:
+Output contract (pose_* keys always present; quats_* aliases added in quat mode):
     q_r            [B, J]      raw robot joint angles             -> E_r
-    quats_h        [B, Nh, 4]  human Dong quats frame t           -> E_h
-    quats_h_sub    [B, K, 4]   human quats, common joints only    -> D_R human
-    quats_r_sub    [B, K, 4]   robot quats, common joints only    -> D_R robot
+    pose_h         [B, Nh, F]  human pose frame t                 -> E_h
+    pose_h_sub     [B, K, F]   human pose, common joints only     -> D_R human
+    pose_r_sub     [B, K, F]   robot pose, common joints only     -> D_R robot
     tips_h_sub     [B, Fc, 3]  human fingertips, common fingers   -> D_ee human
     tips_r_sub     [B, Fc, 3]  robot fingertips, common fingers   -> D_ee robot
-    chain_h_sub    [B, Fc, 4, 3] human chain positions, common fingers -> D_joints human
-    chain_r_sub    [B, Fc, 4, 3] robot chain positions, common fingers -> D_joints robot
+    chain_h_sub    [B, Fc, 4, 3] human chain positions            -> D_joints human
+    chain_r_sub    [B, Fc, 4, 3] robot chain positions            -> D_joints robot
     common_labels  list[str]   joint labels in subspace (len K)
     common_fingers list[str]   finger names in subspace (len Fc)
 
 Extra keys for get_batch_temporal only:
-    quats_h_t1     [B, Nh, 4]  human quats frame t+1              -> L_temporal / v_H^hand
-    tips_h_t1      [B, Fh, 3]  human fingertips frame t+1         -> v_H^hand velocity
+    pose_h_t1      [B, Nh, F]  human pose frame t+1               -> L_temporal / v_H
+    tips_h_t1      [B, Fh, 3]  human fingertips frame t+1         -> v_H velocity
 """
 
 from __future__ import annotations
@@ -34,9 +34,9 @@ from cross_emb.loaders.robot_loader import RobotLoader
 
 
 def filter_to_subspace(
-    quats_h: torch.Tensor,
+    pose_h: torch.Tensor,
     labels_h: list[str],
-    quats_r: torch.Tensor,
+    pose_r: torch.Tensor,
     labels_r: list[str],
     tips_h: torch.Tensor,
     tip_labels_h: list[str],
@@ -44,25 +44,15 @@ def filter_to_subspace(
     tip_labels_r: list[str],
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str], list[str]]:
     """
-    Filter quaternions and fingertip positions to the common subspace.
+    Filter pose tensors and fingertip positions to the common subspace.
 
     Joint labels have the form "<finger>_<joint>" (e.g. "thumb_mcp").
     Tip labels have the form "<finger>" (e.g. "thumb").
     Common fingers are derived from the common joint labels.
 
-    Args:
-        quats_h       : [B, Nh, 4]  human Dong quaternions
-        labels_h      : list[str]   len Nh
-        quats_r       : [B, Nr, 4]  robot Dong quaternions
-        labels_r      : list[str]   len Nr
-        tips_h        : [B, Fh, 3]  human fingertip positions (normalized)
-        tip_labels_h  : list[str]   len Fh
-        tips_r        : [B, Fr, 3]  robot fingertip positions (normalized)
-        tip_labels_r  : list[str]   len Fr
-
     Returns:
-        quats_h_sub     : [B, K, 4]
-        quats_r_sub     : [B, K, 4]
+        pose_h_sub      : [B, K, F]
+        pose_r_sub      : [B, K, F]
         tips_h_sub      : [B, Fc, 3]
         tips_r_sub      : [B, Fc, 3]
         common_labels   : list[str] len K
@@ -83,8 +73,8 @@ def filter_to_subspace(
     tidx_r = [tip_labels_r.index(f) for f in common_fingers]
 
     return (
-        quats_h[:, idx_h, :],
-        quats_r[:, idx_r, :],
+        pose_h[:, idx_h, :],
+        pose_r[:, idx_r, :],
         tips_h[:, tidx_h, :],
         tips_r[:, tidx_r, :],
         common,
@@ -97,16 +87,15 @@ class CrossEmbodimentSampler:
     Single entry point for the training loop.
 
     Args:
-        csv_path         : path to hograspnet_abl11.csv
+        csv_path         : path to HOGraspNet CSV
         urdf_path        : path to robot URDF
         hand_config_path : path to hand YAML (hand_configs/*.yaml)
         split            : "train", "val", or "test"
         device           : torch device
-        valid_poses_path : path to valid_robot_poses.npz (mode=VALID_NPZ).
-                           If None, uses random uniform sampling (mode=RANDOM_UNIFORM).
-                           If set but file missing, crashes immediately.
-        extra_human_csv  : optional static human anchor CSV, mixed into train batches.
-        extra_human_ratio: fraction of human batch reserved for static anchors.
+        valid_poses_path : path to valid_robot_poses.npz
+        extra_human_csv  : optional static human anchor CSV
+        extra_human_ratio: fraction of human batch reserved for static anchors
+        human_rot_repr   : "quat" (default) or "r6"
     """
 
     def __init__(
@@ -119,17 +108,21 @@ class CrossEmbodimentSampler:
         valid_poses_path: str | Path | None = None,
         extra_human_csv: str | Path | None = None,
         extra_human_ratio: float = 0.0,
+        human_rot_repr: str = "quat",
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
         self.split = split
+        self.human_rot_repr = human_rot_repr
         self.extra_human_ratio = float(extra_human_ratio)
-        self.human_loader = HumanLoader(csv_path, split=split, device=device)
+        self.human_loader = HumanLoader(csv_path, split=split, device=device, human_rot_repr=human_rot_repr)
         self.extra_human_loader = None
         if extra_human_csv is not None and self.extra_human_ratio > 0:
             if split != "train":
                 print(f"[CrossEmbodimentSampler] Ignoring extra_human_csv for split={split}.")
             else:
-                self.extra_human_loader = StaticHumanAnchorLoader(extra_human_csv, device=device)
+                self.extra_human_loader = StaticHumanAnchorLoader(
+                    extra_human_csv, device=device, human_rot_repr=human_rot_repr
+                )
                 print(
                     "[CrossEmbodimentSampler] Extra human anchors enabled: "
                     f"ratio={self.extra_human_ratio:.3f}"
@@ -149,7 +142,7 @@ class CrossEmbodimentSampler:
         extra_counts = {}
         if B_extra:
             eb = self.extra_human_loader.get_batch(B_extra)
-            hb["quats"] = torch.cat([hb["quats"], eb["quats"]], dim=0)
+            hb["pose"] = torch.cat([hb["pose"], eb["pose"]], dim=0)
             hb["tips"] = torch.cat([hb["tips"], eb["tips"]], dim=0)
             hb["chain"] = torch.cat([hb["chain"], eb["chain"]], dim=0)
             extra_counts = {
@@ -157,7 +150,7 @@ class CrossEmbodimentSampler:
                 for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
             }
         return self._assemble(
-            quats_h=hb["quats"],
+            pose_h=hb["pose"],
             tips_h=hb["tips"],
             chain_h=hb["chain"],
             labels=hb["labels"],
@@ -171,15 +164,15 @@ class CrossEmbodimentSampler:
     def get_batch_temporal(self, B: int, seed: int | None = None) -> dict:
         """
         Sample B consecutive human frame pairs (t, t+1) + B random robot poses.
-        Adds quats_h_t1 and tips_h_t1 to the output dict.
+        Adds pose_h_t1 and tips_h_t1 to the output dict.
         """
         B_base, B_extra = self._batch_counts(B)
         hb = self.human_loader.get_batch_temporal(B_base, seed=seed)
         extra_counts = {}
         if B_extra:
             eb = self.extra_human_loader.get_batch_temporal(B_extra)
-            hb["quats_t"] = torch.cat([hb["quats_t"], eb["quats_t"]], dim=0)
-            hb["quats_t1"] = torch.cat([hb["quats_t1"], eb["quats_t1"]], dim=0)
+            hb["pose_t"] = torch.cat([hb["pose_t"], eb["pose_t"]], dim=0)
+            hb["pose_t1"] = torch.cat([hb["pose_t1"], eb["pose_t1"]], dim=0)
             hb["tips_t"] = torch.cat([hb["tips_t"], eb["tips_t"]], dim=0)
             hb["tips_t1"] = torch.cat([hb["tips_t1"], eb["tips_t1"]], dim=0)
             hb["chain_t"] = torch.cat([hb["chain_t"], eb["chain_t"]], dim=0)
@@ -189,7 +182,7 @@ class CrossEmbodimentSampler:
                 for k, v in zip(*torch.unique(eb["grasp_type"], return_counts=True))
             }
         out = self._assemble(
-            quats_h=hb["quats_t"],
+            pose_h=hb["pose_t"],
             tips_h=hb["tips_t"],
             chain_h=hb["chain_t"],
             labels=hb["labels"],
@@ -199,13 +192,15 @@ class CrossEmbodimentSampler:
             extra_human_count=B_extra,
             extra_human_by_class=extra_counts,
         )
-        out["quats_h_t1"] = hb["quats_t1"]  # [B, Nh, 4] -> L_temporal
-        out["tips_h_t1"]  = hb["tips_t1"]   # [B, Fh, 3] -> v_H^hand velocity
+        out["pose_h_t1"] = hb["pose_t1"]
+        if self.human_rot_repr == "quat":
+            out["quats_h_t1"] = hb["pose_t1"]  # backward-compat alias
+        out["tips_h_t1"] = hb["tips_t1"]
         return out
 
     def _assemble(
         self,
-        quats_h: torch.Tensor,
+        pose_h: torch.Tensor,
         tips_h: torch.Tensor,
         chain_h: torch.Tensor,
         labels: list[str],
@@ -215,33 +210,29 @@ class CrossEmbodimentSampler:
         extra_human_count: int = 0,
         extra_human_by_class: dict[int, int] | None = None,
     ) -> dict:
-        # Robot sample is input data for the training step. No gradients flow
-        # through q_r / quats_r / chain / tips, so skip autograd graph build.
         with torch.no_grad():
-            q_r, quats_r, labels_r, meta_r = self.robot_rnd.sample_dong(
-                B, self.hand_config_path, seed=seed
+            q_r, pose_r, labels_r, meta_r = self.robot_rnd.sample_dong(
+                B, self.hand_config_path, seed=seed, rot_repr=self.human_rot_repr
             )
 
-        quats_h_sub, quats_r_sub, tips_h_sub, tips_r_sub, common_labels, common_fingers = filter_to_subspace(
-            quats_h, labels,
-            quats_r, labels_r,
+        pose_h_sub, pose_r_sub, tips_h_sub, tips_r_sub, common_labels, common_fingers = filter_to_subspace(
+            pose_h, labels,
+            pose_r, labels_r,
             tips_h, tip_labels,
             meta_r["tips"], meta_r["tip_labels"],
         )
 
-        # Chain positions for common fingers: [B, Fc, 4, 3]
         tidx_h = [tip_labels.index(f) for f in common_fingers]
-        tidx_r = [meta_r["tip_labels"].index(f) for f in common_fingers]
         chain_h_sub = chain_h[:, tidx_h, :, :]
         chain_r_sub = torch.stack(
             [meta_r["chain_positions"][f] for f in common_fingers], dim=1
         )  # [B, Fc, 4, 3]
 
-        return {
+        out = {
             "q_r":            q_r,
-            "quats_h":        quats_h,
-            "quats_h_sub":    quats_h_sub,
-            "quats_r_sub":    quats_r_sub,
+            "pose_h":         pose_h,
+            "pose_h_sub":     pose_h_sub,
+            "pose_r_sub":     pose_r_sub,
             "tips_h_sub":     tips_h_sub,
             "tips_r_sub":     tips_r_sub,
             "chain_h_sub":    chain_h_sub,
@@ -251,3 +242,8 @@ class CrossEmbodimentSampler:
             "extra_human_count": extra_human_count,
             "extra_human_by_class": extra_human_by_class or {},
         }
+        if self.human_rot_repr == "quat":
+            out["quats_h"] = pose_h
+            out["quats_h_sub"] = pose_h_sub
+            out["quats_r_sub"] = pose_r_sub
+        return out

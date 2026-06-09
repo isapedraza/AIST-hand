@@ -67,6 +67,12 @@ def _parse_args() -> argparse.Namespace:
         help="Global seed. -1 (default) picks a random seed and logs it. Fixes torch/numpy/python RNG.",
     )
     p.add_argument(
+        "--human_rot_repr",
+        choices=["quat", "r6"],
+        default="quat",
+        help="Rotation representation for human poses. 'r6' uses 6D (Zhou et al. 2019) for better SO(3) continuity.",
+    )
+    p.add_argument(
         "--val_every",
         type=int,
         default=500,

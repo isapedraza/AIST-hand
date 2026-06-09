@@ -20,6 +20,7 @@ import argparse
 from pathlib import Path
 
 from cross_emb.inference import Retargeter
+from cross_emb.rotations import quat_wxyz_to_rot6d
 from sinks import MuJocoSink
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -68,12 +69,14 @@ def main():
 
     sink = MuJocoSink()
 
+    print(f"Rotation repr: {retargeter.human_rot_repr}")
     print("Running. Q/ESC to quit.")
     while source.is_running() and sink.is_running():
         quats = source.next_frame()
         if quats is None:
             continue
-        qpos = retargeter(quats)
+        pose = quat_wxyz_to_rot6d(quats) if retargeter.human_rot_repr == "r6" else quats
+        qpos = retargeter(pose)
         sink.update(qpos)
 
     source.release()

@@ -24,6 +24,7 @@ from cross_emb.nn.human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, 
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
+from cross_emb.rotations import d_r_pose, rot6d_to_matrix
 from .losses import _sk_w, _sk_wj, _ahg
 
 
@@ -52,6 +53,7 @@ def _compute_eval_metrics(
     D_r,
     hand_config: Path,
     zero_wrj: bool,
+    rot_repr: str = "quat",
 ) -> dict | None:
     """Run retargeting on a split and return RS/NDS/NVS/rec metrics.
 
@@ -76,9 +78,9 @@ def _compute_eval_metrics(
     with torch.no_grad():
         for _ in range(n_batches):
             batch = eval_sampler.get_batch_temporal(b_eval)
-            quats_h        = batch["quats_h"]
-            quats_h_t1     = batch["quats_h_t1"]
-            quats_h_sub    = batch["quats_h_sub"]
+            pose_h         = batch["pose_h"]
+            pose_h_t1      = batch["pose_h_t1"]
+            pose_h_sub     = batch["pose_h_sub"]
             chain_h_sub    = batch["chain_h_sub"]
             tips_h_sub     = batch["tips_h_sub"]
             tips_h_t1      = batch["tips_h_t1"]
@@ -87,8 +89,8 @@ def _compute_eval_metrics(
             common_labels  = batch["common_labels"]
 
             # Retarget: human Dong -> latent -> robot joint angles.
-            z_t        = E_h_(quats_h)
-            z_t1       = E_h_(quats_h_t1)
+            z_t        = E_h_(pose_h)
+            z_t1       = E_h_(pose_h_t1)
             q_r_hat    = D_r_(D_X_(z_t)).float()
             q_r_hat_t1 = D_r_(D_X_(z_t1)).float()
             if zero_wrj:
@@ -105,15 +107,17 @@ def _compute_eval_metrics(
 
             # Subset robot Dong outputs to common joints/fingers.
             joint_idx_r = [joint_labels_r.index(l) for l in common_labels]
-            quats_r_sub_t = quats_r_all[:B, joint_idx_r]                  # [B, Jk, 4]
-            # Align hemispheres (w>=0 not guaranteed match per pair).
-            sign = torch.sign((quats_h_sub * quats_r_sub_t).sum(-1, keepdim=True))
-            sign = torch.where(sign == 0, torch.ones_like(sign), sign)
-            quats_r_sub_t = quats_r_sub_t * sign
+            if rot_repr == "r6":
+                pose_r_sub_t = meta_r["rot6"][:B, joint_idx_r]            # [B, Jk, 6]
+            else:
+                quats_r_sub_t = quats_r_all[:B, joint_idx_r]              # [B, Jk, 4]
+                # Align hemispheres (w>=0 not guaranteed match per pair).
+                sign = torch.sign((pose_h_sub * quats_r_sub_t).sum(-1, keepdim=True))
+                sign = torch.where(sign == 0, torch.ones_like(sign), sign)
+                pose_r_sub_t = quats_r_sub_t * sign
 
             # RS: D_R uniform sum (Yan eq 1).
-            dot = (quats_h_sub * quats_r_sub_t).sum(-1)                    # [B, Jk]
-            rs  = (1 - dot ** 2).sum(-1).mean().item()
+            rs = d_r_pose(pose_h_sub, pose_r_sub_t, rot_repr).mean().item()
 
             # NDS: chain L2 over 4 positions per finger (hand domain adaptation).
             chain_r_dict = meta_r["chain_positions"]
@@ -173,7 +177,12 @@ def main() -> None:
     PACKAGE_ROOT = Path(__file__).resolve().parents[3]
     DEX_ROOT  = Path(args.dex_root)
 
-    CSV_PATH    = Path(args.csv_path)    if args.csv_path    else REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl11.csv"
+    if args.csv_path:
+        CSV_PATH = Path(args.csv_path)
+    elif args.human_rot_repr == "r6":
+        CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl14.csv"
+    else:
+        CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl11.csv"
     CKPT_PATH   = Path(args.ckpt_path)  if args.ckpt_path   else PACKAGE_ROOT / "checkpoints/stage1_latest.pt"
     HAND_CONFIG = Path(args.hand_config) if args.hand_config else REPO_ROOT / "robot/hands/shadow_hand/shadow_hand_right.yaml"
     URDF_PATH   = DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
@@ -202,6 +211,7 @@ def main() -> None:
         valid_poses_path = args.valid_poses_path,
         extra_human_csv  = EXTRA_HUMAN_CSV,
         extra_human_ratio= args.extra_human_ratio,
+        human_rot_repr   = args.human_rot_repr,
     )
 
     _probe = sampler.get_batch_temporal(1)
@@ -224,13 +234,15 @@ def main() -> None:
             valid_poses_path = None,
             extra_human_csv  = None,
             extra_human_ratio= 0.0,
+            human_rot_repr   = args.human_rot_repr,
         )
         print(f"Val sampler: split=val, eval every {args.val_every} steps over {args.n_eval_batches} batches of B={args.b_eval}.")
 
     # ---------------------------------------------------------------------------
     # Models
     # ---------------------------------------------------------------------------
-    E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
+    human_in_dim = 6 if args.human_rot_repr == "r6" else 4
+    E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
     E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim=args.z_dim).to(DEVICE)
     D_X = SharedDecoder_D_X(z_dim=args.z_dim, shared_dim=args.shared_dim).to(DEVICE)
@@ -299,14 +311,14 @@ def main() -> None:
     for step in range(args.n_steps):
 
         batch          = sampler.get_batch_temporal(args.b)
-        quats_h        = batch["quats_h"]
-        quats_h_t1     = batch["quats_h_t1"]
+        pose_h         = batch["pose_h"]
+        pose_h_t1      = batch["pose_h_t1"]
         q_r            = batch["q_r"]
         if args.zero_wrj:
             q_r = q_r.clone()
             q_r[:, 0:2] = 0.0  # WRJ2, WRJ1 are not encoded in wrist-local Dong human signal.
-        quats_h_sub    = batch["quats_h_sub"]
-        quats_r_sub    = batch["quats_r_sub"]
+        pose_h_sub     = batch["pose_h_sub"]
+        pose_r_sub     = batch["pose_r_sub"]
         tips_h_sub     = batch["tips_h_sub"]
         tips_h_t1      = batch["tips_h_t1"]
         chain_h_sub    = batch["chain_h_sub"]   # [B, Fc, 4, 3]
@@ -317,8 +329,8 @@ def main() -> None:
         extra_human_by_class = batch.get("extra_human_by_class", {})
 
         with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
-            z_t  = E_h(quats_h)       # [B, 5*z_dim]
-            z_t1 = E_h(quats_h_t1)
+            z_t  = E_h(pose_h)        # [B, 5*z_dim]
+            z_t1 = E_h(pose_h_t1)
             z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
 
             q_r_hat    = D_r(D_X(z_r))
@@ -344,8 +356,8 @@ def main() -> None:
                 continue
             z_h_k = z_t_subs[k]                          # [B, z_dim]
             z_r_k = z_r_subs[k]
-            q_h_k     = quats_h_sub[:, jidx, :]              # [B, Jk, 4]
-            q_r_k     = quats_r_sub[:, jidx, :]
+            q_h_k     = pose_h_sub[:, jidx, :]               # [B, Jk, F]
+            q_r_k     = pose_r_sub[:, jidx, :]
             chain_h_k = chain_h_sub[:, tidx, :, :] if tidx else chain_h_sub[:, :0, :, :]  # [B, Fk, 4, 3]
             chain_r_k = chain_r_sub[:, tidx, :, :] if tidx else chain_r_sub[:, :0, :, :]
 
@@ -378,15 +390,26 @@ def main() -> None:
                 chain_ca = chain_all_k[cand_a]
                 chain_cb = chain_all_k[cand_b]
 
-                dot_a      = (qa * q_ca).sum(-1)
-                dot_b      = (qa * q_cb).sum(-1)
+                if args.human_rot_repr == "r6":
+                    R_a  = rot6d_to_matrix(qa)
+                    R_ca = rot6d_to_matrix(q_ca)
+                    R_cb = rot6d_to_matrix(q_cb)
+                    t_a = torch.matmul(R_a.transpose(-1, -2), R_ca).diagonal(dim1=-2, dim2=-1).sum(-1)
+                    t_b = torch.matmul(R_a.transpose(-1, -2), R_cb).diagonal(dim1=-2, dim2=-1).sum(-1)
+                    per_jdr_a = (1.0 - ((t_a - 1) * 0.5).clamp(-1, 1)) * 0.5
+                    per_jdr_b = (1.0 - ((t_b - 1) * 0.5).clamp(-1, 1)) * 0.5
+                else:
+                    dot_a = (qa * q_ca).sum(-1)
+                    dot_b = (qa * q_cb).sum(-1)
+                    per_jdr_a = 1.0 - dot_a ** 2
+                    per_jdr_b = 1.0 - dot_b ** 2
                 _seg_order = ["mcp", "pip", "dip", "tip"]
                 _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
                 _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
                 _w_dr      = sk_weights_dr[sub][_dr_idx]
                 _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
-                D_R_a      = (_w_dr * (1 - dot_a ** 2)).sum(dim=-1)
-                D_R_b      = (_w_dr * (1 - dot_b ** 2)).sum(dim=-1)
+                D_R_a      = (_w_dr * per_jdr_a).sum(dim=-1)
+                D_R_b      = (_w_dr * per_jdr_b).sum(dim=-1)
                 _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
                 D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
                 D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
@@ -488,6 +511,7 @@ def main() -> None:
                 val_sampler, args.n_eval_batches, args.b_eval,
                 E_h, E_r, E_X, D_X, D_r,
                 HAND_CONFIG, args.zero_wrj,
+                rot_repr=args.human_rot_repr,
             )
             if last_val_metrics is not None:
                 score = (
@@ -560,11 +584,13 @@ def main() -> None:
         valid_poses_path = None,           # avoid GPU OOM from double DONG_CACHE
         extra_human_csv  = None,
         extra_human_ratio= 0.0,
+        human_rot_repr   = args.human_rot_repr,
     )
     test_metrics = _compute_eval_metrics(
         test_sampler, args.n_eval_batches, args.b_eval,
         E_h, E_r, E_X, D_X, D_r,
         HAND_CONFIG, args.zero_wrj,
+        rot_repr=args.human_rot_repr,
     )
     if test_metrics is not None:
         score = test_metrics["rs"] + test_metrics["nds"] + args.lambda_tmp * test_metrics["nvs"]

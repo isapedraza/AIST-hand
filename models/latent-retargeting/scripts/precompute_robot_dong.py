@@ -10,6 +10,7 @@ Input  NPZ schema:
 Output NPZ schema:
     q              [N, J]      float32
     quats          [N, K, 4]   float32   Dong quaternions per joint (wxyz, w>=0)
+    rot6           [N, K, 6]   float32   6D rotation repr (Zhou 2019) per joint
     chain          [N, F, 4, 3] float32  chain link positions, wrist-local, /hand_length
     tips           [N, F, 3]   float32   fingertip positions, wrist-local, /hand_length
     joint_labels   [K]         str       label per quaternion slot
@@ -97,6 +98,7 @@ def main() -> None:
     print(f"[precompute] hand_length={hand_length:.6f}")
 
     quats_out = np.zeros((N, K, 4),     dtype=np.float32)
+    rot6_out  = np.zeros((N, K, 6),     dtype=np.float32)
     chain_out = np.zeros((N, F, 4, 3),  dtype=np.float32)
     tips_out  = np.zeros((N, F, 3),     dtype=np.float32)
 
@@ -113,6 +115,7 @@ def main() -> None:
                 f: meta["chain_positions"][f] / hand_length for f in tip_labels
             }
         quats_out[i:j] = quats.cpu().numpy()
+        rot6_out[i:j]  = meta["rot6"].cpu().numpy()
         tips_out[i:j]  = tips.cpu().numpy()
         for fi, f in enumerate(tip_labels):
             chain_out[i:j, fi] = chain_per_finger[f].cpu().numpy()
@@ -125,6 +128,7 @@ def main() -> None:
         out_path,
         q             = q_all.astype(np.float32, copy=False),
         quats         = quats_out,
+        rot6          = rot6_out,
         chain         = chain_out,
         tips          = tips_out,
         joint_labels  = np.array(joint_labels),

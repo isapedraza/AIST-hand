@@ -76,9 +76,10 @@ _UPPER = np.array([
 
 class Retargeter:
     """
-    Human quats -> Shadow Hand qpos.
+    Human pose -> Shadow Hand qpos.
 
-    Input : torch.Tensor [B, 20, 4]  Dong quaternions (joints 1-20, no wrist)
+    Input : torch.Tensor [B, 20, F]  Dong pose (joints 1-20, no wrist)
+                                     F=4 for quat, F=6 for R6 (auto-detected from ckpt)
     Output: np.ndarray   [B, 24]     joint positions clipped to Shadow Hand limits
     """
 
@@ -87,12 +88,16 @@ class Retargeter:
         n_j = ck["D_r"]["fc.weight"].shape[0]
         dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
 
+        cfg = ck.get("config", {})
+        self.human_rot_repr = cfg.get("human_rot_repr", "quat") if isinstance(cfg, dict) else "quat"
+        human_in_dim = 6 if self.human_rot_repr == "r6" else 4
+
         if "proj_precision.weight" in ck["E_h"]:
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = _LegacyHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
         else:
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
-            self.E_h = HumanEncoder_E_h(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
+            self.E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=z_dim).eval()
 
         self.D_X = _SharedDecoder_compat(in_dim=dx_in_dim, shared_dim=1024).eval()
         self.D_r = RobotDecoder_D_r(n_joints=n_j, shared_dim=1024).eval()
@@ -102,7 +107,7 @@ class Retargeter:
         self.D_r.load_state_dict(ck["D_r"])
 
     @torch.no_grad()
-    def __call__(self, quats: torch.Tensor) -> np.ndarray:
-        q = self.D_r(self.D_X(self.E_h(quats))).numpy()
+    def __call__(self, pose: torch.Tensor) -> np.ndarray:
+        q = self.D_r(self.D_X(self.E_h(pose))).numpy()
         q[:, 0:2] = 0.0  # WRJ2, WRJ1 — not encoded in wrist-frame human signal
         return np.clip(q, _LOWER, _UPPER)
