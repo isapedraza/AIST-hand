@@ -34,9 +34,25 @@ def _parse_args() -> argparse.Namespace:
         help="Legacy cap for sampled triplets per subspace. Omit or pass <=0 to use the full human+robot pool.",
     )
     p.add_argument("--margin",      type=float, default=0.05)
-    p.add_argument("--w_r",     type=float, default=1.0, help="Weight for D_R in S_k.")
-    p.add_argument("--w_joints", type=float, default=1.0, help="Weight for D_joints in S_k.")
-    p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k. S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
+    p.add_argument("--w_r",     type=float, default=1.0, help="Weight for D_R in S_k (ahg mode).")
+    p.add_argument("--w_joints", type=float, default=1.0, help="Weight for D_joints in S_k (ahg mode).")
+    p.add_argument("--w_ahg",   type=float, default=1.0, help="Weight for D_ahg in S_k (ahg mode). S_k = w_r*D_R + w_joints*D_joints + w_ahg*D_ahg.")
+    # Xin S_k toggle (--sk_metric xin replaces D_joints+D_ahg with Xin Cartesian terms)
+    p.add_argument("--sk_metric", choices=["ahg", "xin"], default="ahg",
+                   help="Similarity metric for triplet selection. 'ahg'=current (D_R+D_joints+D_ahg). 'xin'=Xin Cartesian terms + optional D_R via --lam_dr.")
+    p.add_argument("--lam_dr",          type=float, default=0.0,  help="D_R weight added to Xin S_k (xin mode only). 0=disabled.")
+    p.add_argument("--lam_tip",         type=float, default=0.0,  help="Xin wrist->tip position weight (non-thumb fingers).")
+    p.add_argument("--lam_thumb_tip",   type=float, default=0.0,  help="Xin wrist->tip position weight (thumb).")
+    p.add_argument("--lam_finger",      type=float, default=0.0,  help="Xin dense MCP/PIP/DIP/TIP chain weight (non-thumb).")
+    p.add_argument("--lam_thumb_finger",type=float, default=0.0,  help="Xin dense chain weight (thumb).")
+    p.add_argument("--lam_pinch",       type=float, default=0.0,  help="Xin thumb->finger pinch vector weight (index/middle/ring).")
+    p.add_argument("--lam_tip_rot",     type=float, default=0.0,  help="Xin DIP->TIP unit vector weight.")
+    p.add_argument("--xin_switching",   action="store_true",
+                   help="Enable run21-paper-sk sigmoid switching for pinch (Xin Eq. 197/216). Suppresses tip_pos when pinch active.")
+    p.add_argument("--pinch_eps1_m",           type=float, default=0.1,   help="Xin pinch intent threshold (meters).")
+    p.add_argument("--pinch_eps2_m",           type=float, default=0.01,  help="Xin pinch contact threshold (meters).")
+    p.add_argument("--pinch_sigmoid_w_m",      type=float, default=10.0,  help="Xin sigmoid slope (1/m).")
+    p.add_argument("--pinch_ref_hand_length_m",type=float, default=0.197, help="Reference hand length (m) for normalizing pinch thresholds.")
     p.add_argument("--extra_human_ratio", type=float, default=0.10)
     p.add_argument("--log_metric_stats", action="store_true", help="Log D_R/D_ee/S_k scale diagnostics by subspace.")
     p.add_argument(

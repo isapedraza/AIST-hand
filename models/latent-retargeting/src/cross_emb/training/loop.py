@@ -25,7 +25,7 @@ from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
 from cross_emb.rotations import d_r_pose, rot6d_to_matrix
-from .losses import _sk_w, _sk_wj, _ahg
+from .losses import _sk_w, _sk_wj, _ahg, xin_sk_per_finger
 
 
 def _set_seed(seed: int) -> None:
@@ -345,6 +345,20 @@ def main() -> None:
         z_r_subs = z_r.chunk(5, dim=-1)
         L_cont = torch.tensor(0.0, device=DEVICE)
         metric_stats = {}
+
+        # Xin S_k: build full-hand tip/chain tensors once before the subspace loop.
+        # tips_r extracted from chain tip position (index 3 = TIP in MCP/PIP/DIP/TIP).
+        # pinch_* thresholds normalized to hand-length ratio space (run21-paper-sk).
+        _use_xin = args.sk_metric == "xin"
+        if _use_xin:
+            _tips_r_sub   = chain_r_sub[:, :, 3, :]                          # [B, Fc, 3]
+            _tips_all_xin  = torch.cat([tips_h_sub,  _tips_r_sub],  dim=0)   # [2B, Fc, 3]
+            _chain_all_xin = torch.cat([chain_h_sub, chain_r_sub],  dim=0)   # [2B, Fc, 4, 3]
+            _finger_order  = ["thumb", "index", "middle", "ring", "pinky"]
+            _pinch_eps1    = args.pinch_eps1_m / args.pinch_ref_hand_length_m
+            _pinch_eps2    = args.pinch_eps2_m / args.pinch_ref_hand_length_m
+            _pinch_sig_w   = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
+
         for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
             prefixes   = SUBSPACE_LABEL_PREFIX[sub]
             sub_finger = SUBSPACE_FINGERS[sub]
@@ -410,25 +424,47 @@ def main() -> None:
                 _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
                 D_R_a      = (_w_dr * per_jdr_a).sum(dim=-1)
                 D_R_b      = (_w_dr * per_jdr_b).sum(dim=-1)
-                _w_joints  = sk_weights_joints[sub]                      # [4] always: chain has mcp,pip,dip,tip
-                D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
-                D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
 
-                D_ahg_a = _ahg(chain_a, chain_ca)
-                D_ahg_b = _ahg(chain_a, chain_cb)
-
-                S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
-                S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
+                if _use_xin:
+                    _fidx = _finger_order.index(sub)
+                    _eff_tip    = args.lam_thumb_tip    if sub == "thumb" else args.lam_tip
+                    _eff_finger = args.lam_thumb_finger if sub == "thumb" else args.lam_finger
+                    S_a = xin_sk_per_finger(
+                        _tips_all_xin[anchors], _tips_all_xin[cand_a],
+                        _chain_all_xin[anchors], _chain_all_xin[cand_a],
+                        finger_idx=_fidx,
+                        lam_tip=_eff_tip, lam_finger=_eff_finger,
+                        lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                        enable_switching=args.xin_switching,
+                        pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
+                    )
+                    S_b = xin_sk_per_finger(
+                        _tips_all_xin[anchors], _tips_all_xin[cand_b],
+                        _chain_all_xin[anchors], _chain_all_xin[cand_b],
+                        finger_idx=_fidx,
+                        lam_tip=_eff_tip, lam_finger=_eff_finger,
+                        lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                        enable_switching=args.xin_switching,
+                        pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
+                    )
+                    if args.lam_dr > 0:
+                        S_a = S_a + args.lam_dr * D_R_a
+                        S_b = S_b + args.lam_dr * D_R_b
+                else:
+                    _w_joints  = sk_weights_joints[sub]
+                    D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
+                    D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
+                    D_ahg_a = _ahg(chain_a, chain_ca)
+                    D_ahg_b = _ahg(chain_a, chain_cb)
+                    S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
+                    S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
 
                 if args.log_metric_stats:
-                    D_R_pairs      = torch.cat([D_R_a, D_R_b])
-                    D_joints_pairs = torch.cat([D_joints_a, D_joints_b])
-                    D_ahg_pairs    = torch.cat([D_ahg_a, D_ahg_b])
-                    S_pairs        = torch.cat([S_a, S_b])
+                    S_pairs = torch.cat([S_a, S_b])
                     metric_stats[sub] = (
-                        D_R_pairs.mean().item(),
-                        D_joints_pairs.mean().item(),
-                        D_ahg_pairs.mean().item(),
+                        D_R_a.mean().item(),
+                        0.0 if _use_xin else D_joints_a.mean().item(),
+                        0.0 if _use_xin else D_ahg_a.mean().item(),
                         S_pairs.mean().item(),
                         S_pairs.std().item(),
                         S_pairs.min().item(),
