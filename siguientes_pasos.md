@@ -15,45 +15,69 @@ Contexto que originó la lista (observaciones live, madrugada 2026-06-08):
 
 ## Orden de ataque
 
-**Lógica: arreglar causas (foundacional) antes que parches (compensatorio); medir;
-agregar el parche solo para el residual.** Criterios: (A) valor de tesis y (B)
-mergeabilidad como delta limpio sobre **Run 20 limpio** (ablación pura → aceptar/
-descartar sin confundir resultados). Distinción clave:
+**Lógica: el problema tiene varias piezas (P1-P4). Sin descartar causas no se
+puede atacar — tunear la loss a ciegas es lotería (pasarse la vida modificando
+losses esperando que algo cambie).** Por eso Fase 1 son **pisos diagnósticos**:
+ablaciones falsables que, al descartarlas, **matan una hipótesis de causa raíz**.
+Cada piso es un experimento yes/no sobre una causa, no una mejora acumulativa.
+Aditivos pero **independientes**: se corren para descartar, no para sumar.
 
-- **Foundacional** = arregla la causa raíz. Ideas 2, 8, 6, 4, 7.
-- **Compensatorio** = parcha el síntoma porque la causa sigue rota. **Idea 1**
-  (offset anchor de Run 37 + reweight MCP de Run 38). Existe para compensar fallas
-  de percepción/contrastive/anclaje. Si se arreglan las causas, **puede volverse
-  innecesario o dañino** (doble corrección → sobre-flexión). Por eso va **al final,
-  solo para residual** — no como base. Narrativa de tesis: "arreglé la raíz" >
+Criterio de orden = **información por esfuerzo** = prior(es la causa) × duda que
+quita ÷ costo. No "lo más fácil"; lo que más colapsa el espacio de hipótesis.
+Baseline = **Run 20 limpio** (sin anchor ni reweight): cada delta es ablación pura
+→ aceptar/descartar sin confundir resultados.
+
+Tres tipos:
+
+- **Piso diagnóstico (Fase 1)** = ablación falsable que quita duda sobre una causa
+  raíz. Ideas 2, 3, 7, 8, 6.
+- **Cherry (Fase 2)** = refinamiento aditivo, **condicional a la base**. **Idea 4
+  (Xin)**: da gradiente directo a D_r empujando la pose hacia el pseudo-target
+  humano. No aísla causa, no se abla limpio — si la base (percepción/estabilidad/
+  rep) está rota refina hacia una hipótesis sin resolver y **enturbia el
+  diagnóstico** (¿mejoró por Xin o por la base?). Solo tiene sentido sobre pisos ya
+  diagnosticados.
+- **Compensatorio / meta (Fase 3)** = parcha el síntoma o balancea. **Idea 1**
+  (offset anchor de Run 37 + reweight MCP de Run 38): compensa fallas de
+  percepción/contrastive/anclaje. Si se arreglan las causas **puede volverse
+  innecesario o dañino** (doble corrección → sobre-flexión). **Idea 5** (Kendall):
+  meta-balanceo, solo tras apilar losses. Narrativa de tesis: "arreglé la raíz" >
   "apilé compensaciones para forzar MCP".
 
 Problemas raíz: **P1** MCP no se ve (percepción), **P2** escala latente (Entry 87:
 z_H norm 4.28 vs z_R 1.62), **P3** un solo robot (anclaje débil = muleta multi-robot
 de Yan ausente), **P4** S_k ambiguo a escala mm.
 
-| Idea | Tipo | Causa | Depende de |
-|---|---|---|---|
-| 2 percepción | Foundacional | P1 raíz | — (ortogonal, deploy) |
-| 8 sampler/multi-robot | Foundacional | P3 raíz | — |
-| 7 6D rotation | Foundacional (rep) | calidad rep | — |
-| 6 InfoNCE+cosine | Foundacional | P2+P4+saturación | 8, 7 |
-| 4 Xin loss directa | Foundacional | D_r sin gradiente humano | 6 |
-| 3 CAM temporal | Estabilización | P1 deploy | 2 |
-| 1 combinar 37+38 | **Compensatorio** | residual MCP | foundacionales |
-| 5 auto-pesos | Meta | balanceo | 1/4/6 |
+| Idea | Tipo | Pregunta yes/no que responde | Costo | Depende de |
+|---|---|---|---|---|
+| 2 percepción | Piso (P1) | ¿mejor source crea cierre MCP? | medio (offline barato) | — |
+| 7 6D rotation | Piso (rep) | ¿la rep de rotación limita el aprendizaje? | bajo (dataset✓ código✓) | — |
+| 3 CAM temporal | Piso (P1 estab.) | ¿es inestabilidad de detección? | alto (from-scratch) | sube tras veredicto de 2 |
+| 8 sampler | Piso (P3) | ¿el anclaje débil 1-robot es el cuello? | alto (M_h probing) | — |
+| 6 InfoNCE+cosine | Piso (contrastive) | ¿el contrastive saturado mata el gradiente? | medio | 7 |
+| 4 Xin loss directa | **Cherry** | refina pose; condicional a la base | medio (código existe) | 2, 3 |
+| 1 combinar 37+38 | **Compensatorio** | residual MCP | bajo (flags existen) | pisos |
+| 5 auto-pesos | Meta | balanceo de losses | bajo | 1/4/6 |
 
 **Secuencia (baseline = Run 20 LIMPIO, sin anchor ni reweight):**
 
-- **Fase 1 — foundacionales (deltas limpios sobre Run 20 limpio):**
-  - **2 percepción** ∥ **8 sampler** ∥ **7 6D** — tres raíces independientes, en paralelo.
-  - → **6 InfoNCE** (tras 8 + 7).
-  - → **4 Xin loss directa** (tras 6).
-- **Fase 2 — estabilización:** **3 CAM temporal** (tras 2).
-- **Fase 3 — compensación de residual:** **1 combinar 37+38** — SOLO si tras los
-  foundacionales el MCP sigue corto. Mide con la base ya arreglada; agrega offset
-  solo para el hueco restante. Red de seguridad, no fundamento.
-- **Fase 4 — meta:** **5 auto-pesos** (tras apilar losses de 1/4/6).
+- **Fase 1 — pisos diagnósticos (ablaciones falsables, ordenadas por info/esfuerzo):**
+  - **Paso 0 (gratis):** repetir prueba de mano lateral sobre **Run 20 limpio**
+    (pendiente). Confirma el prior de percepción sobre el baseline, costo cero.
+  - **2 percepción (líder):** prior más alto — la evidencia live ya apunta ahí.
+    Test **offline** (HaMeR XYZ → mismo Dong FK → retarget sobre clip grabado),
+    SIN construir el source Stage-2 todavía. Si cierra MCP → P1 confirmado, vale
+    el source real. Si no → **P1 muerto**, redirige.
+  - **7 6D (en paralelo):** cero bloqueos, independiente → corre en background
+    mientras se hace el test de percepción.
+  - **3 CAM temporal:** se afila DESPUÉS del veredicto de 2 (si P1 muere,
+    inestabilidad sube; si P1 vive, CAM temporal lo complementa).
+  - **8 sampler** ∥ → **6 InfoNCE** (tras 7).
+- **Fase 2 — cherry:** **4 Xin loss directa** — SOLO sobre pisos ya diagnosticados
+  (percepción que ve MCP + señal estable). Antes de eso enturbia el diagnóstico.
+- **Fase 3 — residual + meta:** **1 combinar 37+38** SOLO si tras los pisos el MCP
+  sigue corto (red de seguridad, no fundamento) → **5 auto-pesos** tras apilar
+  losses de 1/4/6.
 
 **Atajo pragmático (tesis mínimamente funcional):** si el tiempo aprieta, el camino
 corto a un demo que funciona es **2 (percepción) + 3 (estabilización) + 1 (parche
