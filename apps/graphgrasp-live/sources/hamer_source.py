@@ -72,7 +72,14 @@ class HaMeRSource:
         # Deferred import so MediaPipe-only usage never requires HaMeR deps.
         from human.perception.hamer_backend import HaMeRBackend
 
-        self._backend = HaMeRBackend(url=url, camera_index=camera)
+        # mirror_left_hand=False: HaMeR internally flips left hands to be predicted
+        # in right-canonical space (vitdet flip=right==0) and returns the 3D
+        # keypoints WITHOUT un-flipping (hamer_module returns pred_keypoints_3d
+        # as-is). So a left hand already arrives right-canonical; the client-side
+        # x-reflection would double-flip it into a left-handed coordinate system
+        # and break Dong's chirality-sensitive frame (Eq 5-9). Right hand is
+        # unaffected (the reflection only ever applied to handedness=="Left").
+        self._backend = HaMeRBackend(url=url, camera_index=camera, mirror_left_hand=False)
         self._dk = DongKinematics(calibration_frames=None)
         self._calib_seconds = calib_seconds
         self._calib_done = calib_seconds <= 0.0
