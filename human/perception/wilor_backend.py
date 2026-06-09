@@ -2,17 +2,18 @@
 WiLoR remote inference backend for GraphGrasp.
 
 Pipeline:
-  Webcam -> downscaled full frame -> POST to Colab (separate thread)
-  -> WiLoR runs its own detection + reconstruction -> 21 keypoints 3D + is_right
+  Webcam -> MediaPipe (bbox) -> crop -> POST to Colab (separate thread)
+  -> WiLoR detects + reconstructs in the crop -> 21 keypoints 3D + is_right
 
 WiLoR-mini (warmshao/WiLoR-mini) reconstructs MANO and returns pred_keypoints_3d
 already in OpenPose/MediaPipe 21-joint order (mano_to_openpose remap), so the rows
 map directly onto the standard JOINTS used by Dong -- no reordering needed.
 
-WiLoR does its own hand detection, so unlike the HaMeR backend there is no
-client-side MediaPipe bbox/crop: we send a (downscaled) full frame and let the
-server detect. The webcam and rendering never block; get_landmarks() returns the
-last keypoints received without waiting on the in-flight request.
+Like the HaMeR backend, a client-side MediaPipe bbox is used to send a small CROP
+(~256x256) instead of the full frame: this cuts the upload ~5x (a 640x480 jpg is
+~200 KB vs ~42 KB for a 256 crop) and lets WiLoR's own detector work on a small
+image -- the dominant per-request cost over a tunnel. The webcam and rendering
+never block; get_landmarks() returns the last keypoints received without waiting.
 
 Drop-in shape-compatible with the HaMeR path: get_landmarks() returns a dict
 {JOINT_NAME: xyz, ..., "is_right": int}.
@@ -22,6 +23,7 @@ import os
 import threading
 
 import cv2
+import mediapipe as mp
 import numpy as np
 import requests
 
@@ -37,27 +39,41 @@ JOINTS = [
 
 
 class WiLoRBackend:
-    """WiLoR remote inference. Sends frames to a Colab server, returns latest keypoints."""
+    """WiLoR remote inference. Sends hand crops to a Colab server, returns latest keypoints."""
 
+    CROP_SIZE = 256
     FALLBACK_FRAME_SHAPE = (480, 640, 3)
 
     def __init__(
         self,
         url: str,
         camera_index: int | str = 0,
-        send_width: int = 640,
+        padding: float = 0.3,
+        crop_size: int = 256,
         jpeg_quality: int = 80,
         request_timeout: float = 5.0,
         mirror_display: bool = True,
+        min_detection_confidence: float = 0.5,
+        min_tracking_confidence: float = 0.5,
         window_name: str = "GraphGrasp - WiLoR",
     ):
         self.url = url.rstrip("/")
         self.camera_index = camera_index
-        self.send_width = send_width
+        self.padding = padding
+        self.crop_size = crop_size
         self.jpeg_quality = jpeg_quality
         self.request_timeout = request_timeout
         self.mirror_display = mirror_display
         self.window_name = window_name
+
+        # MediaPipe only for the bbox (and display); WiLoR does the actual hand pose.
+        self._mp_hands = mp.solutions.hands
+        self._hands = self._mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=min_detection_confidence,
+            min_tracking_confidence=min_tracking_confidence,
+        )
 
         backends = [cv2.CAP_V4L2, cv2.CAP_ANY] if os.name == "posix" else [cv2.CAP_ANY]
         self._cap = None
@@ -73,27 +89,47 @@ class WiLoRBackend:
                 cap.release()
 
         self._frame_bgr = None
+        self._last_result = None
+        self._last_bbox = None
         self._window_open = True
         self._window_initialized = False
 
         self._infer_busy = False
         self._latest_sample = None
 
+        # Reuse one TCP+TLS connection across frames (keep-alive). Over a tunnel
+        # this saves the per-request handshake (~140 ms/frame measured).
+        self._session = requests.Session()
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _get_bbox(self, landmarks) -> tuple:
+        xs = [lm.x for lm in landmarks.landmark]
+        ys = [lm.y for lm in landmarks.landmark]
+        x1 = max(0.0, min(xs) - self.padding)
+        y1 = max(0.0, min(ys) - self.padding)
+        x2 = min(1.0, max(xs) + self.padding)
+        y2 = min(1.0, max(ys) + self.padding)
+        return x1, y1, x2, y2
+
+    def _crop_hand(self, frame: np.ndarray, bbox: tuple) -> np.ndarray:
+        h, w = frame.shape[:2]
+        x1, y1, x2, y2 = bbox
+        crop = frame[int(y1 * h):int(y2 * h), int(x1 * w):int(x2 * w)]
+        if crop.size == 0:
+            return crop
+        return cv2.resize(crop, (self.crop_size, self.crop_size))
+
     # ── inference ─────────────────────────────────────────────────────────────
 
-    def _infer_async(self, frame_bgr: np.ndarray) -> None:
-        """Separate thread: downscale, POST frame, store keypoints + is_right."""
+    def _infer_async(self, crop: np.ndarray) -> None:
+        """Separate thread: POST crop, store keypoints + is_right."""
         try:
-            h, w = frame_bgr.shape[:2]
-            if w > self.send_width:
-                s = self.send_width / float(w)
-                frame_bgr = cv2.resize(frame_bgr, (self.send_width, int(round(h * s))))
-
-            ok, buf = cv2.imencode(".jpg", frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             if not ok:
                 return
             files = {"frame": ("frame.jpg", buf.tobytes(), "image/jpeg")}
-            resp = requests.post(f"{self.url}/infer", files=files, timeout=self.request_timeout)
+            resp = self._session.post(f"{self.url}/infer", files=files, timeout=self.request_timeout)
             body = resp.json()
             kp = body.get("keypoints")
             if kp is None:
@@ -112,7 +148,7 @@ class WiLoRBackend:
     # ── source interface (matches HaMeRBackend) ───────────────────────────────
 
     def get_landmarks(self) -> dict | None:
-        """Read a frame, fire WiLoR inference in background, return last keypoints."""
+        """Read a frame, find a bbox with MediaPipe, fire WiLoR inference on the crop."""
         if not self._cap or not self._cap.isOpened():
             return None
         ok, frame_bgr = self._cap.read()
@@ -120,9 +156,20 @@ class WiLoRBackend:
             return None
         self._frame_bgr = frame_bgr
 
-        if not self._infer_busy:
+        result = self._hands.process(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+        self._last_result = result
+
+        if not result.multi_hand_landmarks:
+            self._last_bbox = None
+            return self._latest_sample
+
+        bbox = self._get_bbox(result.multi_hand_landmarks[0])
+        self._last_bbox = bbox
+        crop = self._crop_hand(frame_bgr, bbox)
+
+        if not self._infer_busy and crop.size > 0:
             self._infer_busy = True
-            t = threading.Thread(target=self._infer_async, args=(frame_bgr.copy(),), daemon=True)
+            t = threading.Thread(target=self._infer_async, args=(crop.copy(),), daemon=True)
             t.start()
 
         return self._latest_sample
@@ -144,6 +191,13 @@ class WiLoRBackend:
         )
         if self.mirror_display and self._frame_bgr is not None:
             frame = cv2.flip(frame, 1)
+
+        if self._last_bbox is not None:
+            h, w = frame.shape[:2]
+            x1, y1, x2, y2 = self._last_bbox
+            bx1 = int((1.0 - x2) * w) if self.mirror_display else int(x1 * w)
+            bx2 = int((1.0 - x1) * w) if self.mirror_display else int(x2 * w)
+            cv2.rectangle(frame, (bx1, int(y1 * h)), (bx2, int(y2 * h)), (0, 255, 0), 2)
 
         msg = status_text or "Running (WiLoR)"
         if self._latest_sample is not None:
@@ -176,4 +230,7 @@ class WiLoRBackend:
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+        if self._hands is not None:
+            self._hands.close()
+            self._hands = None
         cv2.destroyAllWindows()

@@ -67,6 +67,10 @@ class HaMeRBackend(PerceptionBackend):
         self.request_timeout = request_timeout
         self.window_name = window_name
 
+        # Reuse one TCP+TLS connection across frames (keep-alive). Over a tunnel
+        # this saves the per-request handshake (~140 ms/frame measured).
+        self._session = requests.Session()
+
         # MediaPipe para bbox + landmarks
         self._mp_hands = mp.solutions.hands
         self._mp_draw  = mp.solutions.drawing_utils
@@ -136,7 +140,7 @@ class HaMeRBackend(PerceptionBackend):
         files = {"crop": ("crop.jpg", buf.tobytes(), "image/jpeg")}
         data  = {"is_right": int(is_right)}
         try:
-            resp = requests.post(
+            resp = self._session.post(
                 f"{self.url}/infer",
                 files=files,
                 data=data,
