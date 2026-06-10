@@ -110,6 +110,9 @@ class CrossEmbodimentSampler:
         extra_human_ratio: float = 0.0,
         human_rot_repr: str = "quat",
         primitive_sample: bool = False,
+        eigengrasp_path: str | Path | None = None,
+        mjcf_path: str | Path | None = None,
+        n_knobs: int = 9,
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
         self.split = split
@@ -133,6 +136,9 @@ class CrossEmbodimentSampler:
             device=device,
             valid_poses_path=valid_poses_path,
             primitive_sample=primitive_sample,
+            eigengrasp_path=eigengrasp_path,
+            mjcf_path=mjcf_path,
+            n_knobs=n_knobs,
         )
 
     def _batch_counts(self, B: int) -> tuple[int, int]:

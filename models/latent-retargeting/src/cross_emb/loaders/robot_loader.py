@@ -99,6 +99,9 @@ class RobotLoader:
         continuous_range: float = math.pi,
         valid_poses_path: str | Path | None = None,
         primitive_sample: bool = False,
+        eigengrasp_path: str | Path | None = None,
+        mjcf_path: str | Path | None = None,
+        n_knobs: int = 9,
     ):
         self.urdf_path = Path(urdf_path).expanduser().resolve()
         if not self.urdf_path.exists():
@@ -122,6 +125,10 @@ class RobotLoader:
         self._dong_cache: dict | None = None
         self._primitive_mode: bool = False
         self._primitives_lazy: dict[str, tuple] = {}  # hcp_key -> (primitives, jt_finger)
+        self._eigengrasp: dict | None = None
+        self._mj_model = None
+        self._mj_data  = None
+        self._n_knobs  = n_knobs
         if valid_poses_path is not None:
             p = Path(valid_poses_path).expanduser().resolve()
             if not p.exists():
@@ -167,6 +174,39 @@ class RobotLoader:
                 print(f"[RobotLoader] mode=PRIMITIVE_SAMPLE  (DexGrasp-Zero M_h, primitives built on first sample_dong call)")
             else:
                 print(f"[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)")
+
+        # EIGENGRASP_ONLINE: load PCA basis + MuJoCo model for on-the-fly
+        # collision-filtered sampling. Overrides RANDOM_UNIFORM/PRIMITIVE_SAMPLE
+        # if both eigengrasp_path and mjcf_path are provided. DONG_CACHE takes
+        # precedence over everything (npz already contains collision-free poses).
+        if eigengrasp_path is not None and self._dong_cache is None:
+            import mujoco
+            ep = Path(eigengrasp_path).expanduser().resolve()
+            mp = Path(mjcf_path).expanduser().resolve() if mjcf_path else None
+            if not ep.exists():
+                raise FileNotFoundError(f"eigengrasp_path not found: {ep}")
+            if mp is None or not mp.exists():
+                raise FileNotFoundError(f"mjcf_path required and not found: {mjcf_path}")
+            d = np.load(ep)
+            self._eigengrasp = {
+                "mean_norm":       d["mean_norm"].astype(np.float32),
+                "components_norm": d["components_norm"].astype(np.float32),
+                "joint_low":       d["joint_low"].astype(np.float32),
+                "joint_high":      d["joint_high"].astype(np.float32),
+                "coeff_p01":       d["coeff_p01"].astype(np.float32),
+                "coeff_p99":       d["coeff_p99"].astype(np.float32),
+            }
+            self._mj_model = mujoco.MjModel.from_xml_path(str(mp))
+            self._mj_data  = mujoco.MjData(self._mj_model)
+            n_eigen_joints = self._eigengrasp["mean_norm"].shape[0]
+            self._eigen_n_pad = self._mj_model.nq - n_eigen_joints
+            if self._eigen_n_pad < 0:
+                raise ValueError(f"MJCF nq ({self._mj_model.nq}) < eigengrasp joints ({n_eigen_joints})")
+            self._primitive_mode = False  # disable primitive mode if eigengrasp takes over
+            print(
+                f"[RobotLoader] mode=EIGENGRASP_ONLINE  eigen={ep.name}  mjcf={mp.name}  "
+                f"n_knobs={n_knobs}  n_pad={self._eigen_n_pad}"
+            )
 
     def _parse_urdf_metadata(self, urdf_path: Path) -> tuple[dict[str, JointSpec], str, list[str]]:
         root = ET.parse(urdf_path).getroot()
@@ -446,7 +486,9 @@ class RobotLoader:
             }
             return q, pose, self._dong_cache["joint_labels"], meta
 
-        if self._primitive_mode:
+        if self._eigengrasp is not None:
+            q = self._sample_eigengrasp_q(num_samples, seed)
+        elif self._primitive_mode:
             q = self._sample_primitive_q(num_samples, hand_config_path, seed)
         else:
             q, _ = self.sample_q(num_samples, seed)
@@ -572,6 +614,51 @@ class RobotLoader:
             matched = [f for f, anc in finger_ancestor_sets.items() if child and child in anc]
             result[jname] = matched[0] if len(matched) == 1 else None
         return result
+
+    def _sample_eigengrasp_q(self, num_samples: int, seed: int | None = None) -> torch.Tensor:
+        """Sample collision-free joint angles from eigengrasp PCA space.
+
+        Equivalent to generate_valid_robot_poses.py inner loop, run online.
+        Acceptance rate ~56% for Allegro, ~60% for Shadow — samples ~2x num_samples
+        candidates per call on average.
+        """
+        import mujoco
+        rng   = np.random.default_rng(seed)
+        eg    = self._eigengrasp
+        model = self._mj_model
+        data  = self._mj_data
+        n_pad = self._eigen_n_pad
+        n_k   = min(self._n_knobs, eg["coeff_p01"].shape[0])
+        p01   = eg["coeff_p01"][:n_k]
+        p99   = eg["coeff_p99"][:n_k]
+        mean  = eg["mean_norm"]
+        comps = eg["components_norm"][:n_k]          # [n_k, J]
+        jlow  = eg["joint_low"]
+        jhigh = eg["joint_high"]
+
+        valid: list[np.ndarray] = []
+        batch = max(num_samples * 2, 256)            # oversample; 2x covers ~56% acceptance
+        while len(valid) < num_samples:
+            coeffs = rng.uniform(p01, p99, size=(batch, n_k)).astype(np.float32)
+            q_norm = mean + coeffs @ comps           # [batch, J]
+            q_joints = q_norm * (jhigh - jlow) + jlow
+            q_joints = np.clip(q_joints, jlow, jhigh)
+            if n_pad > 0:
+                pad = np.zeros((batch, n_pad), dtype=np.float32)
+                q_full = np.concatenate([pad, q_joints], axis=1)
+            else:
+                q_full = q_joints
+            for i in range(batch):
+                data.qpos[:] = q_full[i]
+                mujoco.mj_forward(model, data)
+                if data.ncon == 0:
+                    valid.append(q_full[i])
+                    if len(valid) == num_samples:
+                        break
+            batch = max(256, (num_samples - len(valid)) * 2)
+
+        q_np = np.stack(valid[:num_samples], axis=0).astype(np.float32)
+        return torch.from_numpy(q_np).to(self.device)
 
     def _sample_primitive_q(
         self,

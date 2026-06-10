@@ -14,6 +14,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--valid_poses_path",  default=None, help="Path to valid_robot_poses.npz (mode=VALID_NPZ). If omitted, uses random uniform sampling.")
     p.add_argument("--urdf_path",         default=None, help="Override robot URDF path. Default: Shadow URDF under --dex_root.")
     p.add_argument("--robots_config",     default=None, help="YAML file defining multiple robots (name, urdf, hand_config, valid_poses, zero_wrj). When set, overrides --urdf_path/--hand_config/--valid_poses_path/--zero_wrj.")
+    p.add_argument("--eigengrasp_path",   default=None, help="Path to eigengrasp NPZ (PCA basis). Enables EIGENGRASP_ONLINE sampling: sample from PCA space + MuJoCo collision filter live. Requires --mjcf_path. Ignored if --valid_poses_path set.")
+    p.add_argument("--mjcf_path",         default=None, help="Path to MJCF XML for MuJoCo collision filtering in EIGENGRASP_ONLINE mode.")
+    p.add_argument("--n_knobs",           type=int, default=9, help="Number of eigengrasp components to sample (default 9 = ~91%% variance).")
     p.add_argument("--freeze_shared",     action="store_true", help="Freeze E_h, E_X, D_X — only train E_r/D_r. Use when adding a new robot to an existing checkpoint.")
     p.add_argument("--extra_human_csv",   default=None, help="Optional static human anchor CSV, e.g. HaGRID open/fist Dong features.")
     # Training

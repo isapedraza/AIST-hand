@@ -68,21 +68,27 @@ def _load_robot_configs(args, repo_root: Path) -> list[dict]:
         cfgs = []
         for name, rcfg in raw.items():
             cfgs.append({
-                "name": name,
-                "urdf":        _resolve_path(rcfg["urdf"],        repo_root),
-                "hand_config": _resolve_path(rcfg["hand_config"], repo_root),
-                "valid_poses": _resolve_path(rcfg["valid_poses"], repo_root) if rcfg.get("valid_poses") else None,
-                "zero_wrj":    bool(rcfg.get("zero_wrj", False)),
+                "name":          name,
+                "urdf":          _resolve_path(rcfg["urdf"],          repo_root),
+                "hand_config":   _resolve_path(rcfg["hand_config"],   repo_root),
+                "valid_poses":   _resolve_path(rcfg["valid_poses"],   repo_root) if rcfg.get("valid_poses") else None,
+                "zero_wrj":      bool(rcfg.get("zero_wrj", False)),
+                "eigengrasp":    _resolve_path(rcfg["eigengrasp"],    repo_root) if rcfg.get("eigengrasp") else None,
+                "mjcf":          _resolve_path(rcfg["mjcf"],          repo_root) if rcfg.get("mjcf") else None,
+                "n_knobs":       int(rcfg.get("n_knobs", 9)),
             })
         return cfgs
 
     # Legacy single-robot path
     DEX_ROOT = Path(args.dex_root)
-    urdf        = Path(args.urdf_path)    if args.urdf_path         else DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
-    hand_config = Path(args.hand_config)  if args.hand_config        else repo_root / "robot/hands/shadow_hand/shadow_hand_right.yaml"
-    valid_poses = Path(args.valid_poses_path) if args.valid_poses_path else None
+    urdf        = Path(args.urdf_path)        if args.urdf_path         else DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
+    hand_config = Path(args.hand_config)      if args.hand_config        else repo_root / "robot/hands/shadow_hand/shadow_hand_right.yaml"
+    valid_poses = Path(args.valid_poses_path) if args.valid_poses_path   else None
+    eigengrasp  = Path(args.eigengrasp_path)  if args.eigengrasp_path    else None
+    mjcf        = Path(args.mjcf_path)        if args.mjcf_path          else None
     return [{"name": "robot", "urdf": urdf, "hand_config": hand_config,
-             "valid_poses": valid_poses, "zero_wrj": bool(args.zero_wrj)}]
+             "valid_poses": valid_poses, "zero_wrj": bool(args.zero_wrj),
+             "eigengrasp": eigengrasp, "mjcf": mjcf, "n_knobs": args.n_knobs}]
 
 
 def _compute_eval_metrics(
@@ -253,6 +259,9 @@ def main() -> None:
             extra_human_ratio= args.extra_human_ratio,
             human_rot_repr   = args.human_rot_repr,
             primitive_sample = args.primitive_sample,
+            eigengrasp_path  = cfg.get("eigengrasp"),
+            mjcf_path        = cfg.get("mjcf"),
+            n_knobs          = cfg.get("n_knobs", 9),
         )
         _probe    = cfg["sampler"].get_batch_temporal(1)
         cfg["J"]  = _probe["q_r"].shape[1]
