@@ -106,7 +106,12 @@ class WiLoRSource:
 
         sample = self._backend.get_landmarks()
 
-        status = "Calibrating..." if not self._calib_done else "Running (WiLoR)"
+        if self._calib_done:
+            status = "Running (WiLoR)"
+        else:
+            elapsed = 0.0 if self._calib_t0 is None else time.time() - self._calib_t0
+            remaining = max(0.0, self._calib_seconds - elapsed)
+            status = f"Calibrating... {remaining:.1f}s | samples={self._dk.calibration_count}"
         if not self._backend.render(status_text=status):
             self._running = False
             return None

@@ -192,19 +192,53 @@ class WiLoRBackend:
         if self.mirror_display and self._frame_bgr is not None:
             frame = cv2.flip(frame, 1)
 
+        side = "Right" if (self._latest_sample or {}).get("is_right", 1) else "Left"
+
+        # MediaPipe skeleton (the bbox detector's landmarks, same as the HaMeR
+        # window -- this is the client-side detector, not WiLoR's own keypoints).
+        if self._last_result and self._last_result.multi_hand_landmarks:
+            hand_lm = self._last_result.multi_hand_landmarks[0]
+            if self.mirror_display:
+                mirrored = type(hand_lm)()
+                mirrored.CopyFrom(hand_lm)
+                for lm in mirrored.landmark:
+                    lm.x = 1.0 - lm.x
+                hand_lm = mirrored
+            mp.solutions.drawing_utils.draw_landmarks(
+                frame, hand_lm, self._mp_hands.HAND_CONNECTIONS
+            )
+
+        # bbox (color by handedness, matching the HaMeR window)
         if self._last_bbox is not None:
             h, w = frame.shape[:2]
             x1, y1, x2, y2 = self._last_bbox
             bx1 = int((1.0 - x2) * w) if self.mirror_display else int(x1 * w)
             bx2 = int((1.0 - x1) * w) if self.mirror_display else int(x2 * w)
-            cv2.rectangle(frame, (bx1, int(y1 * h)), (bx2, int(y2 * h)), (0, 255, 0), 2)
+            color = (0, 255, 0) if side == "Right" else (255, 0, 0)
+            cv2.rectangle(frame, (bx1, int(y1 * h)), (bx2, int(y2 * h)), color, 2)
 
-        msg = status_text or "Running (WiLoR)"
-        if self._latest_sample is not None:
-            side = "Right" if self._latest_sample.get("is_right", 1) else "Left"
-            msg = f"{msg} | {side}"
-        cv2.putText(frame, msg, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 200, 255), 2)
-        cv2.imshow(self.window_name, frame)
+        # Side panel (matches HaMeRBackend.render).
+        h, w = frame.shape[:2]
+        panel_w = max(320, int(w * 0.45))
+        canvas = np.zeros((h, w + panel_w, 3), dtype=np.uint8)
+        canvas[:, :w] = frame
+        cv2.line(canvas, (w, 0), (w, h), (70, 70, 70), 2)
+
+        lines = ["GraphGrasp [WiLoR]", f"Handedness: {side}", status_text or "Running (WiLoR)"]
+        x0 = w + 18
+        y = 34
+        for i, line in enumerate(lines):
+            color = (235, 235, 235)
+            scale = 0.62
+            thick = 1
+            if i == 0:
+                color = (100, 200, 255)
+                scale = 0.82
+                thick = 2
+            cv2.putText(canvas, line, (x0, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
+            y += 30 if i == 0 else 26
+
+        cv2.imshow(self.window_name, canvas)
 
         key = cv2.waitKey(1) & 0xFF
         if key in (27, ord("q"), ord("Q")):
