@@ -467,7 +467,7 @@ class RobotLoader:
         if self._dong_cache is not None and self._valid_poses is not None:
             if seed is not None:
                 torch.manual_seed(int(seed))
-            idx = torch.randint(0, len(self._valid_poses), (num_samples,), device=self.device)
+            idx = torch.randint(0, len(self._valid_poses), (num_samples,))  # CPU — tensors are cpu-pinned
             q     = self._valid_poses[idx].to(self.device)
             quats_batch = self._dong_cache["quats"][idx].to(self.device)  # [B, Jk, 4]
             if rot_repr == "quat":
