@@ -1,7 +1,16 @@
 """Stage 1 training loop for cross-embodiment retargeting.
 
-Usage (local):
+Usage (single robot, legacy):
     python -m cross_emb.training.loop
+
+Usage (multi-robot via YAML config):
+    python -m cross_emb.training.loop --robots_config robot/configs/shadow_allegro.yaml
+
+Usage (add new robot to existing checkpoint):
+    python -m cross_emb.training.loop \\
+        --robots_config robot/configs/allegro_only.yaml \\
+        --resume_ckpt checkpoints/stage1_latest.pt \\
+        --freeze_shared
 
 Usage (Colab via shim):
     python models/latent-retargeting/scripts/train_cross_emb.py \\
@@ -33,17 +42,47 @@ from .losses import (
 
 
 def _set_seed(seed: int) -> None:
-    """Fix all RNG sources used by the training pipeline.
-
-    Covers: python random, numpy, torch CPU, torch CUDA (all devices).
-    Sampler uses torch.randint/torch.rand -> respects torch global RNG.
-    cudnn determinism intentionally not forced (MLP-only forward, no convs).
-    """
+    """Fix all RNG sources used by the training pipeline."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def _resolve_path(p: str, repo_root: Path) -> Path:
+    path = Path(p)
+    return path if path.is_absolute() else repo_root / path
+
+
+def _load_robot_configs(args, repo_root: Path) -> list[dict]:
+    """Return list of per-robot config dicts.
+
+    Each dict: name, urdf, hand_config, valid_poses (Path|None), zero_wrj (bool).
+    Falls back to legacy single-robot CLI args if --robots_config not provided.
+    """
+    if args.robots_config:
+        import yaml
+        with open(args.robots_config) as f:
+            raw = yaml.safe_load(f)
+        cfgs = []
+        for name, rcfg in raw.items():
+            cfgs.append({
+                "name": name,
+                "urdf":        _resolve_path(rcfg["urdf"],        repo_root),
+                "hand_config": _resolve_path(rcfg["hand_config"], repo_root),
+                "valid_poses": _resolve_path(rcfg["valid_poses"], repo_root) if rcfg.get("valid_poses") else None,
+                "zero_wrj":    bool(rcfg.get("zero_wrj", False)),
+            })
+        return cfgs
+
+    # Legacy single-robot path
+    DEX_ROOT = Path(args.dex_root)
+    urdf        = Path(args.urdf_path)    if args.urdf_path         else DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
+    hand_config = Path(args.hand_config)  if args.hand_config        else repo_root / "robot/hands/shadow_hand/shadow_hand_right.yaml"
+    valid_poses = Path(args.valid_poses_path) if args.valid_poses_path else None
+    return [{"name": "robot", "urdf": urdf, "hand_config": hand_config,
+             "valid_poses": valid_poses, "zero_wrj": bool(args.zero_wrj)}]
 
 
 def _compute_eval_metrics(
@@ -101,7 +140,7 @@ def _compute_eval_metrics(
                 q_r_hat    = q_r_hat.clone();    q_r_hat[:, 0:2]    = 0.0
                 q_r_hat_t1 = q_r_hat_t1.clone(); q_r_hat_t1[:, 0:2] = 0.0
 
-            # FK + full Dong stage2 for both timesteps (need quats+chain+tips).
+            # FK + full Dong stage2 for both timesteps.
             B = q_r_hat.shape[0]
             q_combined = torch.cat([q_r_hat, q_r_hat_t1], dim=0)
             fk_combined = eval_sampler.robot_rnd.run_fk(q_combined)
@@ -109,29 +148,24 @@ def _compute_eval_metrics(
                 fk_combined, hand_config
             )
 
-            # Subset robot Dong outputs to common joints/fingers.
             joint_idx_r = [joint_labels_r.index(l) for l in common_labels]
             if rot_repr == "r6":
-                pose_r_sub_t = meta_r["rot6"][:B, joint_idx_r]            # [B, Jk, 6]
+                pose_r_sub_t = meta_r["rot6"][:B, joint_idx_r]
             else:
-                quats_r_sub_t = quats_r_all[:B, joint_idx_r]              # [B, Jk, 4]
-                # Align hemispheres (w>=0 not guaranteed match per pair).
+                quats_r_sub_t = quats_r_all[:B, joint_idx_r]
                 sign = torch.sign((pose_h_sub * quats_r_sub_t).sum(-1, keepdim=True))
                 sign = torch.where(sign == 0, torch.ones_like(sign), sign)
                 pose_r_sub_t = quats_r_sub_t * sign
 
-            # RS: D_R uniform sum (Yan eq 1).
             rs = d_r_pose(pose_h_sub, pose_r_sub_t, rot_repr).mean().item()
 
-            # NDS: chain L2 over 4 positions per finger (hand domain adaptation).
             chain_r_dict = meta_r["chain_positions"]
             chain_r_t = torch.stack(
                 [chain_r_dict[f][:B] for f in common_fingers], dim=1
-            )                                                              # [B, Fc, 4, 3]
+            )
             nds = (chain_h_sub - chain_r_t).norm(dim=-1).sum(dim=(-2, -1)).mean().item()
 
-            # NVS: per-fingertip velocity diff.
-            tips_r_all = meta_r["tips"]                                    # [2B, F, 3]
+            tips_r_all = meta_r["tips"]
             tip_labels_r = meta_r["tip_labels"]
             tip_idx_r  = [tip_labels_r.index(f) for f in common_fingers]
             tip_idx_h  = [human_labels_global.index(f) for f in common_fingers]
@@ -142,7 +176,6 @@ def _compute_eval_metrics(
             v_r = tips_r_t1   - tips_r_t
             nvs = (v_h - v_r).norm(dim=-1).mean().item()
 
-            # L_rec on data pair: how well does the decoder reconstruct sampled q_r?
             z_r_       = E_X_(E_r_(q_r_data))
             q_r_hat_rd = D_r_(D_X_(z_r_))
             rec        = (q_r_data - q_r_hat_rd).norm(dim=-1).mean().item()
@@ -169,7 +202,6 @@ def _compute_eval_metrics(
 def main() -> None:
     args = p = _parse_args()
 
-    # seed=-1 -> pick random seed and log it for reproducibility.
     if args.seed < 0:
         args.seed = random.randint(0, 99_999)
         print(f"Seed: {args.seed} (auto-generated)")
@@ -177,9 +209,8 @@ def main() -> None:
         print(f"Seed: {args.seed}")
     _set_seed(args.seed)
 
-    REPO_ROOT = Path(args.repo_root)
+    REPO_ROOT    = Path(args.repo_root)
     PACKAGE_ROOT = Path(__file__).resolve().parents[3]
-    DEX_ROOT  = Path(args.dex_root)
 
     if args.csv_path:
         CSV_PATH = Path(args.csv_path)
@@ -187,9 +218,7 @@ def main() -> None:
         CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl14_r6.csv"
     else:
         CSV_PATH = REPO_ROOT / "human/datasets/hograspnet/processed/hograspnet_abl11.csv"
-    CKPT_PATH   = Path(args.ckpt_path)  if args.ckpt_path   else PACKAGE_ROOT / "checkpoints/stage1_latest.pt"
-    HAND_CONFIG = Path(args.hand_config) if args.hand_config else REPO_ROOT / "robot/hands/shadow_hand/shadow_hand_right.yaml"
-    URDF_PATH   = DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
+    CKPT_PATH       = Path(args.ckpt_path)      if args.ckpt_path      else PACKAGE_ROOT / "checkpoints/stage1_latest.pt"
     EXTRA_HUMAN_CSV = Path(args.extra_human_csv) if args.extra_human_csv else None
 
     if EXTRA_HUMAN_CSV is not None and not EXTRA_HUMAN_CSV.exists():
@@ -201,107 +230,144 @@ def main() -> None:
         f"Device: {DEVICE} | B={args.b} | N_STEPS={args.n_steps} "
         f"| triplets={triplet_mode} | margin={args.margin}"
     )
-    print(f"zero_wrj={args.zero_wrj} | scheduler=none (Yan-pure, constant lr={args.lr}) | resume={args.resume_ckpt or 'none'}")
+    print(f"scheduler=none (Yan-pure, constant lr={args.lr}) | resume={args.resume_ckpt or 'none'}")
 
     # ---------------------------------------------------------------------------
-    # Sampler
+    # Robot configs
     # ---------------------------------------------------------------------------
-    sampler = CrossEmbodimentSampler(
-        csv_path         = CSV_PATH,
-        urdf_path        = URDF_PATH,
-        hand_config_path = HAND_CONFIG,
-        split            = "train",
-        device           = DEVICE,
-        valid_poses_path = args.valid_poses_path,
-        extra_human_csv  = EXTRA_HUMAN_CSV,
-        extra_human_ratio= args.extra_human_ratio,
-        human_rot_repr   = args.human_rot_repr,
-        primitive_sample = args.primitive_sample,
-    )
-
-    _probe = sampler.get_batch_temporal(1)
-    J      = _probe["q_r"].shape[1]
-    print(f"Robot joints J={J}")
+    robot_cfgs = _load_robot_configs(args, REPO_ROOT)
+    print(f"Robots ({len(robot_cfgs)}): {[cfg['name'] for cfg in robot_cfgs]}")
 
     # ---------------------------------------------------------------------------
-    # Val sampler (HOGraspNet S1 split: subjects 1-10, held out for selection).
+    # Samplers — one per robot
     # ---------------------------------------------------------------------------
-    val_sampler = None
-    if args.val_every and args.val_every > 0:
-        # Val sampler: skip valid_poses NPZ to avoid loading the ~6 GB DONG_CACHE
-        # tensor into GPU memory twice. RobotLoader falls back to mode=RANDOM_UNIFORM.
-        val_sampler = CrossEmbodimentSampler(
+    for cfg in robot_cfgs:
+        cfg["sampler"] = CrossEmbodimentSampler(
             csv_path         = CSV_PATH,
-            urdf_path        = URDF_PATH,
-            hand_config_path = HAND_CONFIG,
-            split            = "val",
+            urdf_path        = cfg["urdf"],
+            hand_config_path = cfg["hand_config"],
+            split            = "train",
             device           = DEVICE,
-            valid_poses_path = None,
-            extra_human_csv  = None,
-            extra_human_ratio= 0.0,
+            valid_poses_path = cfg["valid_poses"],
+            extra_human_csv  = EXTRA_HUMAN_CSV,
+            extra_human_ratio= args.extra_human_ratio,
             human_rot_repr   = args.human_rot_repr,
             primitive_sample = args.primitive_sample,
         )
-        print(f"Val sampler: split=val, eval every {args.val_every} steps over {args.n_eval_batches} batches of B={args.b_eval}.")
+        _probe    = cfg["sampler"].get_batch_temporal(1)
+        cfg["J"]  = _probe["q_r"].shape[1]
+        print(f"  {cfg['name']}: J={cfg['J']}  zero_wrj={cfg['zero_wrj']}")
+
+    # Val samplers
+    for cfg in robot_cfgs:
+        if args.val_every and args.val_every > 0:
+            cfg["val_sampler"] = CrossEmbodimentSampler(
+                csv_path         = CSV_PATH,
+                urdf_path        = cfg["urdf"],
+                hand_config_path = cfg["hand_config"],
+                split            = "val",
+                device           = DEVICE,
+                valid_poses_path = None,   # avoid double DONG_CACHE GPU load
+                extra_human_csv  = None,
+                extra_human_ratio= 0.0,
+                human_rot_repr   = args.human_rot_repr,
+                primitive_sample = args.primitive_sample,
+            )
+        else:
+            cfg["val_sampler"] = None
+
+    if any(cfg["val_sampler"] for cfg in robot_cfgs):
+        print(f"Val samplers: eval every {args.val_every} steps over {args.n_eval_batches} batches of B={args.b_eval}.")
 
     # ---------------------------------------------------------------------------
-    # Models
+    # Models — shared + per-robot
     # ---------------------------------------------------------------------------
     human_in_dim = 6 if args.human_rot_repr == "r6" else 4
     E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
-    E_r = RobotEncoder_E_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim=args.z_dim).to(DEVICE)
     D_X = SharedDecoder_D_X(z_dim=args.z_dim, shared_dim=args.shared_dim).to(DEVICE)
-    D_r = RobotDecoder_D_r(n_joints=J, shared_dim=args.shared_dim).to(DEVICE)
 
+    for cfg in robot_cfgs:
+        cfg["E_r"] = RobotEncoder_E_r(n_joints=cfg["J"], shared_dim=args.shared_dim).to(DEVICE)
+        cfg["D_r"] = RobotDecoder_D_r(n_joints=cfg["J"], shared_dim=args.shared_dim).to(DEVICE)
+
+    # ---------------------------------------------------------------------------
+    # Resume checkpoint
+    # ---------------------------------------------------------------------------
     if args.resume_ckpt:
         ckpt = torch.load(args.resume_ckpt, map_location=DEVICE)
         E_h.load_state_dict(ckpt["E_h"])
-        E_r.load_state_dict(ckpt["E_r"])
         E_X.load_state_dict(ckpt["E_X"])
         D_X.load_state_dict(ckpt["D_X"])
-        D_r.load_state_dict(ckpt["D_r"])
-        print(f"Resumed weights from {args.resume_ckpt} (step {ckpt.get('step', '?')})")
-        print("Optimizer and scheduler reset fresh.")
+        if "robots" in ckpt:
+            for cfg in robot_cfgs:
+                if cfg["name"] in ckpt["robots"]:
+                    cfg["E_r"].load_state_dict(ckpt["robots"][cfg["name"]]["E_r"])
+                    cfg["D_r"].load_state_dict(ckpt["robots"][cfg["name"]]["D_r"])
+                    print(f"  Resumed {cfg['name']} E_r/D_r from checkpoint.")
+                else:
+                    print(f"  {cfg['name']} not in checkpoint — E_r/D_r initialized fresh.")
+        elif "E_r" in ckpt:
+            # Legacy single-robot checkpoint
+            if len(robot_cfgs) == 1:
+                robot_cfgs[0]["E_r"].load_state_dict(ckpt["E_r"])
+                robot_cfgs[0]["D_r"].load_state_dict(ckpt["D_r"])
+                print(f"  Resumed (legacy) E_r/D_r for {robot_cfgs[0]['name']}.")
+            else:
+                print("  Legacy checkpoint has single E_r/D_r but multiple robots configured — E_r/D_r initialized fresh for all.")
+        print(f"Resumed shared weights from {args.resume_ckpt} (step {ckpt.get('step', '?')}). Optimizer reset fresh.")
 
-    # torch.compile MUST run AFTER state_dict load.
-    # Compile only on CUDA -- CPU compile works but yields little gain.
+    # ---------------------------------------------------------------------------
+    # Freeze shared (for adding new robots to existing latent space)
+    # ---------------------------------------------------------------------------
+    if args.freeze_shared:
+        for m in (E_h, E_X, D_X):
+            for param in m.parameters():
+                param.requires_grad_(False)
+        print("Shared networks (E_h, E_X, D_X) FROZEN — training only E_r/D_r.")
+
+    # ---------------------------------------------------------------------------
+    # torch.compile
+    # ---------------------------------------------------------------------------
     use_compile = bool(args.compile) and DEVICE == "cuda" and hasattr(torch, "compile")
     if use_compile:
         try:
             E_h = torch.compile(E_h, mode="reduce-overhead")
-            E_r = torch.compile(E_r, mode="reduce-overhead")
             E_X = torch.compile(E_X, mode="reduce-overhead")
             D_X = torch.compile(D_X, mode="reduce-overhead")
-            D_r = torch.compile(D_r, mode="reduce-overhead")
-            print("torch.compile: enabled (mode=reduce-overhead) on E_h/E_r/E_X/D_X/D_r")
+            for cfg in robot_cfgs:
+                cfg["E_r"] = torch.compile(cfg["E_r"], mode="reduce-overhead")
+                cfg["D_r"] = torch.compile(cfg["D_r"], mode="reduce-overhead")
+            print(f"torch.compile: enabled (mode=reduce-overhead) on all modules")
         except Exception as e:
             print(f"torch.compile failed ({e}); falling back to eager.")
             use_compile = False
     else:
         print("torch.compile: disabled")
 
-    optimizer = torch.optim.Adam(
-        list(E_h.parameters()) + list(E_r.parameters()) +
-        list(E_X.parameters()) + list(D_X.parameters()) +
-        list(D_r.parameters()),
-        lr=args.lr,
+    # ---------------------------------------------------------------------------
+    # Optimizer — shared params (unless frozen) + all robot E_r/D_r
+    # ---------------------------------------------------------------------------
+    trainable_params = (
+        [] if args.freeze_shared else
+        list(E_h.parameters()) + list(E_X.parameters()) + list(D_X.parameters())
     )
-    # Yan et al. (2026) replication: Adam with constant LR, no scheduler.
-    # Tanh saturation at latent output provides implicit late-stage damping.
-    # `--T_0` and `--lr_warmup` flags retained for backward compat but unused.
+    for cfg in robot_cfgs:
+        trainable_params += list(cfg["E_r"].parameters()) + list(cfg["D_r"].parameters())
+
+    optimizer = torch.optim.Adam(trainable_params, lr=args.lr)
+    # Yan et al. (2026): Adam with constant LR, no scheduler.
 
     use_amp = bool(args.amp) and DEVICE == "cuda"
     scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
     print(f"AMP: {'enabled (fp16)' if use_amp else 'disabled'}")
+    print(f"freeze_shared={args.freeze_shared}")
 
     # Build device tensors from offline-computed per-joint weight constants.
     sk_weights_dr     = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_w.items()}
     sk_weights_joints = {sub: torch.tensor(w, device=DEVICE) for sub, w in _sk_wj.items()}
 
     def _sd(m: torch.nn.Module) -> dict:
-        # Strip the OptimizedModule wrapper from torch.compile so saved keys
-        # match a bare (uncompiled) module.
         return getattr(m, "_orig_mod", m).state_dict()
 
     # ---------------------------------------------------------------------------
@@ -316,390 +382,396 @@ def main() -> None:
 
     for step in range(args.n_steps):
 
-        batch          = sampler.get_batch_temporal(args.b)
-        pose_h         = batch["pose_h"]
-        pose_h_t1      = batch["pose_h_t1"]
-        q_r            = batch["q_r"]
-        if args.zero_wrj:
-            q_r = q_r.clone()
-            q_r[:, 0:2] = 0.0  # WRJ2, WRJ1 are not encoded in wrist-local Dong human signal.
-        pose_h_sub     = batch["pose_h_sub"]
-        pose_r_sub     = batch["pose_r_sub"]
-        tips_h_sub     = batch["tips_h_sub"]
-        tips_h_t1      = batch["tips_h_t1"]
-        chain_h_sub    = batch["chain_h_sub"]   # [B, Fc, 4, 3]
-        chain_r_sub    = batch["chain_r_sub"]   # [B, Fc, 4, 3]
-        common_fingers = batch["common_fingers"]
-        common_labels  = batch["common_labels"]
-        extra_human_count = batch.get("extra_human_count", 0)
-        extra_human_by_class = batch.get("extra_human_by_class", {})
+        # Accumulate losses over all robots.
+        L_total = torch.tensor(0.0, device=DEVICE)
+        accum_cont = accum_rec = accum_ltc = accum_temp = 0.0
+        last_batch: dict | None = None
+        metric_stats: dict = {}
 
-        with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
-            z_t  = E_h(pose_h)        # [B, 5*z_dim]
-            z_t1 = E_h(pose_h_t1)
-            z_r  = E_X(E_r(q_r))     # [B, 5*z_dim]
+        for cfg in robot_cfgs:
+            E_r         = cfg["E_r"]
+            D_r         = cfg["D_r"]
+            sampler_r   = cfg["sampler"]
+            hand_config = cfg["hand_config"]
+            zero_wrj    = cfg["zero_wrj"]
 
-            q_r_hat    = D_r(D_X(z_r))
-            z_h_rt     = E_X(D_X(z_t))
-            q_r_hat_t1 = D_r(D_X(z_t1))
+            batch          = sampler_r.get_batch_temporal(args.b)
+            last_batch     = batch
+            pose_h         = batch["pose_h"]
+            pose_h_t1      = batch["pose_h_t1"]
+            q_r            = batch["q_r"]
+            if zero_wrj:
+                q_r = q_r.clone()
+                q_r[:, 0:2] = 0.0
+            pose_h_sub     = batch["pose_h_sub"]
+            pose_r_sub     = batch["pose_r_sub"]
+            tips_h_sub     = batch["tips_h_sub"]
+            tips_h_t1      = batch["tips_h_t1"]
+            chain_h_sub    = batch["chain_h_sub"]
+            chain_r_sub    = batch["chain_r_sub"]
+            common_fingers = batch["common_fingers"]
+            common_labels  = batch["common_labels"]
 
-            L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
-            L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
+            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+                z_t  = E_h(pose_h)
+                z_t1 = E_h(pose_h_t1)
+                z_r  = E_X(E_r(q_r))
 
-        # --- Per-subspace contrastive loss (Yan et al. 2026) ---
-        z_t_subs = z_t.chunk(5, dim=-1)   # (z_thumb, z_index, z_middle, z_ring, z_pinky) each [B, z_dim]
-        z_r_subs = z_r.chunk(5, dim=-1)
-        L_cont = torch.tensor(0.0, device=DEVICE)
-        metric_stats = {}
+                q_r_hat        = D_r(D_X(z_r))    # reconstruction (robot→latent→robot) for L_rec
+                z_h_rt         = E_X(D_X(z_t))
+                q_r_from_h_t   = D_r(D_X(z_t))    # retargeted from human t  (for L_temp)
+                q_r_from_h_t1  = D_r(D_X(z_t1))   # retargeted from human t+1 (for L_temp)
 
-        # Xin S_k: build full-hand tip/chain tensors once before the subspace loop.
-        # tips_r extracted from chain tip position (index 3 = TIP in MCP/PIP/DIP/TIP).
-        # pinch_* thresholds normalized to hand-length ratio space (run21-paper-sk).
-        _use_xin = args.sk_metric == "xin"
-        if _use_xin:
-            _tips_r_sub   = chain_r_sub[:, :, 3, :]                          # [B, Fc, 3]
-            _tips_all_xin  = torch.cat([tips_h_sub,  _tips_r_sub],  dim=0)   # [2B, Fc, 3]
-            _chain_all_xin = torch.cat([chain_h_sub, chain_r_sub],  dim=0)   # [2B, Fc, 4, 3]
-            _finger_order  = ["thumb", "index", "middle", "ring", "pinky"]
-            _pinch_eps1    = args.pinch_eps1_m / args.pinch_ref_hand_length_m
-            _pinch_eps2    = args.pinch_eps2_m / args.pinch_ref_hand_length_m
-            _pinch_sig_w   = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
+                L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
+                L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
 
-        for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
-            prefixes   = SUBSPACE_LABEL_PREFIX[sub]
-            sub_finger = SUBSPACE_FINGERS[sub]
-            # Indices into common_labels / quats_*_sub for this subspace
-            jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
-            # Indices into common_fingers / tips_*_sub for this subspace
-            tidx = [i for i, f in enumerate(common_fingers) if f in sub_finger]
-            if not jidx:
-                continue
-            z_h_k = z_t_subs[k]                          # [B, z_dim]
-            z_r_k = z_r_subs[k]
-            q_h_k     = pose_h_sub[:, jidx, :]               # [B, Jk, F]
-            q_r_k     = pose_r_sub[:, jidx, :]
-            chain_h_k = chain_h_sub[:, tidx, :, :] if tidx else chain_h_sub[:, :0, :, :]  # [B, Fk, 4, 3]
-            chain_r_k = chain_r_sub[:, tidx, :, :] if tidx else chain_r_sub[:, :0, :, :]
+            # --- Per-subspace contrastive loss (Yan et al. 2026) ---
+            z_t_subs = z_t.chunk(5, dim=-1)
+            z_r_subs = z_r.chunk(5, dim=-1)
+            L_cont = torch.tensor(0.0, device=DEVICE)
 
-            z_all_k     = torch.cat([z_h_k, z_r_k], dim=0)
-            q_all_k     = torch.cat([q_h_k, q_r_k], dim=0)
-            chain_all_k = torch.cat([chain_h_k, chain_r_k], dim=0)  # [2B, Fk, 4, 3]
-            B2  = z_all_k.shape[0]
-            if B2 < 3:
-                continue
+            _use_xin = args.sk_metric == "xin"
+            if _use_xin:
+                _tips_r_sub    = chain_r_sub[:, :, 3, :]
+                _tips_all_xin  = torch.cat([tips_h_sub,  _tips_r_sub],  dim=0)
+                _chain_all_xin = torch.cat([chain_h_sub, chain_r_sub],  dim=0)
+                _finger_order  = ["thumb", "index", "middle", "ring", "pinky"]
+                _pinch_eps1    = args.pinch_eps1_m / args.pinch_ref_hand_length_m
+                _pinch_eps2    = args.pinch_eps2_m / args.pinch_ref_hand_length_m
+                _pinch_sig_w   = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
 
-            # -- InfoNCE path (--contrastive_mode infonce) ----------------------
-            if args.contrastive_mode == "infonce":
-                N_inf   = min(args.infonce_n, B2)
-                inf_idx = torch.randperm(B2, device=DEVICE)[:N_inf]
-                z_inf   = z_all_k[inf_idx]
+            for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
+                prefixes   = SUBSPACE_LABEL_PREFIX[sub]
+                sub_finger = SUBSPACE_FINGERS[sub]
+                jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
+                tidx = [i for i, f in enumerate(common_fingers) if f in sub_finger]
+                if not jidx:
+                    continue
+                z_h_k = z_t_subs[k]
+                z_r_k = z_r_subs[k]
+                q_h_k     = pose_h_sub[:, jidx, :]
+                q_r_k     = pose_r_sub[:, jidx, :]
+                chain_h_k = chain_h_sub[:, tidx, :, :] if tidx else chain_h_sub[:, :0, :, :]
+                chain_r_k = chain_r_sub[:, tidx, :, :] if tidx else chain_r_sub[:, :0, :, :]
+
+                z_all_k     = torch.cat([z_h_k, z_r_k], dim=0)
+                q_all_k     = torch.cat([q_h_k, q_r_k], dim=0)
+                chain_all_k = torch.cat([chain_h_k, chain_r_k], dim=0)
+                B2 = z_all_k.shape[0]
+                if B2 < 3:
+                    continue
+
+                if args.contrastive_mode == "infonce":
+                    N_inf   = min(args.infonce_n, B2)
+                    inf_idx = torch.randperm(B2, device=DEVICE)[:N_inf]
+                    z_inf   = z_all_k[inf_idx]
+
+                    with torch.no_grad():
+                        _seg_order = ["mcp", "pip", "dip", "tip"]
+                        _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
+                        _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
+                        _w_dr      = sk_weights_dr[sub][_dr_idx]
+                        _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
+
+                        if _use_xin:
+                            _fidx       = _finger_order.index(sub)
+                            _eff_tip    = args.lam_thumb_tip    if sub == "thumb" else args.lam_tip
+                            _eff_finger = args.lam_thumb_finger if sub == "thumb" else args.lam_finger
+                            tips_inf  = _tips_all_xin[inf_idx]
+                            chain_inf = _chain_all_xin[inf_idx]
+                            S_pw = compute_pairwise_S_xin(
+                                tips_inf, chain_inf, finger_idx=_fidx,
+                                lam_tip=_eff_tip, lam_finger=_eff_finger,
+                                lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                                enable_switching=args.xin_switching,
+                                pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2,
+                                pinch_sigmoid_w=_pinch_sig_w,
+                                lam_dr=args.lam_dr,
+                                q_pool=q_all_k[inf_idx], w_dr=_w_dr, w_r=1.0,
+                                rot_repr=args.human_rot_repr,
+                            )
+                        else:
+                            S_pw = compute_pairwise_S_ahg(
+                                q_all_k[inf_idx], chain_all_k[inf_idx],
+                                w_dr=_w_dr, w_joints=sk_weights_joints[sub],
+                                w_r=args.w_r, w_joints_scale=args.w_joints, w_ahg=args.w_ahg,
+                                rot_repr=args.human_rot_repr,
+                            )
+                        W_pw = compute_W_linear(S_pw)
+
+                    L_cont = L_cont + nt_xent_adaptive(z_inf, W_pw, tau=args.infonce_tau)
+                    continue
+
+                # Triplet path
+                n       = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                anchors = torch.randperm(B2, device=DEVICE)[:n]
+                cand_a  = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_a  = cand_a + (cand_a >= anchors).long()
+                cand_b  = torch.randint(0, B2 - 1, (n,), device=DEVICE)
+                cand_b  = cand_b + (cand_b >= anchors).long()
+                same = cand_b == cand_a
+                if same.any():
+                    cand_b[same] = (cand_b[same] + 1) % B2
+                    cand_b[same] += (cand_b[same] == anchors[same]).long()
+                    cand_b[same] %= B2
 
                 with torch.no_grad():
+                    qa       = q_all_k[anchors]
+                    chain_a  = chain_all_k[anchors]
+                    q_ca     = q_all_k[cand_a]
+                    q_cb     = q_all_k[cand_b]
+                    chain_ca = chain_all_k[cand_a]
+                    chain_cb = chain_all_k[cand_b]
+
+                    if args.human_rot_repr == "r6":
+                        R_a  = rot6d_to_matrix(qa)
+                        R_ca = rot6d_to_matrix(q_ca)
+                        R_cb = rot6d_to_matrix(q_cb)
+                        t_a = torch.matmul(R_a.transpose(-1, -2), R_ca).diagonal(dim1=-2, dim2=-1).sum(-1)
+                        t_b = torch.matmul(R_a.transpose(-1, -2), R_cb).diagonal(dim1=-2, dim2=-1).sum(-1)
+                        per_jdr_a = (1.0 - ((t_a - 1) * 0.5).clamp(-1, 1)) * 0.5
+                        per_jdr_b = (1.0 - ((t_b - 1) * 0.5).clamp(-1, 1)) * 0.5
+                    else:
+                        dot_a = (qa * q_ca).sum(-1)
+                        dot_b = (qa * q_cb).sum(-1)
+                        per_jdr_a = 1.0 - dot_a ** 2
+                        per_jdr_b = 1.0 - dot_b ** 2
+
                     _seg_order = ["mcp", "pip", "dip", "tip"]
                     _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
                     _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
                     _w_dr      = sk_weights_dr[sub][_dr_idx]
                     _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
+                    D_R_a      = (_w_dr * per_jdr_a).sum(dim=-1)
+                    D_R_b      = (_w_dr * per_jdr_b).sum(dim=-1)
 
                     if _use_xin:
-                        _fidx       = _finger_order.index(sub)
+                        _fidx = _finger_order.index(sub)
                         _eff_tip    = args.lam_thumb_tip    if sub == "thumb" else args.lam_tip
                         _eff_finger = args.lam_thumb_finger if sub == "thumb" else args.lam_finger
-                        tips_inf    = _tips_all_xin[inf_idx]
-                        chain_inf   = _chain_all_xin[inf_idx]
-                        S_pw = compute_pairwise_S_xin(
-                            tips_inf, chain_inf, finger_idx=_fidx,
+                        S_a = xin_sk_per_finger(
+                            _tips_all_xin[anchors], _tips_all_xin[cand_a],
+                            _chain_all_xin[anchors], _chain_all_xin[cand_a],
+                            finger_idx=_fidx,
                             lam_tip=_eff_tip, lam_finger=_eff_finger,
                             lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
                             enable_switching=args.xin_switching,
-                            pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2,
-                            pinch_sigmoid_w=_pinch_sig_w,
-                            lam_dr=args.lam_dr,
-                            q_pool=q_all_k[inf_idx], w_dr=_w_dr, w_r=1.0,
-                            rot_repr=args.human_rot_repr,
+                            pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
                         )
+                        S_b = xin_sk_per_finger(
+                            _tips_all_xin[anchors], _tips_all_xin[cand_b],
+                            _chain_all_xin[anchors], _chain_all_xin[cand_b],
+                            finger_idx=_fidx,
+                            lam_tip=_eff_tip, lam_finger=_eff_finger,
+                            lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                            enable_switching=args.xin_switching,
+                            pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
+                        )
+                        if args.lam_dr > 0:
+                            S_a = S_a + args.lam_dr * D_R_a
+                            S_b = S_b + args.lam_dr * D_R_b
                     else:
-                        S_pw = compute_pairwise_S_ahg(
-                            q_all_k[inf_idx], chain_all_k[inf_idx],
-                            w_dr=_w_dr, w_joints=sk_weights_joints[sub],
-                            w_r=args.w_r, w_joints_scale=args.w_joints, w_ahg=args.w_ahg,
-                            rot_repr=args.human_rot_repr,
+                        _w_joints  = sk_weights_joints[sub]
+                        D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
+                        D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
+                        D_ahg_a = _ahg(chain_a, chain_ca)
+                        D_ahg_b = _ahg(chain_a, chain_cb)
+                        S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
+                        S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
+
+                    if args.log_metric_stats:
+                        S_pairs = torch.cat([S_a, S_b])
+                        metric_stats[f"{cfg['name']}/{sub}"] = (
+                            D_R_a.mean().item(),
+                            0.0 if _use_xin else D_joints_a.mean().item(),
+                            0.0 if _use_xin else D_ahg_a.mean().item(),
+                            S_pairs.mean().item(),
+                            S_pairs.std().item(),
+                            S_pairs.min().item(),
+                            S_pairs.max().item(),
                         )
-                    W_pw = compute_W_linear(S_pw)
 
-                L_cont = L_cont + nt_xent_adaptive(z_inf, W_pw, tau=args.infonce_tau)
-                continue  # skip triplet path
+                    a_closer = S_a <= S_b
+                    pos_idx  = torch.where(a_closer, cand_a, cand_b)
+                    neg_idx  = torch.where(a_closer, cand_b, cand_a)
 
-            # -- Triplet path (default) ----------------------------------------
-            n   = B2 if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, B2)
+                L_cont = L_cont + torch.relu(
+                    (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
+                    - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
+                    + args.margin
+                ).mean()
 
-            anchors = torch.randperm(B2, device=DEVICE)[:n]
-            cand_a = torch.randint(0, B2 - 1, (n,), device=DEVICE)
-            cand_a = cand_a + (cand_a >= anchors).long()
-            cand_b = torch.randint(0, B2 - 1, (n,), device=DEVICE)
-            cand_b = cand_b + (cand_b >= anchors).long()
-            same = cand_b == cand_a
-            if same.any():
-                cand_b[same] = (cand_b[same] + 1) % B2
-                cand_b[same] += (cand_b[same] == anchors[same]).long()
-                cand_b[same] %= B2
+            # --- Temporal loss (per-robot FK + Dong tips) ---
+            q_r_hat_fk    = q_r_from_h_t.float()
+            q_r_hat_t1_fk = q_r_from_h_t1.float()
+            if zero_wrj:
+                q_r_hat_fk    = q_r_hat_fk.clone();    q_r_hat_fk[:, 0:2]    = 0.0
+                q_r_hat_t1_fk = q_r_hat_t1_fk.clone(); q_r_hat_t1_fk[:, 0:2] = 0.0
 
-            # Triplet selection metrics feed the hard S_a <= S_b mask only.
-            # Gradient flows exclusively through z_all_k below.
-            with torch.no_grad():
-                qa       = q_all_k[anchors]
-                chain_a  = chain_all_k[anchors]              # [n, Fk, 4, 3]
-                q_ca     = q_all_k[cand_a]
-                q_cb     = q_all_k[cand_b]
-                chain_ca = chain_all_k[cand_a]
-                chain_cb = chain_all_k[cand_b]
+            B_fk       = q_r_hat_fk.shape[0]
+            q_combined = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)
+            fk_combined = sampler_r.robot_rnd.run_fk(q_combined)
+            tips_all, tip_labels = sampler_r.robot_rnd.run_dong_tips_only(fk_combined, hand_config)
+            common_idx_r  = [tip_labels.index(f) for f in common_fingers]
+            human_labels  = ["thumb", "index", "middle", "ring", "pinky"]
+            common_idx_h  = [human_labels.index(f) for f in common_fingers]
+            tips_r_all    = tips_all.to(DEVICE)[:, common_idx_r, :]
+            tips_r_t_sub  = tips_r_all[:B_fk]
+            tips_r_t1_sub = tips_r_all[B_fk:]
+            tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
+            L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
 
-                if args.human_rot_repr == "r6":
-                    R_a  = rot6d_to_matrix(qa)
-                    R_ca = rot6d_to_matrix(q_ca)
-                    R_cb = rot6d_to_matrix(q_cb)
-                    t_a = torch.matmul(R_a.transpose(-1, -2), R_ca).diagonal(dim1=-2, dim2=-1).sum(-1)
-                    t_b = torch.matmul(R_a.transpose(-1, -2), R_cb).diagonal(dim1=-2, dim2=-1).sum(-1)
-                    per_jdr_a = (1.0 - ((t_a - 1) * 0.5).clamp(-1, 1)) * 0.5
-                    per_jdr_b = (1.0 - ((t_b - 1) * 0.5).clamp(-1, 1)) * 0.5
-                else:
-                    dot_a = (qa * q_ca).sum(-1)
-                    dot_b = (qa * q_cb).sum(-1)
-                    per_jdr_a = 1.0 - dot_a ** 2
-                    per_jdr_b = 1.0 - dot_b ** 2
-                _seg_order = ["mcp", "pip", "dip", "tip"]
-                _jlabs     = [common_labels[j].split("_")[1] for j in jidx]
-                _dr_idx    = torch.tensor([_seg_order.index(s) for s in _jlabs], device=DEVICE)
-                _w_dr      = sk_weights_dr[sub][_dr_idx]
-                _w_dr      = _w_dr / _w_dr.sum().clamp(min=1e-8)
-                D_R_a      = (_w_dr * per_jdr_a).sum(dim=-1)
-                D_R_b      = (_w_dr * per_jdr_b).sum(dim=-1)
+            L_robot = (args.lambda_c   * L_cont
+                     + args.lambda_rec * L_rec
+                     + args.lambda_ltc * L_ltc
+                     + args.lambda_tmp * L_temp)
+            L_total      = L_total + L_robot
+            accum_cont  += L_cont.item()
+            accum_rec   += L_rec.item()
+            accum_ltc   += L_ltc.item()
+            accum_temp  += L_temp.item()
 
-                if _use_xin:
-                    _fidx = _finger_order.index(sub)
-                    _eff_tip    = args.lam_thumb_tip    if sub == "thumb" else args.lam_tip
-                    _eff_finger = args.lam_thumb_finger if sub == "thumb" else args.lam_finger
-                    S_a = xin_sk_per_finger(
-                        _tips_all_xin[anchors], _tips_all_xin[cand_a],
-                        _chain_all_xin[anchors], _chain_all_xin[cand_a],
-                        finger_idx=_fidx,
-                        lam_tip=_eff_tip, lam_finger=_eff_finger,
-                        lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
-                        enable_switching=args.xin_switching,
-                        pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
-                    )
-                    S_b = xin_sk_per_finger(
-                        _tips_all_xin[anchors], _tips_all_xin[cand_b],
-                        _chain_all_xin[anchors], _chain_all_xin[cand_b],
-                        finger_idx=_fidx,
-                        lam_tip=_eff_tip, lam_finger=_eff_finger,
-                        lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
-                        enable_switching=args.xin_switching,
-                        pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
-                    )
-                    if args.lam_dr > 0:
-                        S_a = S_a + args.lam_dr * D_R_a
-                        S_b = S_b + args.lam_dr * D_R_b
-                else:
-                    _w_joints  = sk_weights_joints[sub]
-                    D_joints_a = (_w_joints * (chain_a  - chain_ca).norm(dim=-1)).sum(dim=(-2, -1))
-                    D_joints_b = (_w_joints * (chain_a  - chain_cb).norm(dim=-1)).sum(dim=(-2, -1))
-                    D_ahg_a = _ahg(chain_a, chain_ca)
-                    D_ahg_b = _ahg(chain_a, chain_cb)
-                    S_a = args.w_r * D_R_a + args.w_joints * D_joints_a + args.w_ahg * D_ahg_a
-                    S_b = args.w_r * D_R_b + args.w_joints * D_joints_b + args.w_ahg * D_ahg_b
-
-                if args.log_metric_stats:
-                    S_pairs = torch.cat([S_a, S_b])
-                    metric_stats[sub] = (
-                        D_R_a.mean().item(),
-                        0.0 if _use_xin else D_joints_a.mean().item(),
-                        0.0 if _use_xin else D_ahg_a.mean().item(),
-                        S_pairs.mean().item(),
-                        S_pairs.std().item(),
-                        S_pairs.min().item(),
-                        S_pairs.max().item(),
-                    )
-
-                a_closer = S_a <= S_b
-                pos_idx = torch.where(a_closer, cand_a, cand_b)
-                neg_idx = torch.where(a_closer, cand_b, cand_a)
-
-            L_cont  = L_cont + torch.relu(
-                (z_all_k[anchors] - z_all_k[pos_idx]).norm(dim=-1)
-                - (z_all_k[anchors] - z_all_k[neg_idx]).norm(dim=-1)
-                + args.margin
-            ).mean()
-
-        # FK + run_dong_tips_only run in fp32 (pytorch-kinematics not validated
-        # for fp16). `.float()` upcasts and preserves the autograd path back to MLPs.
-        q_r_hat_fk    = q_r_hat.float()
-        q_r_hat_t1_fk = q_r_hat_t1.float()
-        if args.zero_wrj:
-            q_r_hat_fk    = q_r_hat_fk.clone()
-            q_r_hat_t1_fk = q_r_hat_t1_fk.clone()
-            q_r_hat_fk[:, 0:2] = 0.0
-            q_r_hat_t1_fk[:, 0:2] = 0.0
-
-        # Fuse t and t+1 FK calls into one batched forward, then split.
-        B_fk = q_r_hat_fk.shape[0]
-        q_combined    = torch.cat([q_r_hat_fk, q_r_hat_t1_fk], dim=0)    # [2B, J]
-        fk_combined   = sampler.robot_rnd.run_fk(q_combined)
-        tips_all, tip_labels = sampler.robot_rnd.run_dong_tips_only(fk_combined, HAND_CONFIG)
-        common_idx_r  = [tip_labels.index(f) for f in common_fingers]
-        human_labels  = ["thumb", "index", "middle", "ring", "pinky"]
-        common_idx_h  = [human_labels.index(f) for f in common_fingers]
-        tips_r_all    = tips_all.to(DEVICE)[:, common_idx_r, :]          # [2B, Fc, 3]
-        tips_r_t_sub  = tips_r_all[:B_fk]
-        tips_r_t1_sub = tips_r_all[B_fk:]
-        tips_h_t1_sub = tips_h_t1[:, common_idx_h, :]
-        L_temp = ((tips_h_t1_sub - tips_h_sub) - (tips_r_t1_sub - tips_r_t_sub)).norm(dim=-1).mean()
-
-        L_total = args.lambda_c * L_cont + args.lambda_rec * L_rec + args.lambda_ltc * L_ltc + args.lambda_tmp * L_temp
-
+        # --- Backward ---
         optimizer.zero_grad()
         scaler.scale(L_total).backward()
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(
-            list(E_h.parameters()) + list(E_r.parameters()) +
-            list(E_X.parameters()) + list(D_X.parameters()) +
-            list(D_r.parameters()),
-            max_norm=1.0,
+        all_grad_params = (
+            [] if args.freeze_shared else
+            list(E_h.parameters()) + list(E_X.parameters()) + list(D_X.parameters())
         )
+        for cfg in robot_cfgs:
+            all_grad_params += list(cfg["E_r"].parameters()) + list(cfg["D_r"].parameters())
+        torch.nn.utils.clip_grad_norm_(all_grad_params, max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
 
+        # --- Checkpoint payload (uses averaged losses across robots) ---
+        n_r = len(robot_cfgs)
         ckpt_payload = {
-            "step": step,
-            "seed": args.seed,
+            "step":   step,
+            "seed":   args.seed,
             "config": {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
-            "E_h":  _sd(E_h),
-            "E_r":  _sd(E_r),
-            "E_X":  _sd(E_X),
-            "D_X":  _sd(D_X),
-            "D_r":  _sd(D_r),
-            "zero_wrj": args.zero_wrj,
+            "E_h":    _sd(E_h),
+            "E_X":    _sd(E_X),
+            "D_X":    _sd(D_X),
+            "robots": {
+                cfg["name"]: {"E_r": _sd(cfg["E_r"]), "D_r": _sd(cfg["D_r"])}
+                for cfg in robot_cfgs
+            },
             "losses": {
                 "total": L_total.item(),
-                "cont": L_cont.item(),
-                "rec": L_rec.item(),
-                "ltc": L_ltc.item(),
-                "temp": L_temp.item(),
+                "cont":  accum_cont  / n_r,
+                "rec":   accum_rec   / n_r,
+                "ltc":   accum_ltc   / n_r,
+                "temp":  accum_temp  / n_r,
             },
         }
+        # Legacy compat: expose top-level E_r/D_r when single robot
+        if n_r == 1:
+            ckpt_payload["E_r"]      = _sd(robot_cfgs[0]["E_r"])
+            ckpt_payload["D_r"]      = _sd(robot_cfgs[0]["D_r"])
+            ckpt_payload["zero_wrj"] = robot_cfgs[0]["zero_wrj"]
 
         if L_total.item() < best_total:
             best_total = L_total.item()
             torch.save(ckpt_payload, BEST_TOTAL_PATH)
 
-        if val_sampler is not None and step > 0 and step % args.val_every == 0:
-            last_val_metrics = _compute_eval_metrics(
-                val_sampler, args.n_eval_batches, args.b_eval,
-                E_h, E_r, E_X, D_X, D_r,
-                HAND_CONFIG, args.zero_wrj,
-                rot_repr=args.human_rot_repr,
-            )
-            if last_val_metrics is not None:
-                score = (
-                    last_val_metrics["rs"]
-                    + last_val_metrics["nds"]
-                    + args.lambda_tmp * last_val_metrics["nvs"]
+        # --- Val eval (per robot, average score) ---
+        if last_val_metrics is None:
+            last_val_metrics = {}
+        if args.val_every and step > 0 and step % args.val_every == 0:
+            val_scores = []
+            for cfg in robot_cfgs:
+                if cfg["val_sampler"] is None:
+                    continue
+                m = _compute_eval_metrics(
+                    cfg["val_sampler"], args.n_eval_batches, args.b_eval,
+                    E_h, cfg["E_r"], E_X, D_X, cfg["D_r"],
+                    cfg["hand_config"], cfg["zero_wrj"],
+                    rot_repr=args.human_rot_repr,
                 )
-                print(
-                    f"[step {step:05d}] VAL rs={last_val_metrics['rs']:.4f} "
-                    f"nds={last_val_metrics['nds']:.4f} nvs={last_val_metrics['nvs']:.4f} "
-                    f"rec={last_val_metrics['rec']:.4f} score={score:.4f}"
-                    f"{' *best_val' if score < best_val_score else ''}"
-                )
-                if score < best_val_score:
-                    best_val_score = score
+                if m is not None:
+                    last_val_metrics[cfg["name"]] = m
+                    score = m["rs"] + m["nds"] + args.lambda_tmp * m["nvs"]
+                    val_scores.append(score)
+                    print(
+                        f"[step {step:05d}] VAL {cfg['name']} rs={m['rs']:.4f} "
+                        f"nds={m['nds']:.4f} nvs={m['nvs']:.4f} rec={m['rec']:.4f} score={score:.4f}"
+                    )
+            if val_scores:
+                avg_score = sum(val_scores) / len(val_scores)
+                best_flag = ""
+                if avg_score < best_val_score:
+                    best_val_score = avg_score
+                    best_flag = " *best_val"
                     val_payload = dict(ckpt_payload)
                     val_payload["val_metrics"] = last_val_metrics
-                    val_payload["val_score"]   = score
+                    val_payload["val_score"]   = avg_score
                     torch.save(val_payload, BEST_VAL_PATH)
+                print(f"[step {step:05d}] VAL avg_score={avg_score:.4f}{best_flag}")
 
         if step % args.log_every == 0:
-            lr_now = optimizer.param_groups[0]["lr"]
+            lr_now    = optimizer.param_groups[0]["lr"]
             best_flag = " *best_total" if L_total.item() == best_total else ""
+            robot_tag = f" [{','.join(cfg['name'] for cfg in robot_cfgs)}]" if n_r > 1 else ""
             print(
-                f"[step {step:05d}] loss total={L_total.item():.4f} "
-                f"cont={L_cont.item():.4f} rec={L_rec.item():.4f} "
-                f"ltc={L_ltc.item():.4f} temp={L_temp.item():.4f} "
+                f"[step {step:05d}]{robot_tag} loss total={L_total.item():.4f} "
+                f"cont={accum_cont/n_r:.4f} rec={accum_rec/n_r:.4f} "
+                f"ltc={accum_ltc/n_r:.4f} temp={accum_temp/n_r:.4f} "
                 f"lr={lr_now:.2e}{best_flag}"
             )
-            if extra_human_count:
-                open_count = extra_human_by_class.get(28, 0)
-                fist_count = extra_human_by_class.get(29, 0)
-                print(f"  batch extra_human={extra_human_count} open={open_count} fist={fist_count}")
+            if last_batch is not None:
+                extra_human_count = last_batch.get("extra_human_count", 0)
+                if extra_human_count:
+                    extra_human_by_class = last_batch.get("extra_human_by_class", {})
+                    open_count = extra_human_by_class.get(28, 0)
+                    fist_count = extra_human_by_class.get(29, 0)
+                    print(f"  batch extra_human={extra_human_count} open={open_count} fist={fist_count}")
             if args.log_metric_stats and metric_stats:
                 stats = " | ".join(
-                    f"{sub}(D_R={dr:.4f}, D_joints={dj:.4f}, D_ahg={da:.4f}, S_mean={s:.4f}, S_std={std:.4f}, S_min={mn:.4f}, S_max={mx:.4f})"
-                    for sub, (dr, dj, da, s, std, mn, mx) in metric_stats.items()
+                    f"{key}(D_R={dr:.4f}, D_joints={dj:.4f}, D_ahg={da:.4f}, S_mean={s:.4f}, S_std={std:.4f}, S_min={mn:.4f}, S_max={mx:.4f})"
+                    for key, (dr, dj, da, s, std, mn, mx) in metric_stats.items()
                 )
                 print(f"  metric pairs {stats}")
 
         if step % args.ckpt_every == 0:
             torch.save({
-                "step": step,
-                "E_h":  _sd(E_h),
-                "E_r":  _sd(E_r),
-                "E_X":  _sd(E_X),
-                "D_X":  _sd(D_X),
-                "D_r":  _sd(D_r),
-                "zero_wrj": args.zero_wrj,
-                "losses": {
-                    "total": L_total.item(),
-                    "cont": L_cont.item(),
-                    "rec": L_rec.item(),
-                    "ltc": L_ltc.item(),
-                    "temp": L_temp.item(),
-                },
+                **ckpt_payload,
                 "optimizer": optimizer.state_dict(),
             }, CKPT_PATH)
 
     # ---------------------------------------------------------------------------
-    # Final test eval (HOGraspNet S1 split, subjects 74-99, held out for reporting).
+    # Final test eval
     # ---------------------------------------------------------------------------
     print("\n=== Final test eval (subjects 74-99) ===")
-    test_sampler = CrossEmbodimentSampler(
-        csv_path         = CSV_PATH,
-        urdf_path        = URDF_PATH,
-        hand_config_path = HAND_CONFIG,
-        split            = "test",
-        device           = DEVICE,
-        valid_poses_path = None,           # avoid GPU OOM from double DONG_CACHE
-        extra_human_csv  = None,
-        extra_human_ratio= 0.0,
-        human_rot_repr   = args.human_rot_repr,
-        primitive_sample = args.primitive_sample,
-    )
-    test_metrics = _compute_eval_metrics(
-        test_sampler, args.n_eval_batches, args.b_eval,
-        E_h, E_r, E_X, D_X, D_r,
-        HAND_CONFIG, args.zero_wrj,
-        rot_repr=args.human_rot_repr,
-    )
-    if test_metrics is not None:
-        score = test_metrics["rs"] + test_metrics["nds"] + args.lambda_tmp * test_metrics["nvs"]
-        print(
-            f"TEST rs={test_metrics['rs']:.4f} nds={test_metrics['nds']:.4f} "
-            f"nvs={test_metrics['nvs']:.4f} rec={test_metrics['rec']:.4f} score={score:.4f}"
+    for cfg in robot_cfgs:
+        test_sampler = CrossEmbodimentSampler(
+            csv_path         = CSV_PATH,
+            urdf_path        = cfg["urdf"],
+            hand_config_path = cfg["hand_config"],
+            split            = "test",
+            device           = DEVICE,
+            valid_poses_path = None,
+            extra_human_csv  = None,
+            extra_human_ratio= 0.0,
+            human_rot_repr   = args.human_rot_repr,
+            primitive_sample = args.primitive_sample,
         )
+        test_metrics = _compute_eval_metrics(
+            test_sampler, args.n_eval_batches, args.b_eval,
+            E_h, cfg["E_r"], E_X, D_X, cfg["D_r"],
+            cfg["hand_config"], cfg["zero_wrj"],
+            rot_repr=args.human_rot_repr,
+        )
+        if test_metrics:
+            print(
+                f"TEST {cfg['name']}: rs={test_metrics['rs']:.4f}  nds={test_metrics['nds']:.4f}  "
+                f"nvs={test_metrics['nvs']:.4f}  rec={test_metrics['rec']:.4f}  "
+                f"(n_batches={test_metrics['n_batches']} b={test_metrics['b_eval']})"
+            )
 
-        if BEST_VAL_PATH.exists():
-            ck = torch.load(BEST_VAL_PATH, map_location="cpu", weights_only=False)
-            ck["test_metrics"] = test_metrics
-            ck["test_score"]   = score
-            torch.save(ck, BEST_VAL_PATH)
-            print(f"Test metrics annotated on {BEST_VAL_PATH}.")
-        if BEST_TOTAL_PATH.exists():
-            ck = torch.load(BEST_TOTAL_PATH, map_location="cpu", weights_only=False)
-            ck["test_metrics"] = test_metrics
-            ck["test_score"]   = score
-            torch.save(ck, BEST_TOTAL_PATH)
-            print(f"Test metrics annotated on {BEST_TOTAL_PATH}.")
-
-    print("done")
+    torch.save({**ckpt_payload, "optimizer": optimizer.state_dict()}, CKPT_PATH)
+    print(f"Saved final checkpoint: {CKPT_PATH}")
 
 
 if __name__ == "__main__":

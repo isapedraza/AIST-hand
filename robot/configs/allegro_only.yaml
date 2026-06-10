@@ -1,0 +1,5 @@
+allegro:
+  urdf: robot/hands/allegro_hand/allegro_hand_right.urdf
+  hand_config: robot/hand-configs/allegro_hand_right.yaml
+  valid_poses: robot/hands/allegro_hand/datasets/processed/valid_robot_poses_dong.npz
+  zero_wrj: false

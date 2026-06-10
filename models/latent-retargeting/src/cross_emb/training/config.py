@@ -12,6 +12,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ckpt_path", default=None, help="Override checkpoint path")
     p.add_argument("--hand_config",       default=None, help="Override hand config YAML")
     p.add_argument("--valid_poses_path",  default=None, help="Path to valid_robot_poses.npz (mode=VALID_NPZ). If omitted, uses random uniform sampling.")
+    p.add_argument("--urdf_path",         default=None, help="Override robot URDF path. Default: Shadow URDF under --dex_root.")
+    p.add_argument("--robots_config",     default=None, help="YAML file defining multiple robots (name, urdf, hand_config, valid_poses, zero_wrj). When set, overrides --urdf_path/--hand_config/--valid_poses_path/--zero_wrj.")
+    p.add_argument("--freeze_shared",     action="store_true", help="Freeze E_h, E_X, D_X — only train E_r/D_r. Use when adding a new robot to an existing checkpoint.")
     p.add_argument("--extra_human_csv",   default=None, help="Optional static human anchor CSV, e.g. HaGRID open/fist Dong features.")
     # Training
     p.add_argument("--b",          type=int,   default=1000)
