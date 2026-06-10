@@ -50,19 +50,28 @@ def sample_eigengrasp_batch(
     eigen: dict[str, np.ndarray],
     n_knobs: int,
     batch_size: int,
+    n_pad: int,
 ) -> np.ndarray:
+    """Sample uniform in eigenspace -> decode to joint angles.
+
+    n_pad = MJCF.nq - n_eigengrasp_joints, prepended as zeros (robot-agnostic).
+    Shadow: eigengrasp has 22 finger joints, MJCF nq=24 -> n_pad=2 (WRJ2/WRJ1=0).
+    Allegro: eigengrasp has 16 finger joints, MJCF nq=16 -> n_pad=0 (no wrist).
+    """
     p01   = eigen["coeff_p01"][:n_knobs]
     p99   = eigen["coeff_p99"][:n_knobs]
     coeffs = rng.uniform(p01, p99, size=(batch_size, n_knobs))      # [B, n_knobs]
-    mean   = eigen["mean_norm"]                                       # [22]
-    comps  = eigen["components_norm"][:n_knobs]                       # [n_knobs, 22]
-    q_norm = mean + coeffs @ comps                                    # [B, 22]
+    mean   = eigen["mean_norm"]                                       # [J]
+    comps  = eigen["components_norm"][:n_knobs]                       # [n_knobs, J]
+    q_norm = mean + coeffs @ comps                                    # [B, J]
     q_norm = np.clip(q_norm, 0.0, 1.0)
     low    = eigen["joint_low"]
     high   = eigen["joint_high"]
-    q22    = (q_norm * (high - low) + low).astype(np.float32)        # [B, 22]
-    wrist  = np.zeros((batch_size, 2), dtype=np.float32)
-    return np.concatenate([wrist, q22], axis=1)                       # [B, 24]
+    q_joints = (q_norm * (high - low) + low).astype(np.float32)       # [B, J]
+    if n_pad > 0:
+        pad = np.zeros((batch_size, n_pad), dtype=np.float32)
+        return np.concatenate([pad, q_joints], axis=1)               # [B, J+n_pad]
+    return q_joints                                                   # [B, J]
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,6 +85,8 @@ def parse_args() -> argparse.Namespace:
                    help="Number of eigengrasp components to sample (default: 9 = 91%% variance)")
     p.add_argument("--eigengrasps", type=Path, default=DEFAULT_EIGEN,
                    help="Path to eigengrasps NPZ with coeff_p01/coeff_p99")
+    p.add_argument("--mjcf",        type=Path, default=MJCF_PATH,
+                   help="Path to robot MJCF for collision filtering (default: Shadow)")
     p.add_argument("--out",         type=str,  default=None,
                    help="Override output path")
     return p.parse_args()
@@ -88,8 +99,16 @@ def main() -> None:
 
     eigen = load_eigengrasps(args.eigengrasps)
     rng   = np.random.default_rng(args.seed)
-    model = mujoco.MjModel.from_xml_path(str(MJCF_PATH))
+    model = mujoco.MjModel.from_xml_path(str(args.mjcf))
     data  = mujoco.MjData(model)
+
+    # Robot-agnostic wrist padding: MJCF qpos may have extra leading DOFs (Shadow
+    # WRJ2/WRJ1) not present in the finger-only eigengrasp basis.
+    n_eigen_joints = int(eigen["mean_norm"].shape[0])
+    n_pad = model.nq - n_eigen_joints
+    if n_pad < 0:
+        raise ValueError(f"MJCF nq ({model.nq}) < eigengrasp joints ({n_eigen_joints})")
+    print(f"MJCF: {args.mjcf}  nq={model.nq}  eigengrasp_joints={n_eigen_joints}  n_pad={n_pad}")
 
     valid:         list[np.ndarray] = []
     total_sampled: int = 0
@@ -105,7 +124,7 @@ def main() -> None:
     print()
 
     while len(valid) < args.n_target:
-        q_np = sample_eigengrasp_batch(rng, eigen, args.n_knobs, args.batch)
+        q_np = sample_eigengrasp_batch(rng, eigen, args.n_knobs, args.batch, n_pad)
         total_sampled += args.batch
 
         for i in range(args.batch):
