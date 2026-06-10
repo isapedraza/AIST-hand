@@ -130,7 +130,7 @@ class RobotLoader:
                     f"Generate it first: python models/latent-retargeting/scripts/generate_valid_robot_poses.py"
                 )
             data = np.load(p)
-            self._valid_poses = torch.from_numpy(data["q"]).to(self.device)
+            self._valid_poses = torch.from_numpy(data["q"]).to("cpu")
             cache_keys = ("quats", "chain", "tips", "joint_labels", "tip_labels")
             if all(k in data.files for k in cache_keys):
                 quats_np  = data["quats"]
@@ -141,9 +141,9 @@ class RobotLoader:
                 cached_cfg = str(data["hand_config"]) if "hand_config" in data.files else None
                 has_rot6_npz = "rot6" in data.files
                 self._dong_cache = {
-                    "quats": torch.from_numpy(quats_np).to(self.device),
-                    "chain": torch.from_numpy(chain_np).to(self.device),
-                    "tips":  torch.from_numpy(tips_np).to(self.device),
+                    "quats": torch.from_numpy(quats_np).to("cpu"),
+                    "chain": torch.from_numpy(chain_np).to("cpu"),
+                    "tips":  torch.from_numpy(tips_np).to("cpu"),
                     "joint_labels": joint_labels,
                     "tip_labels":   tip_labels,
                     "hand_config":  cached_cfg,
@@ -151,7 +151,7 @@ class RobotLoader:
                 # rot6 is NOT loaded into VRAM — computed on-the-fly from quats
                 # to save ~3.6 GB of device memory.
                 print(
-                    f"[RobotLoader] mode=DONG_CACHE  path={p}  n_poses={len(self._valid_poses):,}  "
+                    f"[RobotLoader] mode=DONG_CACHE(cpu-pinned)  path={p}  n_poses={len(self._valid_poses):,}  "
                     f"quats={tuple(quats_np.shape)} "
                     f"rot6={'npz_present(on-the-fly)' if has_rot6_npz else 'missing'} "
                     f"chain={tuple(chain_np.shape)} tips={tuple(tips_np.shape)}"
@@ -428,14 +428,14 @@ class RobotLoader:
             if seed is not None:
                 torch.manual_seed(int(seed))
             idx = torch.randint(0, len(self._valid_poses), (num_samples,), device=self.device)
-            q     = self._valid_poses[idx]
-            quats_batch = self._dong_cache["quats"][idx]                  # [B, Jk, 4]
+            q     = self._valid_poses[idx].to(self.device)
+            quats_batch = self._dong_cache["quats"][idx].to(self.device)  # [B, Jk, 4]
             if rot_repr == "quat":
                 pose = quats_batch
             else:
                 pose = _quat_wxyz_to_rot6d(quats_batch)                  # [B, Jk, 6] on-the-fly
-            chain = self._dong_cache["chain"][idx]                       # [B, F, 4, 3]
-            tips  = self._dong_cache["tips"][idx]                        # [B, F, 3]
+            chain = self._dong_cache["chain"][idx].to(self.device)       # [B, F, 4, 3]
+            tips  = self._dong_cache["tips"][idx].to(self.device)        # [B, F, 3]
             tip_labels = self._dong_cache["tip_labels"]
             chain_positions = {f: chain[:, fi] for fi, f in enumerate(tip_labels)}
             meta = {
