@@ -136,32 +136,36 @@ class RobotLoader:
                     f"valid_poses_path not found: {p}\n"
                     f"Generate it first: python models/latent-retargeting/scripts/generate_valid_robot_poses.py"
                 )
-            data = np.load(p)
-            self._valid_poses = torch.from_numpy(data["q"]).to("cpu")
-            cache_keys = ("quats", "chain", "tips", "joint_labels", "tip_labels")
-            if all(k in data.files for k in cache_keys):
-                quats_np  = data["quats"]
-                chain_np  = data["chain"]
-                tips_np   = data["tips"]
-                joint_labels = [str(s) for s in data["joint_labels"]]
-                tip_labels   = [str(s) for s in data["tip_labels"]]
-                cached_cfg = str(data["hand_config"]) if "hand_config" in data.files else None
+            # Load arrays one at a time with .clone() so each numpy buffer is
+            # freed before the next is decompressed. Avoids ~2x peak RAM spike
+            # that occurs when all arrays stay alive simultaneously.
+            with np.load(p) as data:
+                self._valid_poses = torch.from_numpy(data["q"]).clone()
+                cache_keys = ("quats", "chain", "tips", "joint_labels", "tip_labels")
+                has_dong = all(k in data.files for k in cache_keys)
                 has_rot6_npz = "rot6" in data.files
+                if has_dong:
+                    joint_labels = [str(s) for s in data["joint_labels"]]
+                    tip_labels   = [str(s) for s in data["tip_labels"]]
+                    cached_cfg   = str(data["hand_config"]) if "hand_config" in data.files else None
+                    quats = torch.from_numpy(data["quats"]).clone()
+                    chain = torch.from_numpy(data["chain"]).clone()
+                    tips  = torch.from_numpy(data["tips"]).clone()
+            if has_dong:
                 self._dong_cache = {
-                    "quats": torch.from_numpy(quats_np).to("cpu"),
-                    "chain": torch.from_numpy(chain_np).to("cpu"),
-                    "tips":  torch.from_numpy(tips_np).to("cpu"),
+                    "quats": quats,
+                    "chain": chain,
+                    "tips":  tips,
                     "joint_labels": joint_labels,
                     "tip_labels":   tip_labels,
                     "hand_config":  cached_cfg,
                 }
-                # rot6 is NOT loaded into VRAM — computed on-the-fly from quats
-                # to save ~3.6 GB of device memory.
+                # rot6 computed on-the-fly from quats; not stored in cache.
                 print(
                     f"[RobotLoader] mode=DONG_CACHE(cpu-pinned)  path={p}  n_poses={len(self._valid_poses):,}  "
-                    f"quats={tuple(quats_np.shape)} "
+                    f"quats={tuple(quats.shape)} "
                     f"rot6={'npz_present(on-the-fly)' if has_rot6_npz else 'missing'} "
-                    f"chain={tuple(chain_np.shape)} tips={tuple(tips_np.shape)}"
+                    f"chain={tuple(chain.shape)} tips={tuple(tips.shape)}"
                 )
                 if cached_cfg is not None:
                     print(f"[RobotLoader] cached hand_config={cached_cfg}")
