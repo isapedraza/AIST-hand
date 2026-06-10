@@ -1,16 +1,19 @@
 """
-Interactive Shadow Hand viewer controlled by Dexonomy PCA eigengrasps.
+Interactive hand viewer controlled by PCA eigengrasps.
+
+Supports Shadow Hand (default) and Allegro Hand (--robot allegro).
 
 Controls (terminal, no need to press Enter):
   LEFT / RIGHT   previous / next eigengrasp knob
   UP / DOWN      increase / decrease selected coefficient
-  T              toggle target real pose vs eigengrasp reconstruction
+  T              toggle target real pose vs eigengrasp reconstruction  (Shadow only)
   0              reset all coefficients
   1..9           jump to eigengrasp 1..9
   Q / ESC        quit
 
 Run from AIST-hand/:
     python models/grasp-intent-classification/scripts/mujoco_eigengrasp_viewer.py
+    python models/grasp-intent-classification/scripts/mujoco_eigengrasp_viewer.py --robot allegro
     python models/grasp-intent-classification/scripts/mujoco_eigengrasp_viewer.py --coeffs +1.0 -0.5 +0.2
 """
 
@@ -22,6 +25,7 @@ import termios
 import threading
 import time
 import tty
+from dataclasses import dataclass
 from pathlib import Path
 
 import mujoco
@@ -30,35 +34,84 @@ import numpy as np
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SHADOW_DIR = ROOT / "third_party" / "mujoco_menagerie" / "shadow_hand"
-RIGHT_HAND = SHADOW_DIR / "right_hand.xml"
-DEFAULT_EIGEN = (
-    ROOT
-    / "packages"
-    / "cross-emb"
-    / "data"
-    / "processed"
-    / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_coeffstats_sample.npz"
-)
-DEFAULT_OPEN_SYNTHETIC = ROOT / "packages" / "cross-emb" / "data" / "processed" / "synthetic_open_hand_shadow_qpos.npz"
-DEFAULT_CLOSE_SYNTHETIC = ROOT / "packages" / "cross-emb" / "data" / "processed" / "synthetic_close_hand_shadow_qpos.npz"
+_MENAGERIE = ROOT / "third_party" / "mujoco_menagerie"
 
-HAND_QPOS_DIM = 24
+
+@dataclass
+class RobotConfig:
+    name: str
+    hand_dir: Path
+    root_body: str          # body whose quat/pos we patch to orient hand upright
+    orig_body_tag: str      # exact string to find in XML
+    new_body_tag: str       # replacement string
+    qpos_dim: int           # full MuJoCo nq for this hand
+    n_pad: int              # leading zeros before finger joints (wrist DOFs)
+    n_joints: int           # eigengrasp joint count
+    default_eigen: Path
+    default_open_syn: Path
+    default_close_syn: Path
+
+
+_SHADOW = RobotConfig(
+    name="shadow",
+    hand_dir=_MENAGERIE / "shadow_hand",
+    root_body="rh_forearm",
+    orig_body_tag='<body name="rh_forearm" childclass="right_hand" quat="0 1 0 1">',
+    new_body_tag='<body name="rh_forearm" childclass="right_hand" pos="0 0 0.05" quat="1 0 0 0">',
+    qpos_dim=24,
+    n_pad=2,
+    n_joints=22,
+    default_eigen=(
+        ROOT / "packages" / "cross-emb" / "data" / "processed"
+        / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_coeffstats_sample.npz"
+    ),
+    default_open_syn=(
+        ROOT / "packages" / "cross-emb" / "data" / "processed"
+        / "synthetic_open_hand_shadow_qpos.npz"
+    ),
+    default_close_syn=(
+        ROOT / "packages" / "cross-emb" / "data" / "processed"
+        / "synthetic_close_hand_shadow_qpos.npz"
+    ),
+)
+
+_ALLEGRO = RobotConfig(
+    name="allegro",
+    hand_dir=_MENAGERIE / "wonik_allegro",
+    root_body="palm",
+    orig_body_tag='<body name="palm" quat="0 1 0 1" childclass="allegro_right">',
+    new_body_tag='<body name="palm" pos="0 0 0.05" quat="1 0 0 0" childclass="allegro_right">',
+    qpos_dim=16,
+    n_pad=0,
+    n_joints=16,
+    default_eigen=(
+        ROOT / "robot" / "hands" / "allegro_hand" / "datasets" / "processed"
+        / "eigengrasp_allegro.npz"
+    ),
+    default_open_syn=(
+        ROOT / "robot" / "hands" / "allegro_hand" / "datasets" / "processed"
+        / "synthetic_open_allegro.npz"
+    ),
+    default_close_syn=(
+        ROOT / "robot" / "hands" / "allegro_hand" / "datasets" / "processed"
+        / "synthetic_close_allegro.npz"
+    ),
+)
+
+ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO}
+
 POSE_ALPHA = 0.20
 
 
-def build_scene() -> Path:
-    upright = SHADOW_DIR / ".right_hand_upright.xml"
-    scene = SHADOW_DIR / ".scene_eigengrasp_viewer.xml"
+def build_scene(cfg: RobotConfig) -> Path:
+    right_hand = cfg.hand_dir / "right_hand.xml"
+    upright = cfg.hand_dir / ".right_hand_upright.xml"
+    scene = cfg.hand_dir / ".scene_eigengrasp_viewer.xml"
 
-    hand_text = RIGHT_HAND.read_text().replace(
-        '<body name="rh_forearm" childclass="right_hand" quat="0 1 0 1">',
-        '<body name="rh_forearm" childclass="right_hand" pos="0 0 0.05" quat="1 0 0 0">',
-        1,
-    )
+    hand_text = right_hand.read_text().replace(cfg.orig_body_tag, cfg.new_body_tag, 1)
     upright.write_text(hand_text)
     scene.write_text(
-        f"""<mujoco model="eigengrasp_viewer">
+        f"""<mujoco model="eigengrasp_viewer_{cfg.name}">
   <include file="{upright.name}"/>
   <statistic extent="0.3" center="0 0 0.2"/>
   <visual>
@@ -112,7 +165,12 @@ def load_eigengrasps(path: Path) -> dict[str, np.ndarray]:
     return result
 
 
-def reconstruct_qpos(eigen: dict[str, np.ndarray], coeffs: np.ndarray, n_knobs: int) -> np.ndarray:
+def reconstruct_qpos(
+    eigen: dict[str, np.ndarray],
+    coeffs: np.ndarray,
+    n_knobs: int,
+    n_pad: int,
+) -> np.ndarray:
     mean = eigen["mean_norm"].astype(np.float64)
     comps = eigen["components_norm"][:n_knobs].astype(np.float64)
     low = eigen["joint_low"].astype(np.float64)
@@ -120,53 +178,59 @@ def reconstruct_qpos(eigen: dict[str, np.ndarray], coeffs: np.ndarray, n_knobs: 
 
     q_norm = mean + coeffs[:n_knobs] @ comps
     q_norm = np.clip(q_norm, 0.0, 1.0)
-    q22 = q_norm * (high - low) + low
-    return np.concatenate([np.zeros(2, dtype=np.float64), q22])
+    q_joints = q_norm * (high - low) + low
+    if n_pad > 0:
+        return np.concatenate([np.zeros(n_pad, dtype=np.float64), q_joints])
+    return q_joints
 
 
-def project_q22(eigen: dict[str, np.ndarray], q22: np.ndarray, n_knobs: int) -> np.ndarray:
+def project_joints(eigen: dict[str, np.ndarray], q_joints: np.ndarray, n_knobs: int) -> np.ndarray:
     low = eigen["joint_low"].astype(np.float64)
     high = eigen["joint_high"].astype(np.float64)
     mean = eigen["mean_norm"].astype(np.float64)
     comps = eigen["components_norm"][:n_knobs].astype(np.float64)
-    q_norm = (q22.astype(np.float64) - low) / (high - low)
+    q_norm = (q_joints.astype(np.float64) - low) / (high - low)
     return (q_norm - mean) @ comps.T
 
 
-def load_synthetic_pose_q22(path: Path, *, use_mean: bool = False) -> np.ndarray:
+def load_synthetic_pose(path: Path, n_joints: int, *, use_mean: bool = False) -> np.ndarray:
     data = np.load(path, allow_pickle=False)
-    if not use_mean and "base_qpos22" in data:
-        qpos22 = data["base_qpos22"].astype(np.float64)
-        if qpos22.shape != (22,):
-            raise ValueError(f"Expected base_qpos22 shape [22] in {path}, got {qpos22.shape}")
-        return qpos22
-    if "qpos22" not in data:
-        raise KeyError(f"Missing qpos22 in {path}")
-    qpos22 = data["qpos22"].astype(np.float64)
-    if qpos22.ndim != 2 or qpos22.shape[1] != 22:
-        raise ValueError(f"Expected qpos22 shape [N,22] in {path}, got {qpos22.shape}")
-    return qpos22.mean(axis=0)
+    key = f"base_qpos{n_joints}"
+    if not use_mean and key in data:
+        qpos = data[key].astype(np.float64)
+        if qpos.shape != (n_joints,):
+            raise ValueError(f"Expected {key} shape [{n_joints}] in {path}, got {qpos.shape}")
+        return qpos
+    qkey = f"qpos{n_joints}"
+    if qkey not in data:
+        raise KeyError(f"Missing {qkey} in {path}")
+    qpos = data[qkey].astype(np.float64)
+    if qpos.ndim != 2 or qpos.shape[1] != n_joints:
+        raise ValueError(f"Expected {qkey} shape [N,{n_joints}] in {path}, got {qpos.shape}")
+    return qpos.mean(axis=0)
 
 
 def start_pose_coeffs(
     eigen: dict[str, np.ndarray],
     start_pose: str,
     n_knobs: int,
+    n_joints: int,
     open_synthetic: Path,
     close_synthetic: Path,
 ) -> np.ndarray:
     if start_pose == "mean":
         return np.zeros(n_knobs, dtype=np.float64)
     if start_pose == "open":
-        q22 = load_synthetic_pose_q22(open_synthetic)
+        q = load_synthetic_pose(open_synthetic, n_joints)
     elif start_pose == "close":
-        q22 = load_synthetic_pose_q22(close_synthetic)
+        q = load_synthetic_pose(close_synthetic, n_joints)
     else:
         raise ValueError(f"Unknown start pose: {start_pose}")
-    return project_q22(eigen, q22, n_knobs)
+    return project_joints(eigen, q, n_knobs)
 
 
-def load_target_qpos(path: Path, row: int, qpos_key: str) -> np.ndarray:
+def load_target_qpos_shadow(path: Path, row: int, qpos_key: str, n_pad: int) -> np.ndarray:
+    """Load a Dexonomy .npy target pose (Shadow only — qpos shape [N,29])."""
     raw = np.load(path, allow_pickle=True).item()
     if qpos_key not in raw:
         available = ", ".join(sorted(str(key) for key in raw.keys()))
@@ -176,7 +240,7 @@ def load_target_qpos(path: Path, row: int, qpos_key: str) -> np.ndarray:
         raise ValueError(f"Expected {qpos_key} shape [N,29], got {qpos.shape}")
     if row < 0 or row >= qpos.shape[0]:
         raise IndexError(f"row={row} out of bounds for {qpos_key} with {qpos.shape[0]} rows")
-    return np.concatenate([np.zeros(2, dtype=np.float64), qpos[row, 7:].astype(np.float64)])
+    return np.concatenate([np.zeros(n_pad, dtype=np.float64), qpos[row, 7:].astype(np.float64)])
 
 
 def print_status(
@@ -203,34 +267,47 @@ def print_status(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--eigengrasps", type=Path, default=DEFAULT_EIGEN)
+    parser.add_argument("--robot", choices=list(ROBOTS), default="shadow",
+                        help="Which hand to visualize (default: shadow)")
+    parser.add_argument("--eigengrasps", type=Path, default=None,
+                        help="Override eigengrasp .npz path")
     parser.add_argument("--n-knobs", type=int, default=9)
     parser.add_argument("--step", type=float, default=0.08)
     parser.add_argument("--start-pose", choices=("mean", "open", "close"), default="mean")
-    parser.add_argument("--open-synthetic", type=Path, default=DEFAULT_OPEN_SYNTHETIC)
-    parser.add_argument("--close-synthetic", type=Path, default=DEFAULT_CLOSE_SYNTHETIC)
+    parser.add_argument("--open-synthetic", type=Path, default=None)
+    parser.add_argument("--close-synthetic", type=Path, default=None)
     parser.add_argument(
         "--coeffs",
         type=float,
         nargs="+",
-        help="Initial absolute eigengrasp coefficients. Overrides --start-pose for provided coefficients.",
+        help="Initial absolute eigengrasp coefficients. Overrides --start-pose.",
     )
+    # Shadow-only: load a real Dexonomy pose as target
     parser.add_argument("--target-npy", type=Path)
     parser.add_argument("--target-row", type=int, default=0)
     parser.add_argument("--target-qpos-key", default="grasp_qpos")
     args = parser.parse_args()
 
-    eigen = load_eigengrasps(args.eigengrasps)
+    cfg = ROBOTS[args.robot]
+    eigen_path = args.eigengrasps or cfg.default_eigen
+    open_syn = args.open_synthetic or cfg.default_open_syn
+    close_syn = args.close_synthetic or cfg.default_close_syn
+
+    if not eigen_path.exists():
+        print(f"Eigengrasps not found: {eigen_path}")
+        if args.robot == "allegro":
+            print("Run build_allegro_eigengrasps.py first.")
+        sys.exit(1)
+
+    eigen = load_eigengrasps(eigen_path)
     n_available = int(eigen["components_norm"].shape[0])
     n_knobs = int(np.clip(args.n_knobs, 1, n_available))
+
     coeffs = start_pose_coeffs(
-        eigen,
-        args.start_pose,
-        n_knobs,
-        args.open_synthetic,
-        args.close_synthetic,
+        eigen, args.start_pose, n_knobs, cfg.n_joints, open_syn, close_syn,
     )
     explained = eigen["explained_ratio"].astype(np.float64)
+
     if args.coeffs:
         n_given = min(len(args.coeffs), n_knobs)
         coeffs[:] = 0.0
@@ -240,10 +317,15 @@ def main() -> None:
 
     target_qpos = None
     if args.target_npy:
-        target_qpos = load_target_qpos(args.target_npy, args.target_row, args.target_qpos_key)
-        coeffs[:] = project_q22(eigen, target_qpos[2:], n_knobs)
-        print("Projected target coefficients:")
-        print(" ".join(f"{i + 1}:{v:+.4f}" for i, v in enumerate(coeffs)))
+        if args.robot != "shadow":
+            print("--target-npy only supported for Shadow (Dexonomy format). Ignored.")
+        else:
+            target_qpos = load_target_qpos_shadow(
+                args.target_npy, args.target_row, args.target_qpos_key, cfg.n_pad,
+            )
+            coeffs[:] = project_joints(eigen, target_qpos[cfg.n_pad:], n_knobs)
+            print("Projected target coefficients:")
+            print(" ".join(f"{i + 1}:{v:+.4f}" for i, v in enumerate(coeffs)))
     initial_coeffs = coeffs.copy()
 
     coeff_p01 = eigen["coeff_p01"].astype(np.float64)
@@ -251,11 +333,12 @@ def main() -> None:
 
     state = {"idx": 0, "quit": False, "dirty": True, "target_mode": False}
 
-    print(f"Loaded eigengrasps: {args.eigengrasps}")
+    print(f"Robot: {cfg.name}  |  Eigengrasps: {eigen_path}")
     print(f"Start pose: {args.start_pose}")
     print(
-        f"Using {n_knobs} knobs. LEFT/RIGHT=select  UP/DOWN=change  T=target/recon  "
-        "0=reset start  1..9=jump  Q=quit\n"
+        f"Using {n_knobs} knobs. LEFT/RIGHT=select  UP/DOWN=change  "
+        + ("T=target/recon  " if target_qpos is not None else "")
+        + "0=reset  1..9=jump  Q=quit\n"
     )
 
     def keyboard_thread() -> None:
@@ -292,10 +375,10 @@ def main() -> None:
     thread = threading.Thread(target=keyboard_thread, daemon=True)
     thread.start()
 
-    model = mujoco.MjModel.from_xml_path(str(build_scene()))
+    model = mujoco.MjModel.from_xml_path(str(build_scene(cfg)))
     data = mujoco.MjData(model)
-    target = reconstruct_qpos(eigen, coeffs, n_knobs)
-    data.qpos[:HAND_QPOS_DIM] = target
+    current_target = reconstruct_qpos(eigen, coeffs, n_knobs, cfg.n_pad)
+    data.qpos[:cfg.qpos_dim] = current_target
     mujoco.mj_forward(model, data)
     print_status(state["idx"], coeffs, explained, n_knobs, args.step, state["target_mode"], coeff_p01, coeff_p99)
 
@@ -303,14 +386,14 @@ def main() -> None:
         while viewer.is_running() and not state["quit"]:
             if state["dirty"]:
                 if state["target_mode"] and target_qpos is not None:
-                    target = target_qpos
+                    current_target = target_qpos
                 else:
-                    target = reconstruct_qpos(eigen, coeffs, n_knobs)
+                    current_target = reconstruct_qpos(eigen, coeffs, n_knobs, cfg.n_pad)
                 print_status(state["idx"], coeffs, explained, n_knobs, args.step, state["target_mode"], coeff_p01, coeff_p99)
                 state["dirty"] = False
 
-            hand_qpos = data.qpos[:HAND_QPOS_DIM]
-            hand_qpos[:] += POSE_ALPHA * (target - hand_qpos)
+            hand_qpos = data.qpos[:cfg.qpos_dim]
+            hand_qpos[:] += POSE_ALPHA * (current_target - hand_qpos)
             data.qvel[:] = 0
             mujoco.mj_forward(model, data)
             viewer.sync()
