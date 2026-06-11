@@ -129,6 +129,18 @@ class RobotLoader:
         self._mj_model = None
         self._mj_data  = None
         self._n_knobs  = n_knobs
+
+        # EIGENGRASP_ONLINE is EXCLUSIVE. DONG_CACHE (valid_poses) would otherwise
+        # silently take precedence (see mode hierarchy below) and the eigengrasp
+        # sampler would never run. When a basis is requested, hard-drop valid_poses
+        # so online sampling is guaranteed — never precomputed poses by accident.
+        if eigengrasp_path is not None and valid_poses_path is not None:
+            print(
+                f"[RobotLoader] WARNING: eigengrasp_path set -> ignoring "
+                f"valid_poses_path ({valid_poses_path}). EIGENGRASP_ONLINE is exclusive."
+            )
+            valid_poses_path = None
+
         if valid_poses_path is not None:
             p = Path(valid_poses_path).expanduser().resolve()
             if not p.exists():
