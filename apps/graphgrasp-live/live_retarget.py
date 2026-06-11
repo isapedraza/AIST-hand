@@ -67,8 +67,9 @@ def main():
         from sources import InterpolatedSource
         source = InterpolatedSource(source)
 
-    sink = MuJocoSink()
+    sink = MuJocoSink(robot=retargeter.robot_name)
 
+    print(f"Robot        : {retargeter.robot_name}")
     print(f"Rotation repr: {retargeter.human_rot_repr}")
     print("Running. Q/ESC to quit.")
     while source.is_running() and sink.is_running():

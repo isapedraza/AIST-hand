@@ -55,7 +55,7 @@ class _SharedDecoder_compat(nn.Module):
         return self.net(z)
 
 # Shadow Hand joint limits (24 DOF)
-_LOWER = np.array([
+_SHADOW_LOWER = np.array([
     -0.524, -0.698,
     -0.349, -0.262, 0.000, 0.000,
     -0.349, -0.262, 0.000, 0.000,
@@ -64,7 +64,7 @@ _LOWER = np.array([
     -1.047,  0.000, -0.209, -0.698, -0.262,
 ], dtype=np.float32)
 
-_UPPER = np.array([
+_SHADOW_UPPER = np.array([
      0.175,  0.489,
      0.349,  1.571, 1.571, 1.571,
      0.349,  1.571, 1.571, 1.571,
@@ -73,19 +73,57 @@ _UPPER = np.array([
      1.047,  1.222,  0.209,  0.698,  1.571,
 ], dtype=np.float32)
 
+# Allegro Hand joint limits (16 DOF) — wonik_allegro right_hand.xml jnt_range.
+# Order: ff[j0..j3], mf[j0..j3], rf[j0..j3], th[j0..j3]. No wrist DOFs (n_pad=0).
+_ALLEGRO_LOWER = np.array([
+    -0.470, -0.196, -0.174, -0.227,
+    -0.470, -0.196, -0.174, -0.227,
+    -0.470, -0.196, -0.174, -0.227,
+     0.263, -0.105, -0.189, -0.162,
+], dtype=np.float32)
+
+_ALLEGRO_UPPER = np.array([
+     0.470,  1.610,  1.709,  1.618,
+     0.470,  1.610,  1.709,  1.618,
+     0.470,  1.610,  1.709,  1.618,
+     1.396,  1.163,  1.644,  1.719,
+], dtype=np.float32)
+
+# Per-robot output spec: n_pad = leading wrist DOFs zeroed (not in wrist-frame
+# human signal), lower/upper = qpos clip limits matching the MuJoCo model.
+_OUTPUT_SPECS = {
+    "shadow":  {"n_pad": 2, "lower": _SHADOW_LOWER,  "upper": _SHADOW_UPPER},
+    "allegro": {"n_pad": 0, "lower": _ALLEGRO_LOWER, "upper": _ALLEGRO_UPPER},
+}
+
 
 class Retargeter:
     """
-    Human pose -> Shadow Hand qpos.
+    Human pose -> robot qpos (robot auto-detected from checkpoint).
 
     Input : torch.Tensor [B, 20, F]  Dong pose (joints 1-20, no wrist)
                                      F=4 for quat, F=6 for R6 (auto-detected from ckpt)
-    Output: np.ndarray   [B, 24]     joint positions clipped to Shadow Hand limits
+    Output: np.ndarray   [B, J]      qpos clipped to the robot's joint limits
+                                     (Shadow J=24, Allegro J=16). self.robot_name
+                                     names the active robot.
     """
 
     def __init__(self, ckpt_path: str | Path):
         ck  = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-        n_j = ck["D_r"]["fc.weight"].shape[0]
+
+        # Robot id: multi-robot ckpt stores per-robot weights under "robots";
+        # legacy single-robot ckpts only have top-level E_r/D_r (assume shadow).
+        robots = ck.get("robots")
+        self.robot_name = next(iter(robots)) if robots else "shadow"
+        if self.robot_name not in _OUTPUT_SPECS:
+            raise ValueError(f"Unsupported robot '{self.robot_name}' (have {list(_OUTPUT_SPECS)})")
+        spec = _OUTPUT_SPECS[self.robot_name]
+        self._n_pad = spec["n_pad"]
+        self._lower = spec["lower"]
+        self._upper = spec["upper"]
+
+        d_r_sd = robots[self.robot_name]["D_r"] if robots else ck["D_r"]
+        n_j = d_r_sd["fc.weight"].shape[0]
         dx_in_dim = ck["D_X"]["net.0.weight"].shape[1]
 
         cfg = ck.get("config", {})
@@ -104,10 +142,11 @@ class Retargeter:
 
         self.E_h.load_state_dict(ck["E_h"])
         self.D_X.load_state_dict(ck["D_X"])
-        self.D_r.load_state_dict(ck["D_r"])
+        self.D_r.load_state_dict(d_r_sd)
 
     @torch.no_grad()
     def __call__(self, pose: torch.Tensor) -> np.ndarray:
         q = self.D_r(self.D_X(self.E_h(pose))).numpy()
-        q[:, 0:2] = 0.0  # WRJ2, WRJ1 — not encoded in wrist-frame human signal
-        return np.clip(q, _LOWER, _UPPER)
+        if self._n_pad:
+            q[:, :self._n_pad] = 0.0  # wrist DOFs — not encoded in wrist-frame human signal
+        return np.clip(q, self._lower, self._upper)
