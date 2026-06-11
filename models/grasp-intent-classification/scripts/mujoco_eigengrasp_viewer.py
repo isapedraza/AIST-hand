@@ -62,15 +62,15 @@ _SHADOW = RobotConfig(
     n_pad=2,
     n_joints=22,
     default_eigen=(
-        ROOT / "packages" / "cross-emb" / "data" / "processed"
-        / "dexonomy_shadow_eigengrasps_balanced_phase_open_close_coeffstats_sample.npz"
+        ROOT / "robot" / "hands" / "shadow_hand" / "datasets" / "processed"
+        / "dexonomy_shadow_eigengrasps_balanced_sample.npz"
     ),
     default_open_syn=(
-        ROOT / "packages" / "cross-emb" / "data" / "processed"
+        ROOT / "robot" / "hands" / "shadow_hand" / "datasets" / "processed"
         / "synthetic_open_hand_shadow_qpos.npz"
     ),
     default_close_syn=(
-        ROOT / "packages" / "cross-emb" / "data" / "processed"
+        ROOT / "robot" / "hands" / "shadow_hand" / "datasets" / "processed"
         / "synthetic_close_hand_shadow_qpos.npz"
     ),
 )
