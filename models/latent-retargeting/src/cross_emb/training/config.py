@@ -122,4 +122,9 @@ def _parse_args() -> argparse.Namespace:
         default=5000,
         help="Batch size for eval (val/test). Smaller than train --b for speed.",
     )
+    p.add_argument(
+        "--skip_final_eval",
+        action="store_true",
+        help="Skip the final test-split eval pass. Recommended for multi-robot runs where it can crash.",
+    )
     return p.parse_args()

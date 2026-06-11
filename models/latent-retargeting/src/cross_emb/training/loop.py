@@ -752,8 +752,13 @@ def main() -> None:
     # ---------------------------------------------------------------------------
     # Final test eval
     # ---------------------------------------------------------------------------
-    print("\n=== Final test eval (subjects 74-99) ===")
-    for cfg in robot_cfgs:
+    if args.skip_final_eval:
+        print("\n=== Final test eval SKIPPED (--skip_final_eval) ===")
+        eval_cfgs = []
+    else:
+        print("\n=== Final test eval (subjects 74-99) ===")
+        eval_cfgs = robot_cfgs
+    for cfg in eval_cfgs:
         test_sampler = CrossEmbodimentSampler(
             csv_path         = CSV_PATH,
             urdf_path        = cfg["urdf"],
