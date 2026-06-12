@@ -140,10 +140,26 @@ Compare against Run 3 (ahg cross-robot) on RS/NDS/NVS metrics.
 - `robot/shadow-hand/datasets/processed/valid_robot_poses_eigengrasp_dong.npz` — trimmed to 1M
 - `robot/shadow-hand/datasets/processed/valid_robot_poses_eigengrasp_dong_10M.npz` — backup
 
+## Order of Attack
+
+1. **[PENDING] Verify Leap pipeline end-to-end** — viewer (all PCs look sane), FK/Dong smoke,
+   EIGENGRASP_ONLINE sampler smoke with `--robots leap`. Only then proceed.
+2. **[PENDING] Tasks 1-4 below** — cross-embodiment batch fix (loop.py + metric).
+   Upgrade `--robots shadow allegro` → `--robots shadow allegro leap` once Leap verified.
+3. **[PENDING] docs/siguientes_pasos.md ideas** — after cross-embodiment batch is running.
+
+---
+
 ## Status
 
 - [x] NPZ files trimmed to 1M
+- [x] Leap eigengrasp basis built (BODex, 1.36M poses, k=9 → 92.5% var)
+- [x] Leap valid_robot_poses_leap.npz (1M collision-free poses, 91% acceptance)
+- [x] Leap valid_robot_poses_leap_dong.npz (Dong features precomputed, 784 MB)
+- [x] leap.yaml wired (eigengrasp + valid_poses + mjcf)
+- [x] --robots flag refactor (per-hand yaml, combo yamls deleted)
+- [ ] Leap pipeline verification (viewer + FK smoke + sampler smoke)
 - [ ] Task 1: loop.py cross-embodiment batch
 - [ ] Task 2: similarity metric cross-robot fix
-- [ ] Task 3: Run 1 (ahg, cross-robot batch)
+- [ ] Task 3: Run 1 (ahg, cross-robot batch, shadow+allegro+leap)
 - [ ] Task 4: Run 2 (xin, cross-robot batch)

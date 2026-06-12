@@ -1,7 +1,7 @@
 """
 Interactive hand viewer controlled by PCA eigengrasps.
 
-Supports Shadow Hand (default) and Allegro Hand (--robot allegro).
+Supports Shadow Hand (default), Allegro Hand (--robot allegro), and Leap Hand (--robot leap).
 
 Controls (terminal, no need to press Enter):
   LEFT / RIGHT   previous / next eigengrasp knob
@@ -98,7 +98,24 @@ _ALLEGRO = RobotConfig(
     ),
 )
 
-ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO}
+_LEAP = RobotConfig(
+    name="leap",
+    hand_dir=_MENAGERIE / "leap_hand",
+    root_body="palm",
+    orig_body_tag='<body name="palm" pos="0 0 0.1" quat="0 1 0 0">',
+    new_body_tag='<body name="palm" pos="0 0 0.05" quat="0.707 0 0.707 0">',
+    qpos_dim=16,
+    n_pad=0,
+    n_joints=16,
+    default_eigen=(
+        ROOT / "robot" / "hands" / "leap_hand" / "datasets" / "processed"
+        / "eigengrasp_leap.npz"
+    ),
+    default_open_syn=None,
+    default_close_syn=None,
+)
+
+ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO, "leap": _LEAP}
 
 POSE_ALPHA = 0.20
 

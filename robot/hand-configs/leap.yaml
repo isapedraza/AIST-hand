@@ -2,9 +2,9 @@ robot: leap_hand_right
 
 # Training fields (paths relative to repo_root)
 urdf: robot/hands/leap_hand/leap_hand_right.urdf
-eigengrasp: null
+eigengrasp: robot/hands/leap_hand/datasets/processed/eigengrasp_leap.npz
 mjcf: third_party/mujoco_menagerie/leap_hand/right_hand.xml
-valid_poses: null
+valid_poses: robot/hands/leap_hand/datasets/processed/valid_robot_poses_leap_dong.npz
 zero_wrj: false
 n_knobs: 9
 
