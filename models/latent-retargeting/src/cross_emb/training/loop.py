@@ -3,12 +3,12 @@
 Usage (single robot, legacy):
     python -m cross_emb.training.loop
 
-Usage (multi-robot via YAML config):
-    python -m cross_emb.training.loop --robots_config robot/configs/shadow_allegro.yaml
+Usage (multi-robot):
+    python -m cross_emb.training.loop --robots shadow allegro
 
 Usage (add new robot to existing checkpoint):
     python -m cross_emb.training.loop \\
-        --robots_config robot/configs/allegro_only.yaml \\
+        --robots allegro \\
         --resume_ckpt checkpoints/stage1_latest.pt \\
         --freeze_shared
 
@@ -59,30 +59,31 @@ def _load_robot_configs(args, repo_root: Path) -> list[dict]:
     """Return list of per-robot config dicts.
 
     Each dict: name, urdf, hand_config, valid_poses (Path|None), zero_wrj (bool).
-    Falls back to legacy single-robot CLI args if --robots_config not provided.
+    Falls back to legacy single-robot CLI args if --robots not provided.
     """
-    if args.robots_config:
+    if args.robots:
         import yaml
-        with open(args.robots_config) as f:
-            raw = yaml.safe_load(f)
         cfgs = []
-        for name, rcfg in raw.items():
+        for name in args.robots:
+            yaml_path = repo_root / f"robot/hand-configs/{name}.yaml"
+            with open(yaml_path) as f:
+                rcfg = yaml.safe_load(f)
             cfgs.append({
-                "name":          name,
-                "urdf":          _resolve_path(rcfg["urdf"],          repo_root),
-                "hand_config":   _resolve_path(rcfg["hand_config"],   repo_root),
-                "valid_poses":   _resolve_path(rcfg["valid_poses"],   repo_root) if rcfg.get("valid_poses") else None,
-                "zero_wrj":      bool(rcfg.get("zero_wrj", False)),
-                "eigengrasp":    _resolve_path(rcfg["eigengrasp"],    repo_root) if rcfg.get("eigengrasp") else None,
-                "mjcf":          _resolve_path(rcfg["mjcf"],          repo_root) if rcfg.get("mjcf") else None,
-                "n_knobs":       int(rcfg.get("n_knobs", 9)),
+                "name":        name,
+                "urdf":        _resolve_path(rcfg["urdf"],        repo_root),
+                "hand_config": yaml_path,
+                "valid_poses": _resolve_path(rcfg["valid_poses"], repo_root) if rcfg.get("valid_poses") else None,
+                "zero_wrj":    bool(rcfg.get("zero_wrj", False)),
+                "eigengrasp":  _resolve_path(rcfg["eigengrasp"],  repo_root) if rcfg.get("eigengrasp") else None,
+                "mjcf":        _resolve_path(rcfg["mjcf"],        repo_root) if rcfg.get("mjcf") else None,
+                "n_knobs":     int(rcfg.get("n_knobs", 9)),
             })
         return cfgs
 
     # Legacy single-robot path
     DEX_ROOT = Path(args.dex_root)
     urdf        = Path(args.urdf_path)        if args.urdf_path         else DEX_ROOT / "robots/hands/shadow_hand/shadow_hand_right.urdf"
-    hand_config = Path(args.hand_config)      if args.hand_config        else repo_root / "robot/hands/shadow_hand/shadow_hand_right.yaml"
+    hand_config = Path(args.hand_config)      if args.hand_config        else repo_root / "robot/hand-configs/shadow.yaml"
     valid_poses = Path(args.valid_poses_path) if args.valid_poses_path   else None
     eigengrasp  = Path(args.eigengrasp_path)  if args.eigengrasp_path    else None
     mjcf        = Path(args.mjcf_path)        if args.mjcf_path          else None

@@ -1,5 +1,13 @@
 robot: shadow_hand_right
 
+# Training fields (paths relative to repo_root)
+urdf: robot/hands/shadow_hand/shadow_hand_right.urdf
+eigengrasp: robot/hands/shadow_hand/datasets/processed/dexonomy_shadow_eigengrasps_balanced_sample.npz
+mjcf: third_party/mujoco_menagerie/shadow_hand/right_hand.xml
+valid_poses: null
+zero_wrj: true
+n_knobs: 9
+
 # Block 1: wrist anchor + 3 MCP positions to build palm frame
 # Dong Eq. 5-7: Y0 = norm(ring_mcp - index_mcp), Z0 = norm(norm(middle_mcp - wrist) x Y0)
 wrist_link: palm

@@ -1,5 +1,13 @@
 robot: leap_hand_right
 
+# Training fields (paths relative to repo_root)
+urdf: robot/hands/leap_hand/leap_hand_right.urdf
+eigengrasp: null
+mjcf: third_party/mujoco_menagerie/leap_hand/right_hand.xml
+valid_poses: null
+zero_wrj: false
+n_knobs: 9
+
 # Block 1: palm frame
 # joint 1 (revolute): palm_lower -> mcp_joint   (index MCP)
 # joint 5 (revolute): palm_lower -> mcp_joint_2  (middle MCP)

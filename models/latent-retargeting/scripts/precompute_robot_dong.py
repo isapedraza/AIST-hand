@@ -22,7 +22,7 @@ Usage:
     python models/latent-retargeting/scripts/precompute_robot_dong.py \
         --input  robot/hands/shadow_hand/datasets/processed/valid_robot_poses_eigengrasp.npz \
         --urdf   /home/yareeez/dex-urdf/robots/hands/shadow_hand/shadow_hand_right.urdf \
-        --hand_config robot/hands/shadow_hand/shadow_hand_right.yaml \
+        --hand_config robot/hand-configs/shadow.yaml \
         --batch_size 20000
 
 The original NPZ is left untouched. Output is written next to the input with

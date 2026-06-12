@@ -1,5 +1,13 @@
 robot: allegro_hand_right
 
+# Training fields (paths relative to repo_root)
+urdf: robot/hands/allegro_hand/allegro_hand_right.urdf
+eigengrasp: robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz
+mjcf: third_party/mujoco_menagerie/wonik_allegro/right_hand.xml
+valid_poses: robot/hands/allegro_hand/datasets/processed/valid_robot_poses_allegro_dong.npz
+zero_wrj: false
+n_knobs: 9
+
 # Block 1: palm frame from 3 MCP flexion roots (link_1.0/5.0/9.0)
 # joint_0.0/4.0/8.0: axis Z = abduction (lateral) -> link_0.0/4.0/8.0
 # joint_1.0/5.0/9.0: axis Y = MCP flexion         -> link_1.0/5.0/9.0  (true MCP)
