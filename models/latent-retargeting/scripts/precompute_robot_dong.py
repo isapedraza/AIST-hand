@@ -97,13 +97,16 @@ def main() -> None:
         tip_labels = list(meta_probe["tip_labels"])
         K = quats_probe.shape[1]
         F = len(tip_labels)
+        # Chain link count varies per hand (leap/shadow=4 [MCP,PIP,DIP,TIP];
+        # barrett=2 [med,dist]). Probe the max so chain_out fits any morphology.
+        L = max(meta_probe["chain_positions"][f].shape[1] for f in tip_labels)
     print(f"[precompute] joint_labels({K})={joint_labels}")
-    print(f"[precompute] tip_labels({F})={tip_labels}")
+    print(f"[precompute] tip_labels({F})={tip_labels}  chain_len(L)={L}")
     print(f"[precompute] hand_length={hand_length:.6f}")
 
     quats_out = np.zeros((N, K, 4),     dtype=np.float32)
     rot6_out  = np.zeros((N, K, 6),     dtype=np.float32) if args.save_rot6 else None
-    chain_out = np.zeros((N, F, 4, 3),  dtype=np.float32)
+    chain_out = np.zeros((N, F, L, 3),  dtype=np.float32)
     tips_out  = np.zeros((N, F, 3),     dtype=np.float32)
 
     n_batches = (N + args.batch_size - 1) // args.batch_size
@@ -123,7 +126,8 @@ def main() -> None:
             rot6_out[i:j] = meta["rot6"].cpu().numpy()
         tips_out[i:j]  = tips.cpu().numpy()
         for fi, f in enumerate(tip_labels):
-            chain_out[i:j, fi] = chain_per_finger[f].cpu().numpy()
+            cpf = chain_per_finger[f].cpu().numpy()
+            chain_out[i:j, fi, :cpf.shape[1]] = cpf   # pad shorter chains with zeros
         if bi % max(1, n_batches // 50) == 0 or bi == n_batches - 1:
             pct = 100.0 * (j) / N
             print(f"[precompute] batch {bi+1:4d}/{n_batches}  poses {j:>10,}/{N:,}  ({pct:5.1f}%)")

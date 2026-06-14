@@ -1,0 +1,32 @@
+robot: barrett_hand
+
+# Training fields (paths relative to repo_root)
+urdf: robot/hands/barrett_hand/bhand_model.urdf
+eigengrasp: robot/hands/barrett_hand/datasets/processed/eigengrasp_barrett.npz
+mjcf: robot/hands/barrett_hand/barrett.mjcf
+valid_poses: robot/hands/barrett_hand/datasets/processed/valid_robot_poses_barrett_1M_dong.npz
+zero_wrj: false
+n_knobs: 8
+
+# Block 1: palm frame from base + 3 knuckle reference points (origins fixed on palm).
+wrist_link: base_link
+frame_index_mcp:  finger_1_prox_link
+frame_middle_mcp: finger_2_prox_link
+frame_ring_mcp:   finger_3_med_link
+
+# Block 3: finger chains. Mapping (Option B, confirmed vs dex-retargeting/AnyTeleop):
+#   thumb  = finger_3  (the OPPOSING finger; no spread)
+#   index  = finger_1, middle = finger_2
+# Spread (prox of finger_1/2, +-180deg) is EXCLUDED from the per-joint chain: it has no
+# human analog (human abduction ~15deg), so it is not learned from human pose; chains are
+# [med, dist] -> mcp = flexion, consistent across all three fingers. The spread is set by
+# a deploy-time heuristic, and cross-robot triplet similarity leans on tips/pinch
+# (--sk_metric xin, lam_finger=0), not the dense joint chain.
+# NOTE: "finger_1_med_liink" has a double-i typo in the source URDF; matched exactly.
+fingers:
+  thumb:
+    chain: [finger_3_med_link, finger_3_dist_link]
+  index:
+    chain: [finger_1_med_liink, finger_1_dist_link]
+  middle:
+    chain: [finger_2_med_link, finger_2_dist_link]
