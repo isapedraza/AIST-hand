@@ -49,6 +49,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=20000, help="Per-batch FK size.")
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
     p.add_argument("--limit", type=int, default=None, help="Optional cap on poses.")
+    p.add_argument("--save-rot6", action="store_true",
+                   help="Also store rot6 [N,K,6]. Default OFF: the loader recomputes rot6 "
+                        "on-the-fly from quats (cache_keys has no rot6), so storing it is "
+                        "dead weight (~528MB for shadow@1M).")
     return p.parse_args()
 
 
@@ -98,7 +102,7 @@ def main() -> None:
     print(f"[precompute] hand_length={hand_length:.6f}")
 
     quats_out = np.zeros((N, K, 4),     dtype=np.float32)
-    rot6_out  = np.zeros((N, K, 6),     dtype=np.float32)
+    rot6_out  = np.zeros((N, K, 6),     dtype=np.float32) if args.save_rot6 else None
     chain_out = np.zeros((N, F, 4, 3),  dtype=np.float32)
     tips_out  = np.zeros((N, F, 3),     dtype=np.float32)
 
@@ -115,7 +119,8 @@ def main() -> None:
                 f: meta["chain_positions"][f] / hand_length for f in tip_labels
             }
         quats_out[i:j] = quats.cpu().numpy()
-        rot6_out[i:j]  = meta["rot6"].cpu().numpy()
+        if rot6_out is not None:
+            rot6_out[i:j] = meta["rot6"].cpu().numpy()
         tips_out[i:j]  = tips.cpu().numpy()
         for fi, f in enumerate(tip_labels):
             chain_out[i:j, fi] = chain_per_finger[f].cpu().numpy()
@@ -124,11 +129,9 @@ def main() -> None:
             print(f"[precompute] batch {bi+1:4d}/{n_batches}  poses {j:>10,}/{N:,}  ({pct:5.1f}%)")
 
     print(f"[precompute] writing {out_path} ...")
-    np.savez(
-        out_path,
+    save_kw = dict(
         q             = q_all.astype(np.float32, copy=False),
         quats         = quats_out,
-        rot6          = rot6_out,
         chain         = chain_out,
         tips          = tips_out,
         joint_labels  = np.array(joint_labels),
@@ -136,6 +139,9 @@ def main() -> None:
         hand_config   = np.array(str(Path(args.hand_config).expanduser().resolve())),
         hand_length   = np.array(hand_length, dtype=np.float32),
     )
+    if rot6_out is not None:
+        save_kw["rot6"] = rot6_out
+    np.savez(out_path, **save_kw)
     size_mb = out_path.stat().st_size / 1e6
     print(f"[precompute] done. size={size_mb:,.1f} MB")
 

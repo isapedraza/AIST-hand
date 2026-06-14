@@ -29,6 +29,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
+import tarfile
 from pathlib import Path
 
 import numpy as np
@@ -63,6 +65,46 @@ def load_multidex_joints(path: Path) -> np.ndarray:
     if joints.shape[1] != 16:
         raise ValueError(f"Expected 16 joints, got {joints.shape[1]}")
     return joints
+
+
+# --- BODex 3-phase loader (alternative source to MultiDex) ---------------------
+# BODex stores grasp_qpos [N,23] = wrist(7) + joints(16); slice [7:23]. Like Shadow,
+# use all 3 phases (pregrasp=more OPEN, grasp, squeeze) for natural open->close span.
+DEFAULT_PHASES = ("pregrasp_qpos", "grasp_qpos", "squeeze_qpos")
+BODEX_JOINTS_SLICE = slice(7, 23)
+
+
+def load_bodex_phases(tar_path: Path, phases: tuple[str, ...] = DEFAULT_PHASES) -> dict[str, np.ndarray]:
+    rows: dict[str, list[np.ndarray]] = {p: [] for p in phases}
+    with tarfile.open(tar_path, "r:gz") as tf:
+        members = [m for m in tf.getmembers() if m.name.endswith(".npy")]
+        print(f"[bodex] {len(members)} npy files  phases={phases}")
+        for i, member in enumerate(members):
+            f = tf.extractfile(member)
+            if f is None:
+                continue
+            d = np.load(io.BytesIO(f.read()), allow_pickle=True).item()
+            for p in phases:
+                if p in d:
+                    rows[p].append(d[p][:, BODEX_JOINTS_SLICE].astype(np.float64))
+            if (i + 1) % 200 == 0 or i == len(members) - 1:
+                total = sum(r.shape[0] for chunks in rows.values() for r in chunks)
+                print(f"  [{i+1}/{len(members)}] total poses so far: {total:,}")
+    out = {p: np.concatenate(chunks, axis=0) for p, chunks in rows.items() if chunks}
+    print(f"[bodex] per-phase rows: { {p: a.shape[0] for p, a in out.items()} }")
+    return out
+
+
+def subsample_balance(phases_data: dict[str, np.ndarray], cap: int | None, seed: int) -> np.ndarray:
+    """Phase-balance: cap each phase to `cap` rows (random), concat. Mirrors Shadow."""
+    rng = np.random.default_rng(seed)
+    parts = []
+    for p, arr in phases_data.items():
+        if cap is not None and arr.shape[0] > cap:
+            arr = arr[rng.choice(arr.shape[0], cap, replace=False)]
+        parts.append(arr)
+        print(f"  phase {p}: kept {arr.shape[0]} rows")
+    return np.concatenate(parts, axis=0)
 
 
 def gate_a_order_check(joints: np.ndarray, tol: float = 0.1) -> None:
@@ -178,17 +220,29 @@ def load_synthetic_npz(paths: list[Path]) -> np.ndarray:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--multidex", type=Path, default=Path("/tmp/MultiDex/allegro/allegro.pt"))
+    ap.add_argument("--bodex", type=Path, default=None,
+                    help="BODex_allegro.tar.gz. If set, use BODex 3-phase data instead of MultiDex.")
+    ap.add_argument("--max-rows-per-phase", type=int, default=100000,
+                    help="Downsample each BODex phase to this many rows (0 = no cap). BODex only.")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path,
                     default=Path("robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz"))
     ap.add_argument("--synthetic-qpos-npz", type=Path, nargs="*", default=[],
                     help="Synthetic open/close NPZ files (key qpos16) appended before PCA.")
     args = ap.parse_args()
 
-    print(f"multidex = {args.multidex}")
-    joints = load_multidex_joints(args.multidex)
-    print(f"loaded MultiDex joints: {joints.shape}")
+    if args.bodex is not None:
+        print(f"bodex = {args.bodex}")
+        phases_data = load_bodex_phases(args.bodex)
+        cap = args.max_rows_per_phase if args.max_rows_per_phase > 0 else None
+        joints = subsample_balance(phases_data, cap, args.seed)
+        print(f"loaded BODex joints (phase-balanced): {joints.shape}")
+    else:
+        print(f"multidex = {args.multidex}")
+        joints = load_multidex_joints(args.multidex)
+        print(f"loaded MultiDex joints: {joints.shape}")
 
-    # GATE A: order check on the raw MultiDex joints (before mixing anything in).
+    # GATE A: order check on raw joints (before mixing anything in).
     gate_a_order_check(joints)
 
     # Clip to dex-urdf feasible space (a few thumb-CMC values overshoot GenDexGrasp's URDF).

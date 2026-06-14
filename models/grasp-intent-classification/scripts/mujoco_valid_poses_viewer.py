@@ -39,10 +39,14 @@ POSE_ALPHA = 0.18
 class RobotConfig:
     name: str
     hand_dir: Path
-    orig_body_tag: str
-    new_body_tag: str
     qpos_dim: int
     default_npz: Path
+    # Menagerie MJCF path: replace this body tag to stand the hand upright.
+    orig_body_tag: str = ""
+    new_body_tag: str = ""
+    # URDF path (alternative to menagerie MJCF). If set, load the URDF directly
+    # (with a mujoco compiler tag injected so its meshes resolve).
+    urdf: Path | None = None
 
 
 _SHADOW = RobotConfig(
@@ -63,10 +67,41 @@ _ALLEGRO = RobotConfig(
     default_npz=ROOT / "robot/hands/allegro_hand/datasets/processed/valid_robot_poses_dong.npz",
 )
 
-ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO}
+_LEAP = RobotConfig(
+    name="leap",
+    hand_dir=_MENAGERIE / "leap_hand",
+    orig_body_tag='<body name="palm" pos="0 0 0.1" quat="0 1 0 0">',
+    new_body_tag='<body name="palm" pos="0 0 0.05" quat="0 0.707 0 0.707">',
+    qpos_dim=16,
+    default_npz=ROOT / "robot/hands/leap_hand/datasets/processed/valid_robot_poses_leap_dong.npz",
+)
+
+_BARRETT = RobotConfig(
+    name="barrett",
+    hand_dir=ROOT / "robot/hands/barrett_hand",
+    qpos_dim=8,
+    default_npz=ROOT / "robot/hands/barrett_hand/datasets/processed/_remapped_real_grasps.npz",
+    urdf=ROOT / "robot/hands/barrett_hand/bhand_model.urdf",
+)
+
+ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO, "leap": _LEAP, "barrett": _BARRETT}
+
+
+def _build_urdf_scene(cfg: RobotConfig) -> Path:
+    """Load a URDF hand: inject a mujoco <compiler> so its relative meshes resolve."""
+    import re
+    txt = cfg.urdf.read_text()
+    meshdir = str(cfg.urdf.parent.resolve())
+    inj = (f'<mujoco><compiler meshdir="{meshdir}" strippath="false" '
+           f'balanceinertia="true" discardvisual="false"/></mujoco>')
+    out = cfg.urdf.parent / ".bhand_valid_poses_viewer.urdf"
+    out.write_text(re.sub(r'(<robot[^>]*>)', r'\1\n  ' + inj, txt, count=1))
+    return out
 
 
 def build_scene(cfg: RobotConfig) -> Path:
+    if cfg.urdf is not None:
+        return _build_urdf_scene(cfg)
     right_hand = cfg.hand_dir / "right_hand.xml"
     upright = cfg.hand_dir / ".right_hand_upright_poses.xml"
     scene = cfg.hand_dir / ".scene_valid_poses_viewer.xml"
@@ -136,7 +171,14 @@ def main() -> None:
         sys.exit(1)
 
     data = np.load(npz_path, allow_pickle=False)
-    q_all = data["q"].astype(np.float64)          # [N, J]
+    # valid_poses npz uses key "q"; synthetic anchor npz uses "qpos{dim}".
+    qkey = next((k for k in ("q", f"qpos{cfg.qpos_dim}", "qpos16", "qpos22", "qpos24")
+                 if k in data.files), None)
+    if qkey is None:
+        print(f"No pose array in {npz_path} (looked for q / qpos{cfg.qpos_dim}). "
+              f"Has: {list(data.files)}")
+        sys.exit(1)
+    q_all = data[qkey].astype(np.float64)          # [N, J]
     N, J = q_all.shape
     print(f"Robot: {cfg.name}  |  Poses: {N:,}  |  Joints: {J}  |  {npz_path.name}")
 

@@ -51,29 +51,68 @@ _ALL_LIMITS    = _FINGER_LIMITS * 3 + _THUMB_LIMITS
 LOW16  = np.array([lo for lo, _ in _ALL_LIMITS], dtype=np.float64)
 HIGH16 = np.array([hi for _, hi in _ALL_LIMITS], dtype=np.float64)
 
-JOINTS_SLICE = slice(7, 23)  # grasp_qpos layout: [wrist_pos(3), wrist_quat(4), joints(16)]
+JOINTS_SLICE = slice(7, 23)  # qpos layout: [wrist_pos(3), wrist_quat(4), joints(16)]
+
+# Like Shadow (analyze_dexonomy_eigengrasps.py): use all 3 grasp phases, not just
+# the final grasp. pregrasp = hand approaching (more OPEN), grasp = closed on the
+# object, squeeze = tighter. Each BODex npy has equal rows per phase, so loading
+# all three is automatically phase-balanced 1:1:1 -> the PCA basis spans open->close.
+DEFAULT_PHASES = ("pregrasp_qpos", "grasp_qpos", "squeeze_qpos")
 
 
-def load_bodex_joints(tar_path: Path) -> np.ndarray:
-    """Stream BODex tar.gz, extract all grasp_qpos[:, 7:23] across all objects."""
-    rows: list[np.ndarray] = []
+def load_bodex_phases(tar_path: Path, phases: tuple[str, ...] = DEFAULT_PHASES) -> dict[str, np.ndarray]:
+    """Stream BODex tar.gz, return {phase: [N,16]} qpos[:, 7:23] across all objects."""
+    rows: dict[str, list[np.ndarray]] = {p: [] for p in phases}
     with tarfile.open(tar_path, "r:gz") as tf:
         members = [m for m in tf.getmembers() if m.name.endswith(".npy")]
-        print(f"[load] {len(members)} npy files in archive")
+        print(f"[load] {len(members)} npy files in archive  phases={phases}")
         for i, member in enumerate(members):
             f = tf.extractfile(member)
             if f is None:
                 continue
             buf = io.BytesIO(f.read())
             d = np.load(buf, allow_pickle=True).item()
-            q = d["grasp_qpos"]  # [N, 23]
-            rows.append(q[:, JOINTS_SLICE].astype(np.float64))
+            for p in phases:
+                if p in d:
+                    rows[p].append(d[p][:, JOINTS_SLICE].astype(np.float64))
             if (i + 1) % 200 == 0 or i == len(members) - 1:
-                total = sum(r.shape[0] for r in rows)
+                total = sum(r.shape[0] for chunks in rows.values() for r in chunks)
                 print(f"  [{i+1}/{len(members)}] total poses so far: {total:,}")
-    joints = np.concatenate(rows, axis=0)
-    print(f"[load] total: {joints.shape}")
-    return joints
+    out = {p: np.concatenate(chunks, axis=0) for p, chunks in rows.items() if chunks}
+    print(f"[load] per-phase rows: { {p: a.shape[0] for p, a in out.items()} }")
+    return out
+
+
+def subsample_balance(phases_data: dict[str, np.ndarray], cap: int | None,
+                      seed: int) -> np.ndarray:
+    """Phase-balance: cap each phase to `cap` rows (random, no replacement), concat.
+
+    Mirrors Shadow's rows_per_weight_unit: keeping real data modest so the appended
+    synthetic open/close are a meaningful fraction (and thus land inside p01/p99).
+    """
+    rng = np.random.default_rng(seed)
+    parts = []
+    for p, arr in phases_data.items():
+        if cap is not None and arr.shape[0] > cap:
+            arr = arr[rng.choice(arr.shape[0], cap, replace=False)]
+        parts.append(arr)
+        print(f"  phase {p}: kept {arr.shape[0]} rows")
+    return np.concatenate(parts, axis=0)
+
+
+def load_synthetic_npz(paths: list[Path]) -> np.ndarray:
+    """Load synthetic open/close NPZ files (key 'qpos16') appended before PCA."""
+    rows: list[np.ndarray] = []
+    for p in paths:
+        d = np.load(p, allow_pickle=False)
+        if "qpos16" not in d.files:
+            raise KeyError(f"{p} missing 'qpos16' (has {list(d.files)})")
+        q = d["qpos16"].astype(np.float64)
+        if q.ndim != 2 or q.shape[1] != 16:
+            raise ValueError(f"Expected qpos16 [N,16] in {p}, got {q.shape}")
+        print(f"  synthetic {p.name}: {q.shape[0]} rows")
+        rows.append(q)
+    return np.concatenate(rows, axis=0) if rows else np.zeros((0, 16), dtype=np.float64)
 
 
 def gate_a(joints: np.ndarray) -> None:
@@ -166,11 +205,33 @@ def main():
                     default=Path("robot/hands/leap_hand/datasets/raw/BODex_leap.tar.gz"))
     ap.add_argument("--out", type=Path,
                     default=Path("robot/hands/leap_hand/datasets/processed/eigengrasp_leap.npz"))
+    _proc = Path("robot/hands/leap_hand/datasets/processed")
+    ap.add_argument("--synthetic-qpos-npz", type=Path, nargs="*",
+                    default=[_proc / "synthetic_open_leap.npz", _proc / "synthetic_close_leap.npz"],
+                    help="Synthetic open/close NPZ (key qpos16) appended before PCA. "
+                         "BODex never reaches a flat open hand, so these anchor the extremes.")
+    ap.add_argument("--max-rows-per-phase", type=int, default=100000,
+                    help="Downsample each BODex phase to this many rows (Shadow-style). "
+                         "Keeps real data modest so synthetic extremes land inside p01/p99. "
+                         "0 = no cap (use all rows).")
+    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
     print(f"bodex = {args.bodex}")
-    joints = load_bodex_joints(args.bodex)
-    gate_a(joints)
+    phases_data = load_bodex_phases(args.bodex)
+    cap = args.max_rows_per_phase if args.max_rows_per_phase > 0 else None
+    joints = subsample_balance(phases_data, cap, args.seed)
+    print(f"[balance] real total after phase cap: {joints.shape}")
+    gate_a(joints)  # order check on BODex only (before appending synthetic)
+
+    synthetic = load_synthetic_npz(args.synthetic_qpos_npz)
+    if synthetic.shape[0] > 0:
+        synthetic = np.clip(synthetic, LOW16, HIGH16)
+        joints = np.concatenate([joints, synthetic], axis=0)
+        print(f"appended {synthetic.shape[0]} synthetic rows -> total {joints.shape[0]}")
+    else:
+        print("no synthetic rows appended")
+
     low, high = compute_data_limits(joints)
     print(f"data limits (with buf): low={low.round(3)}  high={high.round(3)}")
     joints = clip_to_limits(joints, low, high)
@@ -188,9 +249,10 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         args.out,
-        source         = "bodex_leap",
+        source         = "bodex_leap+synthetic",
         bodex_path     = str(args.bodex),
         n_poses        = joints.shape[0],
+        n_synthetic    = int(synthetic.shape[0]),
         joint_names    = np.array(JOINTS16),
         joint_low      = low.astype(np.float32),
         joint_high     = high.astype(np.float32),

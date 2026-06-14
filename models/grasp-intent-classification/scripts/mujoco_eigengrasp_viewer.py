@@ -41,15 +41,16 @@ _MENAGERIE = ROOT / "third_party" / "mujoco_menagerie"
 class RobotConfig:
     name: str
     hand_dir: Path
-    root_body: str          # body whose quat/pos we patch to orient hand upright
-    orig_body_tag: str      # exact string to find in XML
-    new_body_tag: str       # replacement string
     qpos_dim: int           # full MuJoCo nq for this hand
     n_pad: int              # leading zeros before finger joints (wrist DOFs)
     n_joints: int           # eigengrasp joint count
     default_eigen: Path
-    default_open_syn: Path
-    default_close_syn: Path
+    default_open_syn: Path | None = None
+    default_close_syn: Path | None = None
+    root_body: str = ""          # body whose quat/pos we patch to orient hand upright
+    orig_body_tag: str = ""      # exact string to find in menagerie XML
+    new_body_tag: str = ""       # replacement string
+    urdf: Path | None = None     # URDF source (alternative to menagerie MJCF)
 
 
 _SHADOW = RobotConfig(
@@ -103,7 +104,7 @@ _LEAP = RobotConfig(
     hand_dir=_MENAGERIE / "leap_hand",
     root_body="palm",
     orig_body_tag='<body name="palm" pos="0 0 0.1" quat="0 1 0 0">',
-    new_body_tag='<body name="palm" pos="0 0 0.05" quat="0.707 0 0.707 0">',
+    new_body_tag='<body name="palm" pos="0 0 0.05" quat="0 0.707 0 0.707">',
     qpos_dim=16,
     n_pad=0,
     n_joints=16,
@@ -111,16 +112,42 @@ _LEAP = RobotConfig(
         ROOT / "robot" / "hands" / "leap_hand" / "datasets" / "processed"
         / "eigengrasp_leap.npz"
     ),
-    default_open_syn=None,
-    default_close_syn=None,
+    default_open_syn=(
+        ROOT / "robot" / "hands" / "leap_hand" / "datasets" / "processed"
+        / "synthetic_open_leap.npz"
+    ),
+    default_close_syn=(
+        ROOT / "robot" / "hands" / "leap_hand" / "datasets" / "processed"
+        / "synthetic_close_leap.npz"
+    ),
 )
 
-ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO, "leap": _LEAP}
+_BARRETT = RobotConfig(
+    name="barrett",
+    hand_dir=ROOT / "robot/hands/barrett_hand",
+    qpos_dim=8,
+    n_pad=0,
+    n_joints=8,
+    default_eigen=ROOT / "robot/hands/barrett_hand/datasets/processed/eigengrasp_barrett.npz",
+    default_open_syn=ROOT / "robot/hands/barrett_hand/datasets/processed/synthetic_open_barrett.npz",
+    default_close_syn=ROOT / "robot/hands/barrett_hand/datasets/processed/synthetic_close_barrett.npz",
+    urdf=ROOT / "robot/hands/barrett_hand/bhand_model.urdf",
+)
+
+ROBOTS: dict[str, RobotConfig] = {"shadow": _SHADOW, "allegro": _ALLEGRO, "leap": _LEAP, "barrett": _BARRETT}
 
 POSE_ALPHA = 0.20
 
 
 def build_scene(cfg: RobotConfig) -> Path:
+    if cfg.urdf is not None:
+        import re
+        txt = cfg.urdf.read_text()
+        inj = (f'<mujoco><compiler meshdir="{cfg.urdf.parent.resolve()}" strippath="false" '
+               f'balanceinertia="true" discardvisual="false"/></mujoco>')
+        out = cfg.urdf.parent / ".bhand_eigengrasp_viewer.urdf"
+        out.write_text(re.sub(r'(<robot[^>]*>)', r'\1\n  ' + inj, txt, count=1))
+        return out
     right_hand = cfg.hand_dir / "right_hand.xml"
     upright = cfg.hand_dir / ".right_hand_upright.xml"
     scene = cfg.hand_dir / ".scene_eigengrasp_viewer.xml"
