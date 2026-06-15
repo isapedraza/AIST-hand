@@ -385,8 +385,11 @@ def main() -> None:
     print(f"Robots ({len(robot_cfgs)}): {[cfg['name'] for cfg in robot_cfgs]}")
 
     # ---------------------------------------------------------------------------
-    # Samplers — one per robot
+    # Samplers — one per robot. Human data is identical across robots, so the
+    # first sampler builds the HumanLoader and the rest share it (one CSV read,
+    # one RAM copy) instead of re-loading the human CSV per robot.
     # ---------------------------------------------------------------------------
+    shared_human = shared_extra = None
     for cfg in robot_cfgs:
         cfg["sampler"] = CrossEmbodimentSampler(
             csv_path         = CSV_PATH,
@@ -402,12 +405,18 @@ def main() -> None:
             eigengrasp_path  = cfg.get("eigengrasp"),
             mjcf_path        = cfg.get("mjcf"),
             n_knobs          = cfg.get("n_knobs", 9),
+            human_loader     = shared_human,
+            extra_human_loader = shared_extra,
         )
+        if shared_human is None:
+            shared_human = cfg["sampler"].human_loader
+            shared_extra = cfg["sampler"].extra_human_loader
         _probe    = cfg["sampler"].get_batch_temporal(1)
         cfg["J"]  = _probe["q_r"].shape[1]
         print(f"  {cfg['name']}: J={cfg['J']}  zero_wrj={cfg['zero_wrj']}")
 
-    # Val samplers
+    # Val samplers — share one val HumanLoader across robots (same as train).
+    shared_human_val = None
     for cfg in robot_cfgs:
         if args.val_every and args.val_every > 0:
             cfg["val_sampler"] = CrossEmbodimentSampler(
@@ -421,7 +430,10 @@ def main() -> None:
                 extra_human_ratio= 0.0,
                 human_rot_repr   = args.human_rot_repr,
                 primitive_sample = args.primitive_sample,
+                human_loader     = shared_human_val,
             )
+            if shared_human_val is None:
+                shared_human_val = cfg["val_sampler"].human_loader
         else:
             cfg["val_sampler"] = None
 

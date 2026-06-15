@@ -113,24 +113,34 @@ class CrossEmbodimentSampler:
         eigengrasp_path: str | Path | None = None,
         mjcf_path: str | Path | None = None,
         n_knobs: int = 9,
+        human_loader: "HumanLoader | None" = None,
+        extra_human_loader: "StaticHumanAnchorLoader | None" = None,
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
         self.split = split
         self.human_rot_repr = human_rot_repr
         self.extra_human_ratio = float(extra_human_ratio)
-        self.human_loader = HumanLoader(csv_path, split=split, device=device, human_rot_repr=human_rot_repr)
-        self.extra_human_loader = None
-        if extra_human_csv is not None and self.extra_human_ratio > 0:
-            if split != "train":
-                print(f"[CrossEmbodimentSampler] Ignoring extra_human_csv for split={split}.")
-            else:
-                self.extra_human_loader = StaticHumanAnchorLoader(
-                    extra_human_csv, device=device, human_rot_repr=human_rot_repr
-                )
-                print(
-                    "[CrossEmbodimentSampler] Extra human anchors enabled: "
-                    f"ratio={self.extra_human_ratio:.3f}"
-                )
+        # Human data is identical across robots; allow sharing one loader to
+        # avoid re-reading the CSV (and a full RAM copy) per robot.
+        if human_loader is not None:
+            self.human_loader = human_loader
+        else:
+            self.human_loader = HumanLoader(csv_path, split=split, device=device, human_rot_repr=human_rot_repr)
+        if extra_human_loader is not None:
+            self.extra_human_loader = extra_human_loader
+        else:
+            self.extra_human_loader = None
+            if extra_human_csv is not None and self.extra_human_ratio > 0:
+                if split != "train":
+                    print(f"[CrossEmbodimentSampler] Ignoring extra_human_csv for split={split}.")
+                else:
+                    self.extra_human_loader = StaticHumanAnchorLoader(
+                        extra_human_csv, device=device, human_rot_repr=human_rot_repr
+                    )
+                    print(
+                        "[CrossEmbodimentSampler] Extra human anchors enabled: "
+                        f"ratio={self.extra_human_ratio:.3f}"
+                    )
         self.robot_rnd = RobotLoader(
             urdf_path,
             device=device,
