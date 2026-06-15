@@ -545,6 +545,13 @@ def main() -> None:
     if multi and args.sk_metric != "xin":
         print(f"[multi-robot] sk_metric={args.sk_metric} ignored; cross-robot uses Xin tip/pinch + adaptive D_R.")
 
+    # --b is the TOTAL batch per step (Yan 2026: one batch pooled over all
+    # embodiments). Split it evenly across robots so total work is constant
+    # regardless of robot count (3 robots at B=50k = 50k total, ~16.6k each,
+    # not 150k). Single robot -> b_per = B.
+    b_per = max(1, args.b // len(robot_cfgs))
+    print(f"Batch: total B={args.b} -> {b_per} per robot x {len(robot_cfgs)} robots")
+
     def _mem(tag: str) -> None:
         if args.mem_debug and DEVICE == "cuda":
             a = torch.cuda.memory_allocated() / 1e9
@@ -572,7 +579,7 @@ def main() -> None:
             hand_config = cfg["hand_config"]
             zero_wrj    = cfg["zero_wrj"]
 
-            batch          = sampler_r.get_batch_temporal(args.b)
+            batch          = sampler_r.get_batch_temporal(b_per)
             last_batch     = batch
             pose_h         = batch["pose_h"]
             pose_h_t1      = batch["pose_h_t1"]
