@@ -2,9 +2,11 @@ robot: leap_hand_right
 
 # Training fields (paths relative to repo_root)
 urdf: robot/hands/leap_hand/leap_hand_right.urdf
-eigengrasp: robot/hands/leap_hand/datasets/processed/eigengrasp_leap.npz
-mjcf: third_party/mujoco_menagerie/leap_hand/right_hand.xml
-valid_poses: robot/hands/leap_hand/datasets/processed/valid_robot_poses_leap_dong.npz
+# eigengrasp/mjcf used OFFLINE to generate valid_poses; training reads DONG_CACHE.
+# (uncomment + null valid_poses to switch back to EIGENGRASP_ONLINE)
+# eigengrasp: robot/hands/leap_hand/datasets/processed/eigengrasp_leap.npz
+# mjcf: third_party/mujoco_menagerie/leap_hand/right_hand.xml
+valid_poses: robot/hands/leap_hand/datasets/processed/valid_robot_poses_leap_1M_dong.npz
 zero_wrj: false
 n_knobs: 9
 

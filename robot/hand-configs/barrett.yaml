@@ -2,8 +2,10 @@ robot: barrett_hand
 
 # Training fields (paths relative to repo_root)
 urdf: robot/hands/barrett_hand/bhand_model.urdf
-eigengrasp: robot/hands/barrett_hand/datasets/processed/eigengrasp_barrett.npz
-mjcf: robot/hands/barrett_hand/barrett.mjcf
+# eigengrasp/mjcf used OFFLINE to generate valid_poses; training reads DONG_CACHE.
+# (uncomment + null valid_poses to switch back to EIGENGRASP_ONLINE)
+# eigengrasp: robot/hands/barrett_hand/datasets/processed/eigengrasp_barrett.npz
+# mjcf: robot/hands/barrett_hand/barrett.mjcf
 valid_poses: robot/hands/barrett_hand/datasets/processed/valid_robot_poses_barrett_1M_dong.npz
 zero_wrj: false
 n_knobs: 8

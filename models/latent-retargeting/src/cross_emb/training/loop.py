@@ -205,6 +205,145 @@ def _compute_eval_metrics(
         "b_eval": b_eval,
     }
 
+_FINGER_ORDER = ["thumb", "index", "middle", "ring", "pinky"]
+_SEG_ORDER    = ["mcp", "pip", "dip", "tip"]
+
+
+def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tensor:
+    """Cross-embodiment triplet loss over a single pooled latent space.
+
+    Yan et al. (2026): one contrastive pool per subspace containing human +
+    ALL robots, with triplets mined across any embodiment. Unlike the legacy
+    per-robot path, this aligns robot<->robot directly (not only transitively
+    through the human).
+
+    Cross-embodiment safety is ADAPTIVE per subspace (morphologies differ per
+    finger, not only per hand):
+      - D_R compares only the joints shared by every robot participating in the
+        subspace (intersection of common_labels -> e.g. just `mcp` once a
+        2-link finger like Barrett is in the pool).
+      - The Xin tip/pinch/tip_rot terms use mini-tips [thumb_tip, finger_tip],
+        so a hand contributes a subspace only if it actually has that finger;
+        the per-hand finger count (3/5) never enters a fixed [N,5,3] layout.
+      - The dense chain terms (D_joints, D_ahg, lam_finger) are dropped: they
+        require identical chain lengths, which Barrett (2 pts) breaks.
+    """
+    if args.contrastive_mode != "triplet":
+        raise NotImplementedError(
+            "Cross-robot contrastive supports --contrastive_mode triplet only."
+        )
+    _pinch_eps1  = args.pinch_eps1_m / args.pinch_ref_hand_length_m
+    _pinch_eps2  = args.pinch_eps2_m / args.pinch_ref_hand_length_m
+    _pinch_sig_w = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
+
+    L_cont = torch.tensor(0.0, device=device)
+
+    for fidx, sub in enumerate(_FINGER_ORDER):
+        prefix = sub + "_"
+        parts = [rd for rd in all_rd if sub in rd["common_fingers"]]
+        if not parts:
+            continue
+
+        # --- Adaptive shared joints for D_R (intersection across robots) ---
+        shared = None
+        for rd in parts:
+            labs = {l for l in rd["common_labels"] if l.startswith(prefix)}
+            shared = labs if shared is None else (shared & labs)
+        shared_sorted = [f"{sub}_{s}" for s in _SEG_ORDER if f"{sub}_{s}" in shared]
+        use_dr = args.lam_dr > 0 and len(shared_sorted) > 0
+        if use_dr:
+            seg_idx = torch.tensor(
+                [_SEG_ORDER.index(l.split("_")[1]) for l in shared_sorted], device=device
+            )
+            w_dr = sk_weights_dr[sub][seg_idx]
+            w_dr = w_dr / w_dr.sum().clamp(min=1e-8)
+
+        # --- Build the pooled tensors (human + each robot) ---
+        z_list, q_list, tips_list, chain_list = [], [], [], []
+        for rd in parts:
+            cf, cl = rd["common_fingers"], rd["common_labels"]
+            t_i, f_i = cf.index("thumb"), cf.index(sub)
+            zc_h = rd["z_t"].chunk(5, dim=-1)[fidx]
+            zc_r = rd["z_r"].chunk(5, dim=-1)[fidx]
+
+            def _mini(tips_sub, chain_sub):
+                B = tips_sub.shape[0]
+                tp = tips_sub.new_zeros(B, 5, 3)
+                tp[:, 0]    = tips_sub[:, t_i]   # thumb tip
+                tp[:, fidx] = tips_sub[:, f_i]   # current finger tip
+                cp = chain_sub.new_zeros(B, 5, 4, 3)
+                cp[:, fidx, 3] = chain_sub[:, f_i, -1]   # tip
+                cp[:, fidx, 2] = chain_sub[:, f_i, -2]   # pre-tip (last segment)
+                if fidx != 0:
+                    cp[:, 0, 3] = chain_sub[:, t_i, -1]
+                    cp[:, 0, 2] = chain_sub[:, t_i, -2]
+                return tp, cp
+
+            tp_h, cp_h = _mini(rd["tips_h_sub"], rd["chain_h_sub"])
+            tp_r, cp_r = _mini(rd["tips_r_sub"], rd["chain_r_sub"])
+            z_list     += [zc_h, zc_r]
+            tips_list  += [tp_h, tp_r]
+            chain_list += [cp_h, cp_r]
+            if use_dr:
+                ih = [cl.index(l) for l in shared_sorted]
+                q_list += [rd["pose_h_sub"][:, ih, :], rd["pose_r_sub"][:, ih, :]]
+
+        z_pool     = torch.cat(z_list, dim=0)
+        tips_pool  = torch.cat(tips_list, dim=0)
+        chain_pool = torch.cat(chain_list, dim=0)
+        q_pool     = torch.cat(q_list, dim=0) if use_dr else None
+        N = z_pool.shape[0]
+        if N < 3:
+            continue
+
+        eff_tip = args.lam_thumb_tip if sub == "thumb" else args.lam_tip
+
+        # --- Triplet mining over the pooled batch ---
+        n       = N if args.n_triplets is None or args.n_triplets <= 0 else min(args.n_triplets, N)
+        anchors = torch.randperm(N, device=device)[:n]
+        cand_a  = torch.randint(0, N - 1, (n,), device=device); cand_a += (cand_a >= anchors).long()
+        cand_b  = torch.randint(0, N - 1, (n,), device=device); cand_b += (cand_b >= anchors).long()
+        same = cand_b == cand_a
+        if same.any():
+            cand_b[same] = (cand_b[same] + 1) % N
+            cand_b[same] += (cand_b[same] == anchors[same]).long()
+            cand_b[same] %= N
+
+        with torch.no_grad():
+            def _S(cand):
+                s = xin_sk_per_finger(
+                    tips_pool[anchors], tips_pool[cand],
+                    chain_pool[anchors], chain_pool[cand],
+                    finger_idx=fidx,
+                    lam_tip=eff_tip, lam_finger=0.0,   # lam_finger=0: cross-robot safe
+                    lam_pinch=args.lam_pinch, lam_tip_rot=args.lam_tip_rot,
+                    enable_switching=args.xin_switching,
+                    pinch_eps1=_pinch_eps1, pinch_eps2=_pinch_eps2, pinch_sigmoid_w=_pinch_sig_w,
+                )
+                if use_dr:
+                    qa, qc = q_pool[anchors], q_pool[cand]
+                    if args.human_rot_repr == "r6":
+                        Ra, Rc = rot6d_to_matrix(qa), rot6d_to_matrix(qc)
+                        tr  = torch.matmul(Ra.transpose(-1, -2), Rc).diagonal(dim1=-2, dim2=-1).sum(-1)
+                        per = (1.0 - ((tr - 1) * 0.5).clamp(-1, 1)) * 0.5
+                    else:
+                        per = 1.0 - (qa * qc).sum(-1) ** 2
+                    s = s + args.lam_dr * (w_dr * per).sum(-1)
+                return s
+
+            S_a, S_b = _S(cand_a), _S(cand_b)
+            a_closer = S_a <= S_b
+            pos_idx  = torch.where(a_closer, cand_a, cand_b)
+            neg_idx  = torch.where(a_closer, cand_b, cand_a)
+
+        L_cont = L_cont + torch.relu(
+            (z_pool[anchors] - z_pool[pos_idx]).norm(dim=-1)
+            - (z_pool[anchors] - z_pool[neg_idx]).norm(dim=-1)
+            + args.margin
+        ).mean()
+
+    return L_cont
+
 
 def main() -> None:
     args = p = _parse_args()
@@ -390,6 +529,10 @@ def main() -> None:
     best_val_score  = float("inf")
     last_val_metrics: dict | None = None
 
+    multi = len(robot_cfgs) > 1
+    if multi and args.sk_metric != "xin":
+        print(f"[multi-robot] sk_metric={args.sk_metric} ignored; cross-robot uses Xin tip/pinch + adaptive D_R.")
+
     for step in range(args.n_steps):
 
         # Accumulate losses over all robots.
@@ -397,6 +540,7 @@ def main() -> None:
         accum_cont = accum_rec = accum_ltc = accum_temp = 0.0
         last_batch: dict | None = None
         metric_stats: dict = {}
+        all_rd: list[dict] = []   # multi-robot: stash latents for cross-robot contrastive
 
         for cfg in robot_cfgs:
             E_r         = cfg["E_r"]
@@ -416,6 +560,7 @@ def main() -> None:
             pose_h_sub     = batch["pose_h_sub"]
             pose_r_sub     = batch["pose_r_sub"]
             tips_h_sub     = batch["tips_h_sub"]
+            tips_r_sub     = batch["tips_r_sub"]
             tips_h_t1      = batch["tips_h_t1"]
             chain_h_sub    = batch["chain_h_sub"]
             chain_r_sub    = batch["chain_r_sub"]
@@ -436,12 +581,16 @@ def main() -> None:
                 L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
 
             # --- Per-subspace contrastive loss (Yan et al. 2026) ---
+            # Single robot: legacy per-robot pool (human + this robot), below.
+            # Multi robot: this loop is skipped; the contrastive is computed
+            #   cross-robot AFTER the robot loop (see _cross_robot_contrastive),
+            #   pooling human + ALL robots so triplets cross embodiments directly.
             z_t_subs = z_t.chunk(5, dim=-1)
             z_r_subs = z_r.chunk(5, dim=-1)
             L_cont = torch.tensor(0.0, device=DEVICE)
 
             _use_xin = args.sk_metric == "xin"
-            if _use_xin:
+            if _use_xin and not multi:
                 _tips_r_sub    = chain_r_sub[:, :, 3, :]
                 _tips_all_xin  = torch.cat([tips_h_sub,  _tips_r_sub],  dim=0)
                 _chain_all_xin = torch.cat([chain_h_sub, chain_r_sub],  dim=0)
@@ -450,7 +599,8 @@ def main() -> None:
                 _pinch_eps2    = args.pinch_eps2_m / args.pinch_ref_hand_length_m
                 _pinch_sig_w   = args.pinch_sigmoid_w_m * args.pinch_ref_hand_length_m
 
-            for k, sub in enumerate(("thumb", "index", "middle", "ring", "pinky")):
+            _subspace_iter = () if multi else enumerate(("thumb", "index", "middle", "ring", "pinky"))
+            for k, sub in _subspace_iter:
                 prefixes   = SUBSPACE_LABEL_PREFIX[sub]
                 sub_finger = SUBSPACE_FINGERS[sub]
                 jidx = [i for i, l in enumerate(common_labels) if l.startswith(prefixes)]
@@ -640,6 +790,22 @@ def main() -> None:
             accum_rec   += L_rec.item()
             accum_ltc   += L_ltc.item()
             accum_temp  += L_temp.item()
+
+            if multi:
+                all_rd.append({
+                    "z_t": z_t, "z_r": z_r,
+                    "pose_h_sub": pose_h_sub, "pose_r_sub": pose_r_sub,
+                    "tips_h_sub": tips_h_sub, "tips_r_sub": tips_r_sub,
+                    "chain_h_sub": chain_h_sub, "chain_r_sub": chain_r_sub,
+                    "common_labels": common_labels, "common_fingers": common_fingers,
+                })
+
+        # --- Cross-robot contrastive (one pooled latent space, Yan-style) ---
+        if multi:
+            L_cont_pooled = _cross_robot_contrastive(all_rd, args, sk_weights_dr, DEVICE)
+            L_total = L_total + args.lambda_c * L_cont_pooled
+            # Scale so the downstream `accum_cont / n_r` reporting yields the true value.
+            accum_cont = L_cont_pooled.item() * len(robot_cfgs)
 
         # --- Backward ---
         optimizer.zero_grad()

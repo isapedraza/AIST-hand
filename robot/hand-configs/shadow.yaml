@@ -2,9 +2,11 @@ robot: shadow_hand_right
 
 # Training fields (paths relative to repo_root)
 urdf: robot/hands/shadow_hand/shadow_hand_right.urdf
-eigengrasp: robot/hands/shadow_hand/datasets/processed/dexonomy_shadow_eigengrasps_balanced_sample.npz
-mjcf: third_party/mujoco_menagerie/shadow_hand/right_hand.xml
-valid_poses: null
+# eigengrasp/mjcf used OFFLINE to generate valid_poses; training reads DONG_CACHE.
+# (uncomment + null valid_poses to switch back to EIGENGRASP_ONLINE)
+# eigengrasp: robot/hands/shadow_hand/datasets/processed/dexonomy_shadow_eigengrasps_balanced_sample.npz
+# mjcf: third_party/mujoco_menagerie/shadow_hand/right_hand.xml
+valid_poses: robot/hands/shadow_hand/datasets/processed/valid_robot_poses_shadow_1M_dong.npz
 zero_wrj: true
 n_knobs: 9
 
