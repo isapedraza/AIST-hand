@@ -135,4 +135,11 @@ def _parse_args() -> argparse.Namespace:
         help="Print CUDA VRAM (allocated/reserved/peak) at key points of step 0 and "
              "dump torch.cuda.memory_summary() on OOM. For diagnosing multi-robot OOM.",
     )
+    p.add_argument(
+        "--force_cross_robot",
+        action="store_true",
+        help="Use the pooled cross-robot contrastive (mini-tips + adaptive D_R) even "
+             "with a single robot, instead of the legacy per-robot path. Keeps the "
+             "contrastive metric identical to a multi-robot run for clean isolation.",
+    )
     return p.parse_args()

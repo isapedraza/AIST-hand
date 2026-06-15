@@ -541,7 +541,7 @@ def main() -> None:
     best_val_score  = float("inf")
     last_val_metrics: dict | None = None
 
-    multi = len(robot_cfgs) > 1
+    multi = len(robot_cfgs) > 1 or args.force_cross_robot
     if multi and args.sk_metric != "xin":
         print(f"[multi-robot] sk_metric={args.sk_metric} ignored; cross-robot uses Xin tip/pinch + adaptive D_R.")
 
