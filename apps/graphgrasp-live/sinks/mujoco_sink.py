@@ -126,3 +126,62 @@ class MuJocoSink:
 
     def release(self) -> None:
         self._viewer.close()
+
+
+def _load_spec(path: Path):
+    """MjSpec loader. from_file resolves relative meshdir (menagerie); the .mjcf
+    extension has no file decoder, so fall back to from_string (barrett uses an
+    absolute meshdir, so string loading still resolves its meshes)."""
+    p = str(path)
+    try:
+        return mujoco.MjSpec.from_file(p)
+    except ValueError:
+        return mujoco.MjSpec.from_string(path.read_text())
+
+
+class MergedMuJocoSink:
+    """Several robot hands in ONE MuJoCo window, side by side.
+
+    Avoids opening multiple passive viewers in one process (which segfaults).
+    The hands are merged into a single model via MjSpec.attach (per-robot name
+    prefixes resolve all collisions) and spaced along X. One viewer, one data;
+    each robot's qpos is written to its contiguous slice (attach order).
+
+    update() takes {robot_name: qpos}. Robots must be keys of _ROBOTS.
+    """
+
+    def __init__(self, robots: list[str], spacing: float = 0.35):
+        unknown = [r for r in robots if r not in _ROBOTS]
+        if unknown:
+            raise ValueError(f"Unsupported robots {unknown} (have {list(_ROBOTS)})")
+        parent = mujoco.MjSpec()
+        self._slices: dict[str, tuple[int, int]] = {}
+        off = 0
+        for i, name in enumerate(robots):
+            cfg   = _ROBOTS[name]
+            child = _load_spec(cfg.model_path)
+            frame = parent.worldbody.add_frame(pos=[i * spacing, 0.0, 0.05])
+            parent.attach(child, prefix=f"{name}_", frame=frame)
+            self._slices[name] = (off, cfg.qpos_dim)
+            off += cfg.qpos_dim
+        self._nq     = off
+        self._model  = parent.compile()
+        self._data   = mujoco.MjData(self._model)
+        self._target = np.zeros(self._nq, dtype=np.float64)
+        self._viewer = mujoco.viewer.launch_passive(self._model, self._data)
+
+    def is_running(self) -> bool:
+        return self._viewer.is_running()
+
+    def update(self, qpos_by_robot: dict[str, np.ndarray]) -> None:
+        for name, (o, d) in self._slices.items():
+            if name in qpos_by_robot:
+                self._target[o:o + d] = qpos_by_robot[name].reshape(d).astype(np.float64)
+        cur = self._data.qpos[:self._nq]
+        cur[:] += POSE_ALPHA * (self._target - cur)
+        self._data.qvel[:] = 0
+        mujoco.mj_forward(self._model, self._data)
+        self._viewer.sync()
+
+    def release(self) -> None:
+        self._viewer.close()

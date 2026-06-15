@@ -1,1 +1,1 @@
-from .mujoco_sink import MuJocoSink
+from .mujoco_sink import MuJocoSink, MergedMuJocoSink

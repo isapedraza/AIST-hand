@@ -21,7 +21,7 @@ from pathlib import Path
 
 from cross_emb.inference import Retargeter
 from cross_emb.rotations import quat_wxyz_to_rot6d
-from sinks import MuJocoSink
+from sinks import MuJocoSink, MergedMuJocoSink
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,6 +37,9 @@ def main():
                         help="Remote inference URL (required for --source hamer/wilor)")
     parser.add_argument("--interpolate", action="store_true",
                         help="Wrap source with SLERP interpolation (smooths freeze→jump for high-latency backends)")
+    parser.add_argument("--robot", default=None,
+                        help="Single robot to show in its own window (e.g. shadow). "
+                             "Omit to show ALL robots in the ckpt merged side by side in one window.")
     args = parser.parse_args()
 
     if args.source in ("hamer", "wilor") and not args.url:
@@ -52,26 +55,34 @@ def main():
     print(f"Source     : {args.source}")
     print(f"Interpolate: {args.interpolate}")
 
-    # One retargeter + one MuJoCo window per robot in the checkpoint (multi-robot
-    # ckpts share E_h/D_X; each robot has its own D_r). One perception stream
-    # drives them all so the hands mirror the same human pose side by side.
+    # Multi-robot ckpts share E_h/D_X; each robot has its own D_r. One retargeter
+    # per robot; one perception stream drives them all. With --robot, show that
+    # single hand in its own window (one passive viewer). Otherwise merge ALL
+    # ckpt robots into ONE window side by side (multiple passive viewers in one
+    # process segfault, so the many-hand case uses a single merged model).
     import torch
     ck = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-    robot_names = list((ck.get("robots") or {}).keys()) or [None]
+    ckpt_robots = list((ck.get("robots") or {}).keys())
     del ck
+    names = [args.robot] if args.robot else (ckpt_robots or [None])
 
-    pairs = []
-    for name in robot_names:
+    rets = []
+    for name in names:
         try:
-            ret  = Retargeter(ckpt_path, robot_name=name)
-            sink = MuJocoSink(robot=ret.robot_name)
-            pairs.append((ret, sink))
-            print(f"  + {ret.robot_name}")
+            rets.append(Retargeter(ckpt_path, robot_name=name))
+            print(f"  + {rets[-1].robot_name}")
         except (ValueError, FileNotFoundError) as e:
             print(f"  - skip {name}: {e}")
-    if not pairs:
+    if not rets:
         parser.error("no supported robots in checkpoint")
-    rot_repr = pairs[0][0].human_rot_repr
+    rot_repr = rets[0].human_rot_repr
+
+    if len(rets) == 1:
+        sink = MuJocoSink(robot=rets[0].robot_name)
+        def render(pose):           sink.update(rets[0](pose))
+    else:
+        sink = MergedMuJocoSink([r.robot_name for r in rets])
+        def render(pose):           sink.update({r.robot_name: r(pose) for r in rets})
 
     if args.source == "hamer":
         from sources import HaMeRSource
@@ -87,20 +98,18 @@ def main():
         from sources import InterpolatedSource
         source = InterpolatedSource(source)
 
-    print(f"Robots       : {[r.robot_name for r, _ in pairs]}")
+    print(f"Robots       : {[r.robot_name for r in rets]}")
     print(f"Rotation repr: {rot_repr}")
     print("Running. Q/ESC to quit.")
-    while source.is_running() and all(s.is_running() for _, s in pairs):
+    while source.is_running() and sink.is_running():
         quats = source.next_frame()
         if quats is None:
             continue
         pose = quat_wxyz_to_rot6d(quats) if rot_repr == "r6" else quats
-        for ret, sink in pairs:
-            sink.update(ret(pose))
+        render(pose)
 
     source.release()
-    for _, sink in pairs:
-        sink.release()
+    sink.release()
 
 
 if __name__ == "__main__":
