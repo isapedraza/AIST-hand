@@ -545,6 +545,17 @@ def main() -> None:
     if multi and args.sk_metric != "xin":
         print(f"[multi-robot] sk_metric={args.sk_metric} ignored; cross-robot uses Xin tip/pinch + adaptive D_R.")
 
+    def _mem(tag: str) -> None:
+        if args.mem_debug and DEVICE == "cuda":
+            a = torch.cuda.memory_allocated() / 1e9
+            r = torch.cuda.memory_reserved() / 1e9
+            m = torch.cuda.max_memory_allocated() / 1e9
+            print(f"[mem] {tag:24s} alloc={a:6.2f}G reserved={r:6.2f}G peak={m:6.2f}G", flush=True)
+
+    if args.mem_debug and DEVICE == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+        _mem("before step0")
+
     for step in range(args.n_steps):
 
         # Accumulate losses over all robots.
@@ -579,7 +590,8 @@ def main() -> None:
             common_fingers = batch["common_fingers"]
             common_labels  = batch["common_labels"]
 
-            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+            try:
+              with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
                 z_t  = E_h(pose_h)
                 z_t1 = E_h(pose_h_t1)
                 z_r  = E_X(E_r(q_r))
@@ -591,6 +603,11 @@ def main() -> None:
 
                 L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
                 L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
+            except torch.cuda.OutOfMemoryError:
+                if DEVICE == "cuda":
+                    print(f"[mem] OOM at step {step} during forward of robot '{cfg['name']}'", flush=True)
+                    print(torch.cuda.memory_summary(), flush=True)
+                raise
 
             # --- Per-subspace contrastive loss (Yan et al. 2026) ---
             # Single robot: legacy per-robot pool (human + this robot), below.
@@ -812,26 +829,39 @@ def main() -> None:
                     "common_labels": common_labels, "common_fingers": common_fingers,
                 })
 
+            if step == 0:
+                _mem(f"pass1 done {cfg['name']}")
+
         # --- Cross-robot contrastive (one pooled latent space, Yan-style) ---
         if multi:
             L_cont_pooled = _cross_robot_contrastive(all_rd, args, sk_weights_dr, DEVICE)
             L_total = L_total + args.lambda_c * L_cont_pooled
             # Scale so the downstream `accum_cont / n_r` reporting yields the true value.
             accum_cont = L_cont_pooled.item() * len(robot_cfgs)
+            if step == 0:
+                _mem("pass2 contrastive")
 
         # --- Backward ---
-        optimizer.zero_grad()
-        scaler.scale(L_total).backward()
-        scaler.unscale_(optimizer)
-        all_grad_params = (
-            [] if args.freeze_shared else
-            list(E_h.parameters()) + list(E_X.parameters()) + list(D_X.parameters())
-        )
-        for cfg in robot_cfgs:
-            all_grad_params += list(cfg["E_r"].parameters()) + list(cfg["D_r"].parameters())
-        torch.nn.utils.clip_grad_norm_(all_grad_params, max_norm=1.0)
-        scaler.step(optimizer)
-        scaler.update()
+        try:
+            optimizer.zero_grad()
+            scaler.scale(L_total).backward()
+            scaler.unscale_(optimizer)
+            all_grad_params = (
+                [] if args.freeze_shared else
+                list(E_h.parameters()) + list(E_X.parameters()) + list(D_X.parameters())
+            )
+            for cfg in robot_cfgs:
+                all_grad_params += list(cfg["E_r"].parameters()) + list(cfg["D_r"].parameters())
+            torch.nn.utils.clip_grad_norm_(all_grad_params, max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        except torch.cuda.OutOfMemoryError:
+            if DEVICE == "cuda":
+                print(f"[mem] OOM at step {step} during backward", flush=True)
+                print(torch.cuda.memory_summary(), flush=True)
+            raise
+        if step == 0:
+            _mem("after backward")
 
         # --- Checkpoint payload (uses averaged losses across robots) ---
         n_r = len(robot_cfgs)

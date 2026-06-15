@@ -129,4 +129,10 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip the final test-split eval pass. Recommended for multi-robot runs where it can crash.",
     )
+    p.add_argument(
+        "--mem_debug",
+        action="store_true",
+        help="Print CUDA VRAM (allocated/reserved/peak) at key points of step 0 and "
+             "dump torch.cuda.memory_summary() on OOM. For diagnosing multi-robot OOM.",
+    )
     return p.parse_args()
