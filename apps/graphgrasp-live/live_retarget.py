@@ -52,7 +52,27 @@ def main():
     print(f"Source     : {args.source}")
     print(f"Interpolate: {args.interpolate}")
 
-    retargeter = Retargeter(ckpt_path)
+    # One retargeter + one MuJoCo window per robot in the checkpoint (multi-robot
+    # ckpts share E_h/D_X; each robot has its own D_r). One perception stream
+    # drives them all so the hands mirror the same human pose side by side.
+    import torch
+    ck = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
+    robot_names = list((ck.get("robots") or {}).keys()) or [None]
+    del ck
+
+    pairs = []
+    for name in robot_names:
+        try:
+            ret  = Retargeter(ckpt_path, robot_name=name)
+            sink = MuJocoSink(robot=ret.robot_name)
+            pairs.append((ret, sink))
+            print(f"  + {ret.robot_name}")
+        except (ValueError, FileNotFoundError) as e:
+            print(f"  - skip {name}: {e}")
+    if not pairs:
+        parser.error("no supported robots in checkpoint")
+    rot_repr = pairs[0][0].human_rot_repr
+
     if args.source == "hamer":
         from sources import HaMeRSource
         source = HaMeRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
@@ -67,21 +87,20 @@ def main():
         from sources import InterpolatedSource
         source = InterpolatedSource(source)
 
-    sink = MuJocoSink(robot=retargeter.robot_name)
-
-    print(f"Robot        : {retargeter.robot_name}")
-    print(f"Rotation repr: {retargeter.human_rot_repr}")
+    print(f"Robots       : {[r.robot_name for r, _ in pairs]}")
+    print(f"Rotation repr: {rot_repr}")
     print("Running. Q/ESC to quit.")
-    while source.is_running() and sink.is_running():
+    while source.is_running() and all(s.is_running() for _, s in pairs):
         quats = source.next_frame()
         if quats is None:
             continue
-        pose = quat_wxyz_to_rot6d(quats) if retargeter.human_rot_repr == "r6" else quats
-        qpos = retargeter(pose)
-        sink.update(qpos)
+        pose = quat_wxyz_to_rot6d(quats) if rot_repr == "r6" else quats
+        for ret, sink in pairs:
+            sink.update(ret(pose))
 
     source.release()
-    sink.release()
+    for _, sink in pairs:
+        sink.release()
 
 
 if __name__ == "__main__":

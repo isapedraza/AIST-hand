@@ -89,11 +89,43 @@ _ALLEGRO_UPPER = np.array([
      1.396,  1.163,  1.644,  1.719,
 ], dtype=np.float32)
 
+# Leap Hand joint limits (16 DOF) — leap_hand/right_hand.xml jnt_range.
+# Order: if[mcp,rot,pip,dip], mf[...], rf[...], th[cmc,axl,mcp,ipl]. No wrist (n_pad=0).
+_LEAP_LOWER = np.array([
+    -0.314, -1.047, -0.506, -0.366,
+    -0.314, -1.047, -0.506, -0.366,
+    -0.314, -1.047, -0.506, -0.366,
+    -0.349, -0.349, -0.470, -1.340,
+], dtype=np.float32)
+
+_LEAP_UPPER = np.array([
+     2.230,  1.047,  1.885,  2.042,
+     2.230,  1.047,  1.885,  2.042,
+     2.230,  1.047,  1.885,  2.042,
+     2.094,  2.094,  2.443,  1.880,
+], dtype=np.float32)
+
+# Barrett Hand joint limits (8 DOF) — barrett.mjcf jnt_range.
+# Order: f1[prox,med,dist], f2[prox,med,dist], f3[med,dist]. No wrist (n_pad=0).
+_BARRETT_LOWER = np.array([
+    -3.140, -2.440, -0.785,
+     0.000, -2.440, -0.785,
+    -2.440, -0.785,
+], dtype=np.float32)
+
+_BARRETT_UPPER = np.array([
+     0.000,  0.000,  0.000,
+     3.140,  0.000,  0.000,
+     0.000,  0.000,
+], dtype=np.float32)
+
 # Per-robot output spec: n_pad = leading wrist DOFs zeroed (not in wrist-frame
 # human signal), lower/upper = qpos clip limits matching the MuJoCo model.
 _OUTPUT_SPECS = {
     "shadow":  {"n_pad": 2, "lower": _SHADOW_LOWER,  "upper": _SHADOW_UPPER},
     "allegro": {"n_pad": 0, "lower": _ALLEGRO_LOWER, "upper": _ALLEGRO_UPPER},
+    "leap":    {"n_pad": 0, "lower": _LEAP_LOWER,    "upper": _LEAP_UPPER},
+    "barrett": {"n_pad": 0, "lower": _BARRETT_LOWER, "upper": _BARRETT_UPPER},
 }
 
 
@@ -108,13 +140,20 @@ class Retargeter:
                                      names the active robot.
     """
 
-    def __init__(self, ckpt_path: str | Path):
+    def __init__(self, ckpt_path: str | Path, robot_name: str | None = None):
         ck  = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
 
         # Robot id: multi-robot ckpt stores per-robot weights under "robots";
         # legacy single-robot ckpts only have top-level E_r/D_r (assume shadow).
+        # robot_name selects which robot of a multi-robot ckpt to decode; if
+        # omitted, the first robot is used.
         robots = ck.get("robots")
-        self.robot_name = next(iter(robots)) if robots else "shadow"
+        if robot_name is not None:
+            if robots is None or robot_name not in robots:
+                raise ValueError(f"robot '{robot_name}' not in checkpoint (have {list(robots) if robots else 'legacy single'})")
+            self.robot_name = robot_name
+        else:
+            self.robot_name = next(iter(robots)) if robots else "shadow"
         if self.robot_name not in _OUTPUT_SPECS:
             raise ValueError(f"Unsupported robot '{self.robot_name}' (have {list(_OUTPUT_SPECS)})")
         spec = _OUTPUT_SPECS[self.robot_name]
