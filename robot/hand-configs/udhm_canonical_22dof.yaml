@@ -79,3 +79,16 @@ slots:
 # shadow:        TODO -- near 1:1 (FFJ4=abd, FFJ3=flex, ...; LFJ5=pinky_twist).
 # leap/allegro:  TODO -- 4 fingers; zero-pad pinky slots.
 # barrett:       TODO -- 3 fingers; semantic insertion + coupling caveat (see mapping).
+#   NOTE: spread currently excluded from per-joint chain (deploy-time heuristic, see
+#   barrett.yaml). Two independent sources support spread = ABD-type joint:
+#   - Wei et al. 2026 (OHRA, "One Hand to Rule Them All"), Sec III-B, p.215: surveyed
+#     commercial/open-source hands (incl. Barrett) and found "remaining fingers
+#     generally have an abduction-adduction PROXIMAL joint followed by a flexion
+#     chain" -- textual claim, general design pattern, not Barrett-specific measurement.
+#   - Wu et al. 2026 (DexGrasp-Zero), Sec S1.2/Fig.12: unit-excitation system ID
+#     applied to Barrett's own URDF -- conceptual support only, exact sign/joint not
+#     readable from available text/figure (figure obscured/not extractable).
+#   Neither gives a verified numeric mapping for OUR barrett.urdf; could fill
+#   thumb_mcp_abd/index_mcp_abd instead of zero-pad, but NOT applied here -- would
+#   need own unit-excitation pass (code not public, reimplement from scratch) or
+#   manual geometric verification against our own URDF before trusting the value.
