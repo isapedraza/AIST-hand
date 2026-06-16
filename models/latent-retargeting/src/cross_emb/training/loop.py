@@ -34,6 +34,7 @@ from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
 from cross_emb.rotations import d_r_pose, rot6d_to_matrix
+from cross_emb.loaders.udhm_stage3 import _FILL as _UDHM_FILL, _SLOT_IDX as _UDHM_SLOT_IDX
 from .losses import (
     _sk_w, _sk_wj, _ahg, xin_sk_per_finger,
     compute_W_linear, nt_xent_adaptive,
@@ -258,8 +259,23 @@ def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tenso
             w_dr = sk_weights_dr[sub][seg_idx]
             w_dr = w_dr / w_dr.sum().clamp(min=1e-8)
 
+        # --- UDHM per-slot angle alternative to D_R (decomposed abd/flex) ---
+        # Maps each shared stage-2 label to its UDHM slot indices (flex always;
+        # abd for MCP-type roots). Abduction gets its own weighted slot here,
+        # instead of being bundled into the per-joint geodesic of D_R.
+        use_udhm = args.lam_udhm > 0 and len(shared_sorted) > 0
+        if use_udhm:
+            udhm_slots = [
+                _UDHM_SLOT_IDX[name]
+                for lab in shared_sorted
+                for name in _UDHM_FILL.get(lab, {}).values()
+            ]
+            udhm_idx = torch.tensor(udhm_slots, device=device)
+            w_udhm = torch.ones(len(udhm_slots), device=device)
+            w_udhm = w_udhm / w_udhm.sum().clamp(min=1e-8)
+
         # --- Build the pooled tensors (human + each robot) ---
-        z_list, q_list, tips_list, chain_list = [], [], [], []
+        z_list, q_list, tips_list, chain_list, udhm_list = [], [], [], [], []
         for rd in parts:
             cf, cl = rd["common_fingers"], rd["common_labels"]
             t_i, f_i = cf.index("thumb"), cf.index(sub)
@@ -287,11 +303,14 @@ def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tenso
             if use_dr:
                 ih = [cl.index(l) for l in shared_sorted]
                 q_list += [rd["pose_h_sub"][:, ih, :], rd["pose_r_sub"][:, ih, :]]
+            if use_udhm:
+                udhm_list += [rd["udhm22_h"][:, udhm_idx], rd["udhm22_r"][:, udhm_idx]]
 
         z_pool     = torch.cat(z_list, dim=0)
         tips_pool  = torch.cat(tips_list, dim=0)
         chain_pool = torch.cat(chain_list, dim=0)
         q_pool     = torch.cat(q_list, dim=0) if use_dr else None
+        udhm_pool  = torch.cat(udhm_list, dim=0) if use_udhm else None
         N = z_pool.shape[0]
         if N < 3:
             continue
@@ -329,6 +348,9 @@ def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tenso
                     else:
                         per = 1.0 - (qa * qc).sum(-1) ** 2
                     s = s + args.lam_dr * (w_dr * per).sum(-1)
+                if use_udhm:
+                    ua, uc = udhm_pool[anchors], udhm_pool[cand]
+                    s = s + args.lam_udhm * (w_udhm * (ua - uc) ** 2).sum(-1)
                 return s
 
             S_a, S_b = _S(cand_a), _S(cand_b)
@@ -596,6 +618,8 @@ def main() -> None:
             chain_r_sub    = batch["chain_r_sub"]
             common_fingers = batch["common_fingers"]
             common_labels  = batch["common_labels"]
+            udhm22_h       = batch["udhm22_h"]
+            udhm22_r       = batch["udhm22_r"]
 
             try:
               with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
@@ -834,6 +858,7 @@ def main() -> None:
                     "tips_h_sub": tips_h_sub, "tips_r_sub": tips_r_sub,
                     "chain_h_sub": chain_h_sub, "chain_r_sub": chain_r_sub,
                     "common_labels": common_labels, "common_fingers": common_fingers,
+                    "udhm22_h": udhm22_h, "udhm22_r": udhm22_r,
                 })
 
             if step == 0:

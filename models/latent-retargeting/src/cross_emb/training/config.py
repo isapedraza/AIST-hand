@@ -56,6 +56,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--sk_metric", choices=["ahg", "xin"], default="ahg",
                    help="Similarity metric for triplet selection. 'ahg'=current (D_R+D_joints+D_ahg). 'xin'=Xin Cartesian terms + optional D_R via --lam_dr.")
     p.add_argument("--lam_dr",          type=float, default=0.0,  help="D_R weight added to Xin S_k (xin mode only). 0=disabled.")
+    p.add_argument("--lam_udhm",        type=float, default=0.0,  help="UDHM per-slot angle weight (cross-robot path). Decomposed alternative to D_R (abd/flex separate). 0=disabled. Independent of --lam_dr (set lam_dr=0 to replace D_R).")
     p.add_argument("--lam_tip",         type=float, default=0.0,  help="Xin wrist->tip position weight (non-thumb fingers).")
     p.add_argument("--lam_thumb_tip",   type=float, default=0.0,  help="Xin wrist->tip position weight (thumb).")
     p.add_argument("--lam_finger",      type=float, default=0.0,  help="Xin dense MCP/PIP/DIP/TIP chain weight (non-thumb).")
