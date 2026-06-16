@@ -31,6 +31,7 @@ import torch
 
 from cross_emb.loaders.human_loader import HumanLoader, StaticHumanAnchorLoader
 from cross_emb.loaders.robot_loader import RobotLoader
+from cross_emb.loaders.udhm_stage3 import udhm_run_stage3
 
 
 def filter_to_subspace(
@@ -268,4 +269,10 @@ class CrossEmbodimentSampler:
             out["quats_h"] = pose_h
             out["quats_h_sub"] = pose_h_sub
             out["quats_r_sub"] = pose_r_sub
+
+        # Stage-3: per-joint rotations -> UDHM 22-slot named-angle vector.
+        # Produced and carried in the batch; consumed by S_k in a later step.
+        with torch.no_grad():
+            out["udhm22_h"] = udhm_run_stage3(pose_h, labels)
+            out["udhm22_r"] = udhm_run_stage3(pose_r, labels_r)
         return out
