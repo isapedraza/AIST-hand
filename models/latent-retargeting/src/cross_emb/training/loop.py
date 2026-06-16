@@ -349,8 +349,10 @@ def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tenso
                         per = 1.0 - (qa * qc).sum(-1) ** 2
                     s = s + args.lam_dr * (w_dr * per).sum(-1)
                 if use_udhm:
+                    # L1 (not squared): abduction is small-magnitude; squaring it
+                    # absorbs it (empirically L2 corr w/ abduction ~0.03 vs L1 ~0.14).
                     ua, uc = udhm_pool[anchors], udhm_pool[cand]
-                    s = s + args.lam_udhm * (w_udhm * (ua - uc) ** 2).sum(-1)
+                    s = s + args.lam_udhm * (w_udhm * (ua - uc).abs()).sum(-1)
                 return s
 
             S_a, S_b = _S(cand_a), _S(cand_b)
