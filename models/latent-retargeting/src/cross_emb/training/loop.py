@@ -34,9 +34,11 @@ from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
 from cross_emb.rotations import d_r_pose, rot6d_to_matrix
-from cross_emb.loaders.udhm_stage3 import _FILL as _UDHM_FILL, _SLOT_IDX as _UDHM_SLOT_IDX
+from cross_emb.loaders.udhm_stage3 import (
+    _FILL as _UDHM_FILL, _SLOT_IDX as _UDHM_SLOT_IDX, UDHM22_SLOTS as _UDHM_SLOTS,
+)
 from .losses import (
-    _sk_w, _sk_wj, _ahg, xin_sk_per_finger,
+    _sk_w, _sk_wj, _ahg, _udhm_w, xin_sk_per_finger,
     compute_W_linear, nt_xent_adaptive,
     compute_pairwise_S_ahg, compute_pairwise_S_xin,
 )
@@ -271,7 +273,11 @@ def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tenso
                 for name in _UDHM_FILL.get(lab, {}).values()
             ]
             udhm_idx = torch.tensor(udhm_slots, device=device)
-            w_udhm = torch.ones(len(udhm_slots), device=device)
+            # Per-slot 1/sigma weights (abduction clean-sigma, flexion full) by name.
+            # Re-normalized over the shared subset (Barrett etc. keep relative ratios).
+            w_udhm = torch.tensor(
+                [_udhm_w[_UDHM_SLOTS[i]] for i in udhm_slots], device=device
+            )
             w_udhm = w_udhm / w_udhm.sum().clamp(min=1e-8)
 
         # --- Build the pooled tensors (human + each robot) ---
