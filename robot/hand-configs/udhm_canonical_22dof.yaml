@@ -32,10 +32,6 @@ conventions:
     # MCP-PIP-DIP-tip chain stays in a motion plane perpendicular to the palm plane.
     thumb_plane: dynamic_cmc_mcp     # thumb motion plane from CMC->MCP direction.
     pinky_twist_axis: metacarpal_dir # extra DoF around metacarpal direction.
-  extraction: geometric              # angles read GEOMETRICALLY (swing-twist on the
-                                     # joint rotation in palm frame), NOT from native
-                                     # joint labels. Makes coupled/underactuated hands
-                                     # (e.g. barrett spread) mappable.
 
 # --- Mapping mechanism (fewer-DoF embodiments) -------------------------------
 mapping:
