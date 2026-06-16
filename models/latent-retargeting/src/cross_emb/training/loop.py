@@ -212,6 +212,20 @@ _FINGER_ORDER = ["thumb", "index", "middle", "ring", "pinky"]
 _SEG_ORDER    = ["mcp", "pip", "dip", "tip"]
 
 
+def _tau_per_finger(chain: torch.Tensor) -> torch.Tensor:
+    """Per-finger kinematic chain length tau (Bernardin 2017, Eq. 2): wrist->TIP.
+
+    chain: [B, F, 4, 3] = MCP/PIP/DIP/TIP, wrist-local (wrist = frame origin).
+    Returns [B, F]. tau = ||wrist->MCP|| + sum ||seg_{i+1} - seg_i||.
+    Segment lengths are pose-invariant bone lengths; the hand_length the chain was
+    normalized by cancels when a tip (also /hand_length) is divided by this tau,
+    yielding the per-pair "fraction of reach" in [0, 1].
+    """
+    seg0 = chain[..., 0, :].norm(dim=-1)                                  # wrist -> MCP
+    segs = (chain[..., 1:, :] - chain[..., :-1, :]).norm(dim=-1).sum(-1)  # MCP -> ... -> TIP
+    return seg0 + segs
+
+
 def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tensor:
     """Cross-embodiment triplet loss over a single pooled latent space.
 
@@ -301,8 +315,13 @@ def _cross_robot_contrastive(all_rd, args, sk_weights_dr, device) -> torch.Tenso
                     cp[:, 0, 2] = chain_sub[:, t_i, -2]
                 return tp, cp
 
-            tp_h, cp_h = _mini(rd["tips_h_sub"], rd["chain_h_sub"])
-            tp_r, cp_r = _mini(rd["tips_r_sub"], rd["chain_r_sub"])
+            tips_h, tips_r = rd["tips_h_sub"], rd["tips_r_sub"]
+            if args.per_pair_norm:
+                # Per-finger tau (Bernardin) instead of global hand_length, for tips.
+                tips_h = tips_h / _tau_per_finger(rd["chain_h_sub"]).unsqueeze(-1).clamp(min=1e-6)
+                tips_r = tips_r / _tau_per_finger(rd["chain_r_sub"]).unsqueeze(-1).clamp(min=1e-6)
+            tp_h, cp_h = _mini(tips_h, rd["chain_h_sub"])
+            tp_r, cp_r = _mini(tips_r, rd["chain_r_sub"])
             z_list     += [zc_h, zc_r]
             tips_list  += [tp_h, tp_r]
             chain_list += [cp_h, cp_r]
