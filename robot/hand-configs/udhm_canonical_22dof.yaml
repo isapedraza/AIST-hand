@@ -1,0 +1,85 @@
+# UDHM Canonical 22-DoF Interface -- UNIVERSAL CONTRACT (embodiment-agnostic)
+# =============================================================================
+# Shared semantic hand-state interface that ANY embodiment (human, shadow, leap,
+# allegro, barrett, ...) maps into. This file defines ONLY the slots + conventions.
+# Per-embodiment FILL mappings live with each embodiment (separate files), not here.
+#
+# Source: UDHM -- Fang et al. 2026, "UniDexTok: A Unified Dexterous Hand Tokenizer
+#   from Real Data", Sec. 3.1. The 22-DoF semantic interface, slots, conventions,
+#   and the semantic-insertion / zero-pad mechanism below all come from this paper.
+#
+# This contract = UDHM ONLY. Per-embodiment FILLERS (how each hand populates these
+# slots) are SEPARATE files and may use other tools internally (e.g. the human filler
+# uses Dong & Payandeh 2025 as its analytic encoder) -- but that is filler detail,
+# NOT part of this contract. The metric (per-slot similarity) and the latent
+# alignment operate on vectors filled according to this schema.
+
+schema_version: 1
+n_dof: 22
+
+# --- Conventions (ALL embodiments) -------------------------------------------
+conventions:
+  units: radians
+  normalization: divide_by_pi        # UDHM fixed-scale norm; no dataset stats. -> [-1, 1]
+  zero_pose: straight_adducted_hand  # fingers extended, adducted; palm rigid.
+  palm_plane:
+    # Fitted by Wrist + Index/Middle/Ring MCP keypoints. Normal = n_p (palm normal).
+    fit_points: [wrist, index_mcp, middle_mcp, ring_mcp]
+    normal: n_p
+  axes:
+    abduction_axis: n_p              # mcp_abd rotates AROUND palm normal n_p.
+    flexion_axis: e_lat             # *_flex rotates AROUND local lateral axis e_lat.
+    # MCP-PIP-DIP-tip chain stays in a motion plane perpendicular to the palm plane.
+    thumb_plane: dynamic_cmc_mcp     # thumb motion plane from CMC->MCP direction.
+    pinky_twist_axis: metacarpal_dir # extra DoF around metacarpal direction.
+  extraction: geometric              # angles read GEOMETRICALLY (swing-twist on the
+                                     # joint rotation in palm frame), NOT from native
+                                     # joint labels. Makes coupled/underactuated hands
+                                     # (e.g. barrett spread) mappable.
+
+# --- Mapping mechanism (fewer-DoF embodiments) -------------------------------
+mapping:
+  method: semantic_insertion         # each native DoF -> its corresponding slot.
+  missing_dof: zero_pad              # slots absent in an embodiment -> 0.
+  # Cross-embodiment comparison: metric compares only slots present (non-padded) in
+  # BOTH embodiments (active-mask intersection). Formalizes loop.py common_labels.
+  # CAVEAT (UDHM Sec. 6): semantic insertion + zero-pad gives a USABLE format for
+  # hands with strong mechanical coupling / underactuation (barrett tendon/spread),
+  # but does NOT model the coupling itself. Honest limitation, carry into thesis.
+
+# --- The 22 canonical slots (fixed order, index 0..21) -----------------------
+# Each slot: finger, joint, dof (abd|flex|spread|twist), axis.
+slots:
+  # THUMB (5)
+  - {i: 0,  name: thumb_cmc_flex,    finger: thumb,  joint: cmc, dof: flex,   axis: e_lat}
+  - {i: 1,  name: thumb_cmc_spread,  finger: thumb,  joint: cmc, dof: spread, axis: n_p}
+  - {i: 2,  name: thumb_mcp_flex,    finger: thumb,  joint: mcp, dof: flex,   axis: e_lat}
+  - {i: 3,  name: thumb_mcp_abd,     finger: thumb,  joint: mcp, dof: abd,    axis: n_p}
+  - {i: 4,  name: thumb_ip_flex,     finger: thumb,  joint: ip,  dof: flex,   axis: e_lat}
+  # INDEX (4)
+  - {i: 5,  name: index_mcp_abd,     finger: index,  joint: mcp, dof: abd,    axis: n_p}
+  - {i: 6,  name: index_mcp_flex,    finger: index,  joint: mcp, dof: flex,   axis: e_lat}
+  - {i: 7,  name: index_pip_flex,    finger: index,  joint: pip, dof: flex,   axis: e_lat}
+  - {i: 8,  name: index_dip_flex,    finger: index,  joint: dip, dof: flex,   axis: e_lat}
+  # MIDDLE (4)
+  - {i: 9,  name: middle_mcp_abd,    finger: middle, joint: mcp, dof: abd,    axis: n_p}
+  - {i: 10, name: middle_mcp_flex,   finger: middle, joint: mcp, dof: flex,   axis: e_lat}
+  - {i: 11, name: middle_pip_flex,   finger: middle, joint: pip, dof: flex,   axis: e_lat}
+  - {i: 12, name: middle_dip_flex,   finger: middle, joint: dip, dof: flex,   axis: e_lat}
+  # RING (4)
+  - {i: 13, name: ring_mcp_abd,      finger: ring,   joint: mcp, dof: abd,    axis: n_p}
+  - {i: 14, name: ring_mcp_flex,     finger: ring,   joint: mcp, dof: flex,   axis: e_lat}
+  - {i: 15, name: ring_pip_flex,     finger: ring,   joint: pip, dof: flex,   axis: e_lat}
+  - {i: 16, name: ring_dip_flex,     finger: ring,   joint: dip, dof: flex,   axis: e_lat}
+  # PINKY (5)
+  - {i: 17, name: pinky_mcp_abd,     finger: pinky,  joint: mcp, dof: abd,    axis: n_p}
+  - {i: 18, name: pinky_mcp_flex,    finger: pinky,  joint: mcp, dof: flex,   axis: e_lat}
+  - {i: 19, name: pinky_pip_flex,    finger: pinky,  joint: pip, dof: flex,   axis: e_lat}
+  - {i: 20, name: pinky_dip_flex,    finger: pinky,  joint: dip, dof: flex,   axis: e_lat}
+  - {i: 21, name: pinky_twist,       finger: pinky,  joint: mcp, dof: twist,  axis: metacarpal_dir}
+
+# --- Per-embodiment fillers (separate files; status only, not defined here) ---
+# human (Dong):  20/22 direct (gamma=mcp_abd, beta=flex); zero-pad: thumb_mcp_abd, pinky_twist.
+# shadow:        TODO -- near 1:1 (FFJ4=abd, FFJ3=flex, ...; LFJ5=pinky_twist).
+# leap/allegro:  TODO -- 4 fingers; zero-pad pinky slots.
+# barrett:       TODO -- 3 fingers; semantic insertion + coupling caveat (see mapping).
