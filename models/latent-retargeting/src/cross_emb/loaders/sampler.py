@@ -20,6 +20,8 @@ Output contract (pose_* keys always present; quats_* aliases added in quat mode)
 
 Extra keys for get_batch_temporal only:
     pose_h_t1      [B, Nh, F]  human pose frame t+1               -> L_temporal / v_H
+    pose_h_window  [B, T, Nh, F] causal window ending at t         -> temporal E_h
+    pose_h_t1_window [B, T, Nh, F] causal window ending at t+1     -> temporal E_h
     tips_h_t1      [B, Fh, 3]  human fingertips frame t+1         -> v_H velocity
 """
 
@@ -110,6 +112,7 @@ class CrossEmbodimentSampler:
         extra_human_csv: str | Path | None = None,
         extra_human_ratio: float = 0.0,
         human_rot_repr: str = "quat",
+        temporal_window: int = 8,
         primitive_sample: bool = False,
         eigengrasp_path: str | Path | None = None,
         mjcf_path: str | Path | None = None,
@@ -120,13 +123,17 @@ class CrossEmbodimentSampler:
         self.hand_config_path = Path(hand_config_path)
         self.split = split
         self.human_rot_repr = human_rot_repr
+        self.temporal_window = int(temporal_window)
         self.extra_human_ratio = float(extra_human_ratio)
         # Human data is identical across robots; allow sharing one loader to
         # avoid re-reading the CSV (and a full RAM copy) per robot.
         if human_loader is not None:
             self.human_loader = human_loader
         else:
-            self.human_loader = HumanLoader(csv_path, split=split, device=device, human_rot_repr=human_rot_repr)
+            self.human_loader = HumanLoader(
+                csv_path, split=split, device=device, human_rot_repr=human_rot_repr,
+                temporal_window=self.temporal_window,
+            )
         if extra_human_loader is not None:
             self.extra_human_loader = extra_human_loader
         else:
@@ -136,7 +143,8 @@ class CrossEmbodimentSampler:
                     print(f"[CrossEmbodimentSampler] Ignoring extra_human_csv for split={split}.")
                 else:
                     self.extra_human_loader = StaticHumanAnchorLoader(
-                        extra_human_csv, device=device, human_rot_repr=human_rot_repr
+                        extra_human_csv, device=device, human_rot_repr=human_rot_repr,
+                        temporal_window=self.temporal_window,
                     )
                     print(
                         "[CrossEmbodimentSampler] Extra human anchors enabled: "
@@ -196,6 +204,8 @@ class CrossEmbodimentSampler:
             eb = self.extra_human_loader.get_batch_temporal(B_extra)
             hb["pose_t"] = torch.cat([hb["pose_t"], eb["pose_t"]], dim=0)
             hb["pose_t1"] = torch.cat([hb["pose_t1"], eb["pose_t1"]], dim=0)
+            hb["pose_window"] = torch.cat([hb["pose_window"], eb["pose_window"]], dim=0)
+            hb["pose_t1_window"] = torch.cat([hb["pose_t1_window"], eb["pose_t1_window"]], dim=0)
             hb["tips_t"] = torch.cat([hb["tips_t"], eb["tips_t"]], dim=0)
             hb["tips_t1"] = torch.cat([hb["tips_t1"], eb["tips_t1"]], dim=0)
             hb["chain_t"] = torch.cat([hb["chain_t"], eb["chain_t"]], dim=0)
@@ -216,8 +226,12 @@ class CrossEmbodimentSampler:
             extra_human_by_class=extra_counts,
         )
         out["pose_h_t1"] = hb["pose_t1"]
+        out["pose_h_window"] = hb["pose_window"]
+        out["pose_h_t1_window"] = hb["pose_t1_window"]
         if self.human_rot_repr == "quat":
             out["quats_h_t1"] = hb["pose_t1"]  # backward-compat alias
+            out["quats_h_window"] = hb["pose_window"]
+            out["quats_h_t1_window"] = hb["pose_t1_window"]
         out["tips_h_t1"] = hb["tips_t1"]
         return out
 

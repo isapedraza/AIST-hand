@@ -109,6 +109,18 @@ def _parse_args() -> argparse.Namespace:
         help="Rotation representation for human poses. 'r6' uses 6D (Zhou et al. 2019) for better SO(3) continuity.",
     )
     p.add_argument(
+        "--human_encoder",
+        choices=["spatial", "temporal_cam"],
+        default="spatial",
+        help="Human encoder variant. 'spatial' consumes [B,20,F]; 'temporal_cam' consumes [B,T,20,F].",
+    )
+    p.add_argument(
+        "--temporal_window",
+        type=int,
+        default=8,
+        help="Causal human pose window length for --human_encoder temporal_cam.",
+    )
+    p.add_argument(
         "--val_every",
         type=int,
         default=500,

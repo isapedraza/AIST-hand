@@ -29,7 +29,7 @@ import numpy as np
 import torch
 
 from cross_emb.loaders import CrossEmbodimentSampler
-from cross_emb.nn.human_modules import HumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
+from cross_emb.nn.human_modules import HumanEncoder_E_h, TemporalHumanEncoder_E_h, SUBSPACE_LABEL_PREFIX, SUBSPACE_FINGERS
 from cross_emb.nn.robot_modules import RobotEncoder_E_r, RobotDecoder_D_r
 from cross_emb.nn.shared_modules import SharedEncoder_E_X, SharedDecoder_D_X
 from .config import _parse_args
@@ -107,6 +107,7 @@ def _compute_eval_metrics(
     hand_config: Path,
     zero_wrj: bool,
     rot_repr: str = "quat",
+    human_encoder: str = "spatial",
 ) -> dict | None:
     """Run retargeting on a split and return RS/NDS/NVS/rec metrics.
 
@@ -133,6 +134,8 @@ def _compute_eval_metrics(
             batch = eval_sampler.get_batch_temporal(b_eval)
             pose_h         = batch["pose_h"]
             pose_h_t1      = batch["pose_h_t1"]
+            pose_h_in      = batch["pose_h_window"] if human_encoder == "temporal_cam" else pose_h
+            pose_h_t1_in   = batch["pose_h_t1_window"] if human_encoder == "temporal_cam" else pose_h_t1
             pose_h_sub     = batch["pose_h_sub"]
             chain_h_sub    = batch["chain_h_sub"]
             tips_h_sub     = batch["tips_h_sub"]
@@ -142,8 +145,8 @@ def _compute_eval_metrics(
             common_labels  = batch["common_labels"]
 
             # Retarget: human Dong -> latent -> robot joint angles.
-            z_t        = E_h_(pose_h)
-            z_t1       = E_h_(pose_h_t1)
+            z_t        = E_h_(pose_h_in)
+            z_t1       = E_h_(pose_h_t1_in)
             q_r_hat    = D_r_(D_X_(z_t)).float()
             q_r_hat_t1 = D_r_(D_X_(z_t1)).float()
             if zero_wrj:
@@ -450,6 +453,7 @@ def main() -> None:
             extra_human_csv  = EXTRA_HUMAN_CSV,
             extra_human_ratio= args.extra_human_ratio,
             human_rot_repr   = args.human_rot_repr,
+            temporal_window  = args.temporal_window,
             primitive_sample = args.primitive_sample,
             eigengrasp_path  = cfg.get("eigengrasp"),
             mjcf_path        = cfg.get("mjcf"),
@@ -478,6 +482,7 @@ def main() -> None:
                 extra_human_csv  = None,
                 extra_human_ratio= 0.0,
                 human_rot_repr   = args.human_rot_repr,
+                temporal_window  = args.temporal_window,
                 primitive_sample = args.primitive_sample,
                 human_loader     = shared_human_val,
             )
@@ -493,7 +498,13 @@ def main() -> None:
     # Models — shared + per-robot
     # ---------------------------------------------------------------------------
     human_in_dim = 6 if args.human_rot_repr == "r6" else 4
-    E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
+    if args.human_encoder == "temporal_cam":
+        E_h = TemporalHumanEncoder_E_h(
+            in_dim=human_in_dim, hidden_dim=32, z_dim=args.z_dim,
+            temporal_window=args.temporal_window,
+        ).to(DEVICE)
+    else:
+        E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=args.z_dim).to(DEVICE)
     E_X = SharedEncoder_E_X(shared_dim=args.shared_dim, z_dim=args.z_dim).to(DEVICE)
     D_X = SharedDecoder_D_X(z_dim=args.z_dim, shared_dim=args.shared_dim).to(DEVICE)
 
@@ -632,6 +643,8 @@ def main() -> None:
             last_batch     = batch
             pose_h         = batch["pose_h"]
             pose_h_t1      = batch["pose_h_t1"]
+            pose_h_in      = batch["pose_h_window"] if args.human_encoder == "temporal_cam" else pose_h
+            pose_h_t1_in   = batch["pose_h_t1_window"] if args.human_encoder == "temporal_cam" else pose_h_t1
             q_r            = batch["q_r"]
             if zero_wrj:
                 q_r = q_r.clone()
@@ -650,8 +663,8 @@ def main() -> None:
 
             try:
               with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
-                z_t  = E_h(pose_h)
-                z_t1 = E_h(pose_h_t1)
+                z_t  = E_h(pose_h_in)
+                z_t1 = E_h(pose_h_t1_in)
                 z_r  = E_X(E_r(q_r))
 
                 q_r_hat        = D_r(D_X(z_r))    # reconstruction (robot→latent→robot) for L_rec
@@ -966,6 +979,7 @@ def main() -> None:
                     E_h, cfg["E_r"], E_X, D_X, cfg["D_r"],
                     cfg["hand_config"], cfg["zero_wrj"],
                     rot_repr=args.human_rot_repr,
+                    human_encoder=args.human_encoder,
                 )
                 if m is not None:
                     last_val_metrics[cfg["name"]] = m
@@ -1037,6 +1051,7 @@ def main() -> None:
             extra_human_csv  = None,
             extra_human_ratio= 0.0,
             human_rot_repr   = args.human_rot_repr,
+            temporal_window  = args.temporal_window,
             primitive_sample = args.primitive_sample,
         )
         test_metrics = _compute_eval_metrics(
@@ -1044,6 +1059,7 @@ def main() -> None:
             E_h, cfg["E_r"], E_X, D_X, cfg["D_r"],
             cfg["hand_config"], cfg["zero_wrj"],
             rot_repr=args.human_rot_repr,
+            human_encoder=args.human_encoder,
         )
         if test_metrics:
             print(

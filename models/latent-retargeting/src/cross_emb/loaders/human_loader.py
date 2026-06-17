@@ -11,9 +11,11 @@ Output contract (pose key is always present; quats alias added in quat mode):
     tips       [B, 5, 3]   fingertip positions normalized by hand_length
     tip_labels list[str]   ["thumb","index","middle","ring","pinky"]
 
-Temporal pairs (get_batch_temporal):
+Temporal pairs/windows (get_batch_temporal):
     pose_t     [B, 20, F]  frame t
     pose_t1    [B, 20, F]  frame t+1 (same trial, consecutive frame_id)
+    pose_window    [B, T, 20, F]  causal window ending at t
+    pose_t1_window [B, T, 20, F]  causal window ending at t+1
     tips_t     [B, 5, 3]
     tips_t1    [B, 5, 3]
     labels, tip_labels (fixed)
@@ -48,7 +50,7 @@ DONG_LABELS: list[str] = [
 TIP_LABELS: list[str] = ["thumb", "index", "middle", "ring", "pinky"]
 
 # Trial identity columns — frames with identical values are in the same sequence
-_TRIAL_COLS: list[str] = ["subject_id", "date_id", "object_id", "trial_id", "cam"]
+_TRIAL_COLS: list[str] = ["subject_id", "date_id", "object_id", "trial_id", "cam", "grasp_type"]
 
 # CSV column groups
 _QUAT_COLS: list[str] = [
@@ -99,6 +101,8 @@ def _pose_batch(pose: torch.Tensor, labels: list[str], tips: torch.Tensor, tip_l
 def _pose_temporal_batch(
     pose_t: torch.Tensor,
     pose_t1: torch.Tensor,
+    pose_window: torch.Tensor,
+    pose_t1_window: torch.Tensor,
     labels: list[str],
     tips_t: torch.Tensor,
     tips_t1: torch.Tensor,
@@ -110,6 +114,8 @@ def _pose_temporal_batch(
     out = {
         "pose_t": pose_t,
         "pose_t1": pose_t1,
+        "pose_window": pose_window,
+        "pose_t1_window": pose_t1_window,
         "tips_t": tips_t,
         "tips_t1": tips_t1,
         "labels": labels,
@@ -120,6 +126,8 @@ def _pose_temporal_batch(
     if human_rot_repr == "quat":
         out["quats_t"] = pose_t
         out["quats_t1"] = pose_t1
+        out["quats_window"] = pose_window
+        out["quats_t1_window"] = pose_t1_window
     return out
 
 
@@ -179,12 +187,16 @@ class HumanLoader:
         split: str = "train",
         device: str = "cpu",
         human_rot_repr: str = "quat",
+        temporal_window: int = 8,
     ) -> None:
         if split not in _SPLIT_SUBJECTS:
             raise ValueError(f"split must be one of {list(_SPLIT_SUBJECTS)}, got '{split}'")
+        if temporal_window < 1:
+            raise ValueError(f"temporal_window must be >= 1, got {temporal_window}")
 
         self.device = torch.device(device)
         self.human_rot_repr = _validate_human_rot_repr(human_rot_repr)
+        self.temporal_window = int(temporal_window)
         self.pose_cols, self.pose_dim = _pose_cols_and_dim(self.human_rot_repr)
         self.labels: list[str] = DONG_LABELS
         self.tip_labels: list[str] = TIP_LABELS
@@ -237,19 +249,39 @@ class HumanLoader:
         self._chain = torch.from_numpy(chain_np).to(self.device)   # [N, 5, 4, 3]
         self._N = len(df)
 
-        # Build next_idx: for each frame i, next_idx[i] = i+1 if same trial, else -1
-        trial_keys = df[_TRIAL_COLS].values  # [N, 5]
-        same_trial = np.all(trial_keys[:-1] == trial_keys[1:], axis=1)  # [N-1] bool
-        next_idx = np.where(same_trial, np.arange(1, self._N), -1)      # [N-1]
-        next_idx = np.append(next_idx, -1)                               # last frame: always -1
+        # Build next_idx: for each frame i, next_idx[i] = i+1 iff same sequence
+        # and frame_id is strictly consecutive. Windows are causal and never
+        # cross subject/date/object/trial/cam/grasp_type boundaries.
+        trial_keys = df[_TRIAL_COLS].values
+        frame_id = df["frame_id"].values
+        same_trial = np.all(trial_keys[:-1] == trial_keys[1:], axis=1)
+        consecutive_next = same_trial & (frame_id[1:] == frame_id[:-1] + 1)
+        next_idx = np.where(consecutive_next, np.arange(1, self._N), -1)
+        next_idx = np.append(next_idx, -1)
 
-        valid_mask = next_idx != -1
+        run_len = np.ones(self._N, dtype=np.int64)
+        for i in range(1, self._N):
+            if consecutive_next[i - 1]:
+                run_len[i] = run_len[i - 1] + 1
+
+        valid_mask = (next_idx != -1) & (run_len >= self.temporal_window)
+        offsets = np.arange(self.temporal_window - 1, -1, -1, dtype=np.int64)
+        valid_np = np.where(valid_mask)[0].astype(np.int64)
+        if valid_np.size:
+            window_idx = valid_np[:, None] - offsets[None, :]
+            window_t1_idx = window_idx + 1
+        else:
+            window_idx = np.empty((0, self.temporal_window), dtype=np.int64)
+            window_t1_idx = np.empty((0, self.temporal_window), dtype=np.int64)
+
         self._next_idx = torch.from_numpy(next_idx).to(self.device)
-        self._valid_idx = torch.from_numpy(np.where(valid_mask)[0].astype(np.int64)).to(self.device)
+        self._valid_idx = torch.from_numpy(valid_np).to(self.device)
+        self._window_idx = torch.from_numpy(window_idx).to(self.device)
+        self._window_t1_idx = torch.from_numpy(window_t1_idx).to(self.device)
 
         n_valid = self._valid_idx.shape[0]
         print(f"[HumanLoader] Ready. pose={tuple(self._pose.shape)} ({self.human_rot_repr}), "
-              f"valid temporal pairs={n_valid:,} ({100*n_valid/self._N:.1f}%)")
+              f"T={self.temporal_window}, valid temporal windows={n_valid:,} ({100*n_valid/self._N:.1f}%)")
 
     def get_batch(self, B: int, seed: int | None = None) -> dict:
         if seed is not None:
@@ -270,9 +302,13 @@ class HumanLoader:
         pos = torch.randint(0, self._valid_idx.shape[0], (B,), device=self.device)
         idx_t  = self._valid_idx[pos]
         idx_t1 = self._next_idx[idx_t]
+        win_t = self._window_idx[pos]
+        win_t1 = self._window_t1_idx[pos]
         return _pose_temporal_batch(
             self._pose[idx_t],
             self._pose[idx_t1],
+            self._pose[win_t],
+            self._pose[win_t1],
             self.labels,
             self._tips[idx_t],
             self._tips[idx_t1],
@@ -296,9 +332,11 @@ class StaticHumanAnchorLoader:
         csv_path: str | Path,
         device: str = "cpu",
         human_rot_repr: str = "quat",
+        temporal_window: int = 8,
     ) -> None:
         self.device = torch.device(device)
         self.human_rot_repr = _validate_human_rot_repr(human_rot_repr)
+        self.temporal_window = int(temporal_window)
         self.pose_cols, self.pose_dim = _pose_cols_and_dim(self.human_rot_repr)
         self.labels: list[str] = DONG_LABELS
         self.tip_labels: list[str] = TIP_LABELS
@@ -376,6 +414,8 @@ class StaticHumanAnchorLoader:
         out = _pose_temporal_batch(
             batch["pose"],
             batch["pose"],
+            batch["pose"].unsqueeze(1).expand(-1, self.temporal_window, -1, -1),
+            batch["pose"].unsqueeze(1).expand(-1, self.temporal_window, -1, -1),
             batch["labels"],
             batch["tips"],
             batch["tips"],

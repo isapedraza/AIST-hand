@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..nn.human_modules import HumanEncoder_E_h, CAMLayer
+from ..nn.human_modules import HumanEncoder_E_h, TemporalHumanEncoder_E_h, CAMLayer
 from ..nn.shared_modules import _mlp
 from ..nn.robot_modules  import RobotDecoder_D_r
 
@@ -167,11 +167,27 @@ class Retargeter:
 
         cfg = ck.get("config", {})
         self.human_rot_repr = cfg.get("human_rot_repr", "quat") if isinstance(cfg, dict) else "quat"
+        self.human_encoder = cfg.get("human_encoder", "spatial") if isinstance(cfg, dict) else "spatial"
+        self.temporal_window = int(cfg.get("temporal_window", 8)) if isinstance(cfg, dict) else 8
         human_in_dim = 6 if self.human_rot_repr == "r6" else 4
+        layer1_node_dim = ck["E_h"].get("layer1.linear.weight", torch.empty(0, 0)).shape[1] // 2
+        if "proj_precision.weight" not in ck["E_h"] and layer1_node_dim not in (human_in_dim, 0):
+            self.human_encoder = "temporal_cam"
+            self.temporal_window = layer1_node_dim // human_in_dim
+        self._temporal_buffer: list[torch.Tensor] = []
+        self._last_pose: torch.Tensor | None = None
+        self._last_qpos: np.ndarray | None = None
 
         if "proj_precision.weight" in ck["E_h"]:
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
+            self.human_encoder = "spatial"
             self.E_h = _LegacyHumanEncoder(in_dim=4, hidden_dim=32, z_dim=z_dim).eval()
+        elif self.human_encoder == "temporal_cam":
+            z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
+            self.E_h = TemporalHumanEncoder_E_h(
+                in_dim=human_in_dim, hidden_dim=32, z_dim=z_dim,
+                temporal_window=self.temporal_window,
+            ).eval()
         else:
             z_dim    = ck["E_h"]["proj_thumb.weight"].shape[0]
             self.E_h = HumanEncoder_E_h(in_dim=human_in_dim, hidden_dim=32, z_dim=z_dim).eval()
@@ -183,9 +199,41 @@ class Retargeter:
         self.D_X.load_state_dict(ck["D_X"])
         self.D_r.load_state_dict(d_r_sd)
 
+    def _temporal_input(self, pose: torch.Tensor) -> torch.Tensor | None:
+        if pose.ndim == 4:
+            return pose
+        if pose.ndim != 3:
+            raise ValueError(f"pose must have shape [B,20,F] or [B,T,20,F], got {tuple(pose.shape)}")
+        if pose.shape[0] != 1:
+            return pose.unsqueeze(1).expand(-1, self.temporal_window, -1, -1)
+
+        pose_cpu = pose.detach().cpu()
+        if self._last_pose is not None and torch.equal(pose_cpu, self._last_pose):
+            return None
+
+        sample = pose.detach().clone()
+        if not self._temporal_buffer:
+            self._temporal_buffer = [sample.clone() for _ in range(self.temporal_window)]
+        else:
+            self._temporal_buffer.append(sample)
+            self._temporal_buffer = self._temporal_buffer[-self.temporal_window:]
+        self._last_pose = pose_cpu.clone()
+        return torch.cat(self._temporal_buffer, dim=0).unsqueeze(0)
+
     @torch.no_grad()
     def __call__(self, pose: torch.Tensor) -> np.ndarray:
-        q = self.D_r(self.D_X(self.E_h(pose))).numpy()
+        if self.human_encoder == "temporal_cam":
+            pose_in = self._temporal_input(pose)
+            if pose_in is None and self._last_qpos is not None:
+                return self._last_qpos.copy()
+            if pose_in is None:
+                pose_in = pose.unsqueeze(1).expand(-1, self.temporal_window, -1, -1)
+        else:
+            pose_in = pose
+
+        q = self.D_r(self.D_X(self.E_h(pose_in))).numpy()
         if self._n_pad:
             q[:, :self._n_pad] = 0.0  # wrist DOFs — not encoded in wrist-frame human signal
-        return np.clip(q, self._lower, self._upper)
+        q = np.clip(q, self._lower, self._upper)
+        self._last_qpos = q.copy()
+        return q
