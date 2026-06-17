@@ -1,0 +1,18 @@
+Mon Jun 15 01:42:30 2026
+WARNING: Could not find decoder for resource 'robot/hands/barrett_hand/barrett.mjcf'
+
+Mon Jun 15 01:42:42 2026
+WARNING: Could not find decoder for resource '/home/yareeez/AIST-hand/robot/hands/barrett_hand/barrett.mjcf'
+
+Mon Jun 15 01:43:26 2026
+WARNING: Could not find decoder for resource '/home/yareeez/AIST-hand/robot/hands/barrett_hand/barrett.mjcf'
+
+Mon Jun 15 02:02:06 2026
+WARNING: Could not find decoder for resource '/home/yareeez/AIST-hand/robot/hands/barrett_hand/barrett.mjcf'
+
+Mon Jun 15 02:02:37 2026
+WARNING: Could not find decoder for resource '/home/yareeez/AIST-hand/robot/hands/barrett_hand/barrett.mjcf'
+
+Mon Jun 15 02:04:30 2026
+WARNING: Could not find decoder for resource '/home/yareeez/AIST-hand/robot/hands/barrett_hand/barrett.mjcf'
+
