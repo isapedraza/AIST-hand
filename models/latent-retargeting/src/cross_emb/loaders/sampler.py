@@ -32,7 +32,9 @@ from pathlib import Path
 import torch
 
 from cross_emb.loaders.human_loader import HumanLoader, StaticHumanAnchorLoader
+from cross_emb.loaders.human_to_udhm import human_to_udhm
 from cross_emb.loaders.robot_loader import RobotLoader
+from cross_emb.loaders.robot_primitives import build_primitives, robot_to_udhm
 from cross_emb.loaders.udhm_stage3 import udhm_run_stage3
 
 
@@ -119,6 +121,7 @@ class CrossEmbodimentSampler:
         n_knobs: int = 9,
         human_loader: "HumanLoader | None" = None,
         extra_human_loader: "StaticHumanAnchorLoader | None" = None,
+        robot_udhm_from_qpos: bool = False,
     ) -> None:
         self.hand_config_path = Path(hand_config_path)
         self.split = split
@@ -159,6 +162,10 @@ class CrossEmbodimentSampler:
             mjcf_path=mjcf_path,
             n_knobs=n_knobs,
         )
+        self.robot_udhm_from_qpos = robot_udhm_from_qpos
+        self._primitives_table: dict | None = None
+        if robot_udhm_from_qpos:
+            self._primitives_table = build_primitives(self.robot_rnd, hand_config_path)
 
     def _batch_counts(self, B: int) -> tuple[int, int]:
         if self.extra_human_loader is None:
@@ -284,9 +291,14 @@ class CrossEmbodimentSampler:
             out["quats_h_sub"] = pose_h_sub
             out["quats_r_sub"] = pose_r_sub
 
-        # Stage-3: per-joint rotations -> UDHM 22-slot named-angle vector.
-        # Produced and carried in the batch; consumed by S_k in a later step.
+        # UDHM 22-slot named-angle vector (canonical cross-embodiment metric).
+        # Human: signed angles via human_to_udhm (fixes unsigned arccos of stage-3).
+        # Robot: qpos direct via robot_to_udhm (bypasses Dong inference, exact angles)
+        #        when robot_udhm_from_qpos=True; falls back to stage-3 otherwise.
         with torch.no_grad():
-            out["udhm22_h"] = udhm_run_stage3(pose_h, labels)
-            out["udhm22_r"] = udhm_run_stage3(pose_r, labels_r)
+            out["udhm22_h"] = human_to_udhm(pose_h, labels)
+            if self.robot_udhm_from_qpos:
+                out["udhm22_r"] = robot_to_udhm(q_r, self._primitives_table)
+            else:
+                out["udhm22_r"] = udhm_run_stage3(pose_r, labels_r)
         return out

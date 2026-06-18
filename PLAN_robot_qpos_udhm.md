@@ -3,52 +3,47 @@
 ## Meta
 El robot tiene qpos (verdad). Dong lo adivina desde posiciones y falla en LEAP
 (abduccion congelada) y Barrett (distal congelada). Fix: robot llena UDHM desde
-qpos via primitivas. Humano sigue Dong. Mismo `udhm_run_stage3` para ambos.
+qpos via primitivas. Humano usa human_to_udhm (signed, fix arccos). Mismo espacio
+UDHM22 para ambos — contrato canonico cross-embodiment.
 
-## Probado ya (no re-discutir)
-- Receta `R_mcp = Ry(flex)@Rz(abd)`, pip/dip `Ry(sign*ang)` -> `udhm_run_stage3`.
-- LEAP: abduccion se llena (antes congelada), cero fuga.
-- Shadow control: qpos-path vs Dong-path = diff 0.0000 en flex/pip/dip. Mecanismo OK.
+## STATUS: COMPLETO (2026-06-18)
 
-## 3 modulos diferenciados (1 responsabilidad c/u)
+### Funcion 1 -- `build_primitives` ✓
+`robot_primitives.py` — tabla `{dedo: {role: (col_qpos, signo)}}`. Corre 1x por robot.
 
-### Funcion 1 -- `build_primitives(loader, config) -> tabla`  [= M_h del paper]
-Corre 1 vez por robot. Tabla: `{dedo: {role: (col_qpos, signo)}}`,
-role in {mcp_abd, mcp_flex, pip, dip}.
-Por cada joint:
-- dedo  <- `_build_joint_to_finger` (reuso)
-- tipo  <- eje del joint vs triada del dedo: ||lateral=FLEX, ||normal=ABD, ||bone=ROT
-- signo <- REGLA UNICA: `+1 si |hi| >= |lo| else -1` (flexion = lado de mayor rango).
-           Determinista. Solo importa en pip/dip (atan2); mcp arccos pliega signo.
-- ordenar FLEX por profundidad de cadena -> mcp_flex/pip/dip; ABD -> mcp_abd
-- Manos raras: tabla MANUAL que pisa el auto (`if joint in manual`):
-  - Barrett (anotado): finger_1/2_prox = spread -> EXCLUIDO; med->mcp_flex; dist->pip;
-    finger_3 = thumb. (palm frame radial invalida el auto)
-  - Pulgares Shadow/LEAP: auto imperfecto (ejes ~45deg) -> manual despues si hace falta.
+### Funcion 2 -- `robot_to_udhm` ✓
+`robot_primitives.py` — qpos [B,J] → UDHM22 [B,22]. Semantic insertion, /pi normalizado.
 
-### Funcion 2 -- `robot_qpos_to_udhm(qpos, tabla) -> udhm22 [B,22]`
-Corre cada batch. ~10 lineas:
+### Humano -- `human_to_udhm` ✓
+`human_to_udhm.py` — rotaciones Dong → UDHM22 signed (fix arccos unsigned de stage-3).
+
+### Cableado -- sampler.py ✓
+- `udhm22_h = human_to_udhm(pose_h, labels)` — siempre
+- `udhm22_r = robot_to_udhm(q_r, tabla)` — detrás flag `robot_udhm_from_qpos=True`
+- Fallback: `udhm_run_stage3` si flag OFF (default)
+
+### Config/loop ✓
+- `--robot_udhm_from_qpos` flag en config.py
+- Pasado a CrossEmbodimentSampler en loop.py (train + val)
+
+## Validacion completada
+- LEAP: abduccion responde (200/250 slots non-zero) ✓
+- Barrett: pip responde ✓
+- Shadow/LEAP/Allegro open→close flex direction correcto ✓
+- Cross-embodiment: open L1~0.10, close L1~0.20 (esperado por morfologia distinta) ✓
+- Script: `scripts/evaluate_udhm_cross_embodiment.py`
+
+## Para entrenar
 ```
-R_mcp = Ry(qpos[flex]) @ Rz(qpos[abd])      # label {dedo}_mcp
-R_pip = Ry(signo * qpos[pip])               # label {dedo}_pip
-R_dip = Ry(signo * qpos[dip])               # label {dedo}_dip
-return udhm_run_stage3(stack(rot6), labels)  # REUSO, no tocar
+python scripts/train_cross_emb.py \
+  --lam_udhm 0.4 \
+  --robot_udhm_from_qpos \
+  --sk_metric xin \
+  ...
 ```
+`lam_udhm` sugerido 0.4-0.5 del total S_k (40-50% rotaciones, resto Xin).
 
-### Modulo 3 -- Cableado (aparte)
-`sampler.py:277`: cambiar `udhm22_r = udhm_run_stage3(pose_r, labels_r)` por
-`udhm22_r = robot_qpos_to_udhm(q_r, tabla)`, detras de flag `--robot_udhm_from_qpos`
-(default OFF). `q_r` ya esta en `:237`. Humano (`:276`) intacto.
-
-## Reuso sin tocar
-`udhm_run_stage3`, `_FILL`, `UDHM22_SLOTS`, `_build_joint_to_finger`, `run_fk`,
-`_resolve_limits`, loss en `loop._cross_robot_contrastive`, `losses._udhm_w`.
-
-## Validacion (offline, sin training)
-1. Shadow: qpos-path vs Dong-path -> flex/pip/dip diff ~0 (control).
-2. LEAP: abduccion responde, cero fuga a flex.
-3. Barrett: pip se llena (antes 0), flexion positiva.
-
-## Orden de ejecucion
-Funcion 1 sola -> validar -> Funcion 2 sola -> validar -> cableado. Una a la vez.
-NO tocar nada existente hasta el cableado (paso final, 1 linea, con flag).
+## Archivos generados
+- `robot/hands/shadow_hand/datasets/processed/synthetic_open_hand_shadow_qpos.npz`
+- `robot/hands/shadow_hand/datasets/processed/synthetic_close_hand_shadow_qpos.npz`
+- `robot/hands/allegro_hand/datasets/processed/synthetic_open_allegro.npz`

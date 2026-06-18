@@ -460,6 +460,7 @@ def main() -> None:
             n_knobs          = cfg.get("n_knobs", 9),
             human_loader     = shared_human,
             extra_human_loader = shared_extra,
+            robot_udhm_from_qpos = args.robot_udhm_from_qpos,
         )
         if shared_human is None:
             shared_human = cfg["sampler"].human_loader
@@ -485,6 +486,7 @@ def main() -> None:
                 temporal_window  = args.temporal_window,
                 primitive_sample = args.primitive_sample,
                 human_loader     = shared_human_val,
+                robot_udhm_from_qpos = args.robot_udhm_from_qpos,
             )
             if shared_human_val is None:
                 shared_human_val = cfg["val_sampler"].human_loader
