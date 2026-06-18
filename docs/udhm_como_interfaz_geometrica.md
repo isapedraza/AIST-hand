@@ -140,6 +140,54 @@ El signo se deriva del URDF automáticamente. Lo que no está declarado → slot
 
 ---
 
+## Dónde empieza UDHM en el sistema
+
+UDHM es la frontera entre percepción y cómputo. Todo lo anterior es "cómo llenar UDHM". Todo lo posterior es "operar sobre UDHM".
+
+```
+╔══════════════════════════════╗
+║      PERCEPCIÓN / CARGA      ║
+║                              ║
+║  cámara → MediaPipe/HaMeR    ║
+║  qpos   → robot URDF         ║
+║  yaml   → mapeo joint→slot   ║
+╚══════════╦═══════════════════╝
+           ║  adapter por fuente
+           ▼
+╔══════════════════════════════╗
+║         UDHM [B, 22]         ║  ← FRONTERA
+║                              ║
+║  slot 6 = index_mcp_flex     ║
+║  slot 7 = index_pip_flex     ║
+║  ausente = 0                 ║
+╚══════════╦═══════════════════╝
+           ║
+     ┌─────┴──────┐
+     ▼            ▼
+  ángulos        FK(udhm, bone_lengths)
+  por slot            ↓
+     ↓         XYZ chain, tips
+  losses           ↓
+  L1 por slot   losses posición
+  contrastive
+```
+
+Cada fuente de datos tiene su propio adapter que produce `udhm22 [B, 22]`:
+
+| Fuente | Adapter | Estado |
+|---|---|---|
+| MediaPipe/Dong keypoints | `human_to_udhm(pose_dong, labels)` | Existe |
+| HaMeR θ MANO | `hamer_to_udhm(theta_mano)` | A escribir si se cambia backend |
+| Robot qpos | `robot_to_udhm(qpos, tabla)` | Existe |
+
+Después del adapter, ningún código sabe de dónde vino el dato. Solo opera sobre `[B, 22]`.
+
+**Consecuencia directa:** cambiar backend de percepción (ej. de MediaPipe a HaMeR) = escribir un adapter nuevo. El pipeline de training, losses, y contrastive no cambia. La percepción está desacoplada del entrenamiento.
+
+HaMeR da `θ ∈ R^48` (parámetros MANO = ángulos por joint directamente). Con UDHM como frontera, `hamer_to_udhm()` mapea esos ángulos a slots canónicos sin tocar nada downstream. Sin UDHM, cambiar de MediaPipe a HaMeR requeriría reescribir `pose_h`, `chain_h`, `tips_h` y toda la infraestructura de subespacio.
+
+---
+
 ## Resumen
 
 | Problema | Sin UDHM | Con UDHM |
