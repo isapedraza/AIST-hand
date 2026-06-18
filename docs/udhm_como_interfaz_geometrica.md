@@ -20,6 +20,30 @@ slot 20: pinky_dip_flex
 
 ---
 
+## El signo es parte del contrato
+
+UDHM define no solo qué slot es cada DoF, sino en qué dirección es positivo:
+
+- **Flexión positiva** = más cerrado (acercar dedos a la palma)
+- **Abducción positiva** = alejarse del dedo medio
+
+Sin esto, dos robots haciendo el mismo movimiento pueden producir valores opuestos en el mismo slot, porque sus URDFs definen la dirección positiva del joint de forma distinta:
+
+```
+Barrett index_mcp_flex: límites [-2.44, 0]  → cerrar = qpos negativo
+Inspire index_mcp_flex: límites [0, 1.47]   → cerrar = qpos positivo
+```
+
+Sin corrección → slot 6 de Barrett al cerrar = -0.78, Inspire = +0.47. Mismo movimiento, valores opuestos. La métrica L1 dice "son distintos" cuando son idénticos en intención.
+
+Fix: `udhm[slot] = sign * qpos[col] / π`
+
+El signo se deriva automáticamente del URDF: `sign = +1 si |hi| >= |lo|, else -1`. Para abducción se usa excitación geométrica (FK) porque el rango es simétrico y los límites no dan información de dirección.
+
+**El yaml de cada robot debe declarar qué joint llena qué slot. El signo se computa del URDF. Sin signo, UDHM no es un contrato — es una lista de números sin convención compartida.**
+
+---
+
 ## Por qué esto importa geométricamente
 
 Una rotación articular en 3D no es un número — es una matriz 3×3 (o cuaternión). La distancia geodésica entre dos rotaciones mezcla todos los ejes de movimiento de esa articulación en un solo escalar.
