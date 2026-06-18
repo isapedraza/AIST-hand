@@ -1,0 +1,21 @@
+robot: inspire_hand
+
+urdf: robot/hands/inspire_hand/inspire_hand_right.urdf
+zero_wrj: false
+
+wrist_link: hand_base_link
+frame_index_mcp:  index_proximal
+frame_middle_mcp: middle_proximal
+frame_ring_mcp:   ring_proximal
+
+fingers:
+  thumb:
+    chain: [thumb_proximal, thumb_intermediate, thumb_distal]
+  index:
+    chain: [index_proximal, index_intermediate]
+  middle:
+    chain: [middle_proximal, middle_intermediate]
+  ring:
+    chain: [ring_proximal, ring_intermediate]
+  pinky:
+    chain: [pinky_proximal, pinky_intermediate]

@@ -172,6 +172,16 @@ if __name__ == "__main__":
          "robot/hands/allegro_hand/datasets/processed/synthetic_open_allegro.npz",
          None,  # no close — use valid poses
          "qpos16"),
+        ("barrett", "robot/hands/barrett_hand/bhand_model.urdf",
+         "robot/hand-configs/barrett.yaml",
+         "robot/hands/barrett_hand/datasets/processed/synthetic_open_barrett.npz",
+         "robot/hands/barrett_hand/datasets/processed/synthetic_close_barrett.npz",
+         "qpos8"),
+        ("inspire", "robot/hands/inspire_hand/inspire_hand_right.urdf",
+         "robot/hand-configs/inspire.yaml",
+         "robot/hands/inspire_hand/datasets/processed/synthetic_open_inspire.npz",
+         "robot/hands/inspire_hand/datasets/processed/synthetic_close_inspire.npz",
+         "qpos12"),
     ]
 
     results = {}

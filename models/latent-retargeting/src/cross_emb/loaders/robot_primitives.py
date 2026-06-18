@@ -56,6 +56,15 @@ _MANUAL: dict[str, dict[str, tuple[str, str] | None]] = {
         "finger_3_med_joint": ("thumb", "mcp_flex"),
         "finger_3_dist_joint": ("thumb", "pip"),
     },
+    # Inspire hand: thumb yaw misclassified as ROT (dropped) and pitch as ABD.
+    # Manual override: yaw=mcp_abd (lateral spread), pitch=mcp_flex.
+    # Mimic joints (intermediate, distal) included as pip; non-thumb auto-classify is correct.
+    "inspire_hand": {
+        "thumb_proximal_yaw_joint":       ("thumb", "mcp_abd"),
+        "thumb_proximal_pitch_joint":     ("thumb", "mcp_flex"),
+        "thumb_intermediate_joint":       ("thumb", "pip"),
+        "thumb_distal_joint":             None,   # mimic, skip (no ip_flex slot in UDHM22)
+    },
 }
 
 _FLEX_ROLES = ("mcp_flex", "pip", "dip")  # proximal -> distal destinations for FLEX joints
