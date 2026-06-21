@@ -140,6 +140,55 @@ El signo se deriva del URDF automáticamente. Lo que no está declarado → slot
 
 ---
 
+## Adapter de fuente humana: yaml + registro de transforms
+
+`human_to_udhm(data, yaml_path)` es una sola función. El yaml por fuente declara qué transform usar y el mapeo label→slot. La transform es código Python en `transforms.py`, no config.
+
+```python
+# transforms.py — escrito por el dev, una vez
+def dong_kinematics_fn(data, cfg): ...   # XYZ landmarks → ángulos
+def angles_direct_fn(data, cfg): ...     # ya son ángulos, mapea slots
+def imu_decompose_fn(data, cfg): ...     # quaternión → flex + abd
+
+REGISTRY = {
+    "dong_kinematics": dong_kinematics_fn,
+    "angles_direct":   angles_direct_fn,
+    "imu_decompose":   imu_decompose_fn,
+}
+```
+
+```yaml
+# mediapipe.yaml — escrito por quien configura el sensor
+transform: dong_kinematics
+slots:
+  index_mcp: index_mcp_flex
+  index_pip: index_pip_flex
+  ...
+
+# cyberglove.yaml
+transform: angles_direct
+slots:
+  ch1: index_mcp_flex
+  ch2: index_pip_flex
+  ...
+```
+
+```python
+def human_to_udhm(data, yaml_path):
+    cfg = load(yaml_path)
+    fn = REGISTRY[cfg["transform"]]
+    angles = fn(data, cfg)
+    return fill_slots(angles, cfg["slots"])
+```
+
+**Reglas:**
+- Sensor nuevo con transform existente → solo yaml, cero Python
+- Sensor con transform nueva → agregar función a `transforms.py` + registrar + yaml
+- El yaml nunca contiene lógica, solo declaraciones (nombre de transform + mapeo de slots)
+- Mismo patrón que el lado robot (`robot_to_udhm` + yaml joint→slot)
+
+---
+
 ## Dónde empieza UDHM en el sistema
 
 UDHM es la frontera entre percepción y cómputo. Todo lo anterior es "cómo llenar UDHM". Todo lo posterior es "operar sobre UDHM".
@@ -474,3 +523,50 @@ Notas de corrección sobre el drawio dibujado:
 - Falta caja explícita del **contenedor UDHM[22]+mask** (hoy el drawio tiene "UDHM Interface" + "Grafo UDHM" por separado; el contenedor es la frontera central de la que salen grafo→encoder y xyz→losses).
 - Marcar MLP Decoder como default, GNN Decoder como flag (cross-embodiment/zero-shot).
 - Losses conecta a Latent (triplet) Y a UDHM xyz (D_ee), no solo al grafo.
+
+---
+
+## FK para losses de posición: frame, normalización, y por qué no se necesita Dong
+
+### Qué contiene UDHM
+
+UDHM = `angles[B,22]` + `mask[B,22]`. Sin xyz adentro. Las losses de posición (tips, orientación, pinch) obtienen xyz llamando FK explícitamente — es una función externa al contenedor.
+
+### Por qué se necesitaba Dong en el robot (pre-refactor)
+
+Pre-refactor: el robot no tenía representación comparable con el humano. Se aplicaba Dong al robot (`FK → Dong Block1 → wrist-local`) solo para que ambos quedaran en el mismo frame y fueran comparables. Eso era un workaround.
+
+**Post-refactor UDHM**: la comparabilidad viene de los ángulos (radian/π, abd separado de flex, mismo slot = mismo DOF anatómico). Ya no se necesita Dong en el robot para comparabilidad angular.
+
+### Frame para FK post-refactor
+
+FK de cualquier embodiment da posiciones en el frame de su URDF (frame base). Para que humano y robot sean comparables en losses de posición, ambos se expresan en **wrist-local**: restar la posición del wrist a todos los joints.
+
+- Robot: `MuJoCo FK → posiciones en frame base → restar wrist_link position → wrist-local`
+- Humano: `MediaPipe/HaMeR 21 landmarks → restar landmark 0 (wrist) → wrist-local`
+
+No se necesita reconstruir el frame de Dong (X0/Y0/Z0 desde 4 landmarks). Eso era necesario solo para el paso inverso (XYZ → ángulos). FK es la dirección opuesta.
+
+### Xin: las losses son solo restas
+
+Las losses de Xin (fingertip position, pinch, orientation) son vectores relativos:
+
+```
+tip_pos:     wrist → tip  =  tip_xyz - wrist_xyz  =  tip_xyz          (wrist = origen)
+pinch:       thumb_tip → finger_tip  =  finger_tip_xyz - thumb_tip_xyz
+orientation: DIP → tip   =  tip_xyz - dip_xyz
+```
+
+En wrist-local (wrist = 0) todo es aritmética de coordenadas. No hay construcción de frame en tiempo de loss.
+
+### Normalización de escala: tau_per_finger (Bernardin 2017)
+
+Robot y humano tienen distinto tamaño de mano. Para que las losses de posición sean comparables en escala, se normaliza por la longitud de cadena cinemática por dedo (`tau_f = wrist→MCP + MCP→PIP + PIP→DIP + DIP→TIP`):
+
+```python
+v_f = (wrist → tip_f) / tau_f    # fracción de alcance máximo, ∈ [0,1]
+```
+
+Esto hace innecesaria una mano canónica con bone lengths fijos: cada embodiment usa su geometría real y `tau_per_finger` cancela las diferencias de proporción. Implementado en `loop.py` con flag `--per_pair_norm` (Bernardin Eq. 2, commit d6afe6cce).
+
+D_R (rotaciones por slot) y tip_rot (vector DIP→tip unitario) ya son invariantes a escala — no necesitan esta normalización.
