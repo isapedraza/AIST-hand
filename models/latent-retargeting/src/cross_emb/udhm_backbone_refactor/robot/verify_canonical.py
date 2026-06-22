@@ -67,6 +67,7 @@ def canonical_poses() -> dict[str, dict[str, float]]:
                       "thumb_mcp_abd": 1.0},
         "pinky_twist": {"pinky_twist": 1.0},           # lone ROT slot
         "middle_abd": {"middle_mcp_abd": 1.0},         # middle alone (free conv: +1 = ulnar)
+        "thumb_abd": {"thumb_mcp_abd": 1.0},           # thumb mcp abd alone (qpos-only slot)
         "hook": pip,                                   # pip only -> breaks pip/dip swap
     }
 
