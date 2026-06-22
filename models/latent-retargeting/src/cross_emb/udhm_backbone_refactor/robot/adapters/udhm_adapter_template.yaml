@@ -1,0 +1,26 @@
+# UDHM Adapter -- Robot
+# File name convention: {robotname}_udhm_adapter.yaml
+#
+# Maps each active robot joint to a UDHM slot.
+# Slot names must match exactly the entries in UDHM22_SLOTS (core/udhm.py).
+# Sign is added by Primitive Classification after the anatomical mapping is written.
+#
+# UDHM22_SLOTS reference:
+#   thumb : thumb_cmc_flex, thumb_cmc_spread, thumb_mcp_flex, thumb_mcp_abd, thumb_ip_flex
+#   index : index_mcp_abd, index_mcp_flex, index_pip_flex, index_dip_flex
+#   middle: middle_mcp_abd, middle_mcp_flex, middle_pip_flex, middle_dip_flex
+#   ring  : ring_mcp_abd, ring_mcp_flex, ring_pip_flex, ring_dip_flex
+#   pinky : pinky_mcp_abd, pinky_mcp_flex, pinky_pip_flex, pinky_dip_flex, pinky_twist
+#
+# Joints with no UDHM analog (e.g. wrist, spread joints without human analog) are omitted.
+
+robot: <robotname>
+urdf: robot/hands/<robotname>/<robot>.urdf
+
+# Every movable URDF joint must be mapped below or explicitly ignored.
+ignored_joints: []
+
+joints:
+  <robot_joint_name>: {slot: <udhm_slot_name>, sign: null}  # sign filled by Primitive Classification
+  <robot_joint_name>: {slot: <udhm_slot_name>, sign: null}
+  # ...

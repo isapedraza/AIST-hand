@@ -28,6 +28,27 @@ _REPO      = Path(__file__).resolve().parents[3]
 _MENAGERIE = _REPO / "third_party" / "mujoco_menagerie"
 POSE_ALPHA = 0.25
 
+_SCENE_BASE_XML = """<mujoco model="retarget_sink">
+  <statistic extent="0.45" center="0 0 0.15"/>
+  <visual>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.6 0.6 0.6" specular="0.1 0.1 0.1"/>
+    <global azimuth="145" elevation="-18"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <quality shadowsize="4096"/>
+  </visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.32 0.48 0.62" rgb2="0.04 0.05 0.06" width="512" height="3072"/>
+    <texture type="2d" name="retarget_groundplane_tex" builtin="checker" mark="edge"
+      rgb1="0.22 0.28 0.31" rgb2="0.10 0.13 0.15" markrgb="0.75 0.78 0.80" width="300" height="300"/>
+    <material name="retarget_groundplane" texture="retarget_groundplane_tex" texuniform="true" texrepeat="5 5" reflectance="0.18"/>
+  </asset>
+  <worldbody>
+    <light pos="0 0 1.5"/>
+    <light pos="0.35 -0.2 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="retarget_floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="retarget_groundplane"/>
+  </worldbody>
+</mujoco>"""
+
 
 @dataclass(frozen=True)
 class _RobotSink:
@@ -80,13 +101,23 @@ def _build_scene(cfg: _RobotSink) -> Path:
 
     scene.write_text(f"""<mujoco model="retarget_sink">
   <include file="{include_name}"/>
-  <statistic extent="0.3" center="0 0 0.2"/>
+  <statistic extent="0.45" center="0 0 0.15"/>
   <visual>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.6 0.6 0.6" specular="0.1 0.1 0.1"/>
     <global azimuth="145" elevation="-18"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <quality shadowsize="4096"/>
   </visual>
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.32 0.48 0.62" rgb2="0.04 0.05 0.06" width="512" height="3072"/>
+    <texture type="2d" name="retarget_groundplane_tex" builtin="checker" mark="edge"
+      rgb1="0.22 0.28 0.31" rgb2="0.10 0.13 0.15" markrgb="0.75 0.78 0.80" width="300" height="300"/>
+    <material name="retarget_groundplane" texture="retarget_groundplane_tex" texuniform="true" texrepeat="5 5" reflectance="0.18"/>
+  </asset>
   <worldbody>
     <light pos="0 0 1.5"/>
-    <light pos="0.3 0 1.5" dir="0 0 -1" directional="true"/>
+    <light pos="0.35 -0.2 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="retarget_floor" pos="0 0 -0.1" size="0 0 0.05" type="plane" material="retarget_groundplane"/>
   </worldbody>
 </mujoco>""")
     return scene
@@ -154,7 +185,7 @@ class MergedMuJocoSink:
         unknown = [r for r in robots if r not in _ROBOTS]
         if unknown:
             raise ValueError(f"Unsupported robots {unknown} (have {list(_ROBOTS)})")
-        parent = mujoco.MjSpec()
+        parent = mujoco.MjSpec.from_string(_SCENE_BASE_XML)
         self._slices: dict[str, tuple[int, int]] = {}
         off = 0
         for i, name in enumerate(robots):

@@ -1,0 +1,73 @@
+robot: leap_hand_right
+urdf: robot/hands/leap_hand/leap_hand_right.urdf
+frame:
+  wrist: palm_lower
+  index_mcp: mcp_joint
+  middle_mcp: mcp_joint_2
+  ring_mcp: mcp_joint_3
+fingers:
+  thumb:
+    base: thumb_temp_base
+    tip: thumb_tip_head
+  index:
+    base: mcp_joint
+    tip: index_tip_head
+  middle:
+    base: mcp_joint_2
+    tip: middle_tip_head
+  ring:
+    base: mcp_joint_3
+    tip: ring_tip_head
+joints:
+  '0':
+    slot: index_mcp_abd
+    sign: -1
+  '1':
+    slot: index_mcp_flex
+    sign: 1
+  '2':
+    slot: index_pip_flex
+    sign: 1
+  '3':
+    slot: index_dip_flex
+    sign: 1
+  '4':
+    slot: middle_mcp_abd
+    sign: 1
+  '5':
+    slot: middle_mcp_flex
+    sign: 1
+  '6':
+    slot: middle_pip_flex
+    sign: 1
+  '7':
+    slot: middle_dip_flex
+    sign: 1
+  '8':
+    slot: ring_mcp_abd
+    sign: 1
+  '9':
+    slot: ring_mcp_flex
+    sign: 1
+  '10':
+    slot: ring_pip_flex
+    sign: 1
+  '11':
+    slot: ring_dip_flex
+    sign: 1
+  '12':
+    # MuJoCo semantic joint: th_cmc
+    slot: thumb_cmc_flex
+    sign: 1
+  '13':
+    # MuJoCo semantic joint: th_axl; + excitation spreads away from middle.
+    slot: thumb_cmc_spread
+    sign: 1
+  '14':
+    # MuJoCo semantic joint: th_mcp
+    slot: thumb_mcp_flex
+    sign: 1
+  '15':
+    # MuJoCo semantic joint: th_ipl
+    slot: thumb_ip_flex
+    sign: 1

@@ -1,0 +1,30 @@
+robot: allegro_hand_right
+urdf: robot/hands/allegro_hand/allegro_hand_right.urdf
+frame:
+  wrist: palm
+  index_mcp: link_1.0
+  middle_mcp: link_5.0
+  ring_mcp: link_9.0
+fingers:
+  thumb:  {base: link_13.0, tip: link_15.0_tip}
+  index:  {base: link_1.0,  tip: link_3.0_tip}
+  middle: {base: link_5.0,  tip: link_7.0_tip}
+  ring:   {base: link_9.0,  tip: link_11.0_tip}
+joints:
+  joint_0.0:  {slot: index_mcp_abd,    sign: 1}
+  joint_1.0:  {slot: index_mcp_flex,   sign: 1}
+  joint_2.0:  {slot: index_pip_flex,   sign: 1}
+  joint_3.0:  {slot: index_dip_flex,   sign: 1}
+  joint_4.0:  {slot: middle_mcp_abd,   sign: 1}
+  joint_5.0:  {slot: middle_mcp_flex,  sign: 1}
+  joint_6.0:  {slot: middle_pip_flex,  sign: 1}
+  joint_7.0:  {slot: middle_dip_flex,  sign: 1}
+  joint_8.0:  {slot: ring_mcp_abd,     sign: -1}
+  joint_9.0:  {slot: ring_mcp_flex,    sign: 1}
+  joint_10.0: {slot: ring_pip_flex,    sign: 1}
+  joint_11.0: {slot: ring_dip_flex,    sign: 1}
+  # Thumb order in the MuJoCo model: base, proximal, medial, distal.
+  joint_12.0: {slot: thumb_cmc_flex,   sign: 1}
+  joint_13.0: {slot: thumb_cmc_spread, sign: 1}
+  joint_14.0: {slot: thumb_mcp_flex,   sign: 1}
+  joint_15.0: {slot: thumb_ip_flex,    sign: 1}

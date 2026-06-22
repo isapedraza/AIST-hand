@@ -1,0 +1,91 @@
+robot: shadow_hand_right
+urdf: robot/hands/shadow_hand/shadow_hand_right.urdf
+ignored_joints: [WRJ2, WRJ1]
+frame:
+  wrist: palm
+  index_mcp: ffknuckle
+  middle_mcp: mfknuckle
+  ring_mcp: rfknuckle
+fingers:
+  thumb:
+    base: thbase
+    tip: thtip
+  index:
+    base: ffknuckle
+    tip: fftip
+  middle:
+    base: mfknuckle
+    tip: mftip
+  ring:
+    base: rfknuckle
+    tip: rftip
+  pinky:
+    base: lfknuckle
+    tip: lftip
+joints:
+  FFJ4:
+    slot: index_mcp_abd
+    sign: -1
+  FFJ3:
+    slot: index_mcp_flex
+    sign: 1
+  FFJ2:
+    slot: index_pip_flex
+    sign: 1
+  FFJ1:
+    slot: index_dip_flex
+    sign: 1
+  MFJ4:
+    slot: middle_mcp_abd
+    sign: 1
+  MFJ3:
+    slot: middle_mcp_flex
+    sign: 1
+  MFJ2:
+    slot: middle_pip_flex
+    sign: 1
+  MFJ1:
+    slot: middle_dip_flex
+    sign: 1
+  RFJ4:
+    slot: ring_mcp_abd
+    sign: -1
+  RFJ3:
+    slot: ring_mcp_flex
+    sign: 1
+  RFJ2:
+    slot: ring_pip_flex
+    sign: 1
+  RFJ1:
+    slot: ring_dip_flex
+    sign: 1
+  LFJ5:
+    slot: pinky_twist
+    sign: 1
+  LFJ4:
+    slot: pinky_mcp_abd
+    sign: -1
+  LFJ3:
+    slot: pinky_mcp_flex
+    sign: 1
+  LFJ2:
+    slot: pinky_pip_flex
+    sign: 1
+  LFJ1:
+    slot: pinky_dip_flex
+    sign: 1
+  THJ5:
+    slot: thumb_cmc_spread
+    sign: -1
+  THJ4:
+    slot: thumb_cmc_flex
+    sign: 1
+  THJ3:
+    slot: thumb_mcp_abd
+    sign: 1
+  THJ2:
+    slot: thumb_mcp_flex
+    sign: 1
+  THJ1:
+    slot: thumb_ip_flex
+    sign: 1
