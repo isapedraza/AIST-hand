@@ -555,13 +555,16 @@ def main() -> None:
     use_compile = bool(args.compile) and DEVICE == "cuda" and hasattr(torch, "compile")
     if use_compile:
         try:
-            E_h = torch.compile(E_h, mode="reduce-overhead")
-            E_X = torch.compile(E_X, mode="reduce-overhead")
-            D_X = torch.compile(D_X, mode="reduce-overhead")
+            # freeze_shared: frozen modules must not use reduce-overhead (CUDAGraphs
+            # overwrites their output buffers between steps). Use default mode instead.
+            shared_mode = "default" if args.freeze_shared else "reduce-overhead"
+            E_h = torch.compile(E_h, mode=shared_mode)
+            E_X = torch.compile(E_X, mode=shared_mode)
+            D_X = torch.compile(D_X, mode=shared_mode)
             for cfg in robot_cfgs:
                 cfg["E_r"] = torch.compile(cfg["E_r"], mode="reduce-overhead")
                 cfg["D_r"] = torch.compile(cfg["D_r"], mode="reduce-overhead")
-            print(f"torch.compile: enabled (mode=reduce-overhead) on all modules")
+            print(f"torch.compile: enabled (shared={shared_mode}, robot=reduce-overhead)")
         except Exception as e:
             print(f"torch.compile failed ({e}); falling back to eager.")
             use_compile = False
