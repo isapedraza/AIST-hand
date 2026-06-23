@@ -1,0 +1,56 @@
+%% Training pipeline — flujo REAL ejecutado (verificado en código, no el DFD aspiracional).
+%% Reemplaza conceptualmente a training_pipeline_dfd.drawio.xml (que describía un diseño
+%% UDHM-backbone no integrado: GNN Encoder era lo único real; UDHM Container [B,22],
+%% Build UDHM Graph y JSON Schema Validation nunca se construyeron).
+flowchart LR
+    %% ====== PRECOMPUTE OFFLINE (≡ EIGENGRASP_ONLINE colapsado por costo memoria/velocidad) ======
+    subgraph OFF["Precompute OFFLINE — VALID_NPZ ≡ EIGENGRASP_ONLINE en el loop, ejecutado una vez"]
+        direction TB
+        EIG["Eigengrasp PCA sampler<br/>(n_knobs ~9, ~91% var)"] --> COLL["MuJoCo collision filter"]
+        COLL --> FKO["FK + Dong tips/chain"]
+    end
+    OFF -.materializa.-> RNPZ
+
+    %% ---------- ENTRADAS ----------
+    HCSV[("Human dataset<br/>hograspnet_abl14_r6.csv<br/>+10% hagrid_dong")]
+    RNPZ[("Robot poses<br/>valid_robot_poses_allegro_dong.npz<br/>q: qpos [N,16] · 1M poses")]
+
+    %% ---------- RAMA HUMANO ----------
+    HCSV --> PH["pose_h: R6, 20 joints Dong"]
+    PH --> EH["E_h: CAM-GNN<br/>21 nodos · CAM[21,21] aprendida<br/>3x CAMLayer · proj per-dedo"]
+    EH --> ZT["z_t (latente humano)"]
+
+    %% ---------- RAMA ROBOT ----------
+    RNPZ --> QR["q_r: qpos directo [16]"]
+    QR --> ER["E_r: MLP (robot)"]
+    ER --> EX
+
+    %% ---------- LATENTE COMPARTIDO ----------
+    ZT --> EX["E_X: proyección compartida"]
+    EX --> Z(("z latente común<br/>z_dim=16 · 5 subespacios/dedo"))
+
+    %% ---------- DECODERS ----------
+    Z --> DX["D_X: decoder compartido"]
+    DX --> DR["D_r: decoder robot"]
+    DR --> QHAT["q_r_hat (reconstrucción)"]
+    DR --> QRET["q_r_from_h (retargeting H→robot)"]
+
+    %% ---------- LOSSES ----------
+    QHAT --> LREC["L_rec"]
+    QRET --> LTEMP["L_temp (FK-Dong tips, t→t+1)"]
+    Z --> LCONT["L_cont (xin S_k, per-dedo)"]
+    ZT --> LLTC["L_ltc (ciclo latente)"]
+
+    LREC --> ADAM["Adam (LR const)"]
+    LTEMP --> ADAM
+    LCONT --> ADAM
+    LLTC --> ADAM
+
+    %% ---------- FREEZE 18B (modo Allegro: --freeze_shared) ----------
+    CKPT[("stage1_shadow_udhm_B.pt<br/>base 18B")] -.resume + freeze.-> EH
+    CKPT -.frozen.-> EX
+    CKPT -.frozen.-> DX
+    ADAM ==>|solo entrena| ER
+    ADAM ==>|solo entrena| DR
+
+    style OFF stroke-dasharray: 6 4
