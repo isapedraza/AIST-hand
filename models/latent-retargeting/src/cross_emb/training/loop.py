@@ -668,17 +668,34 @@ def main() -> None:
 
             try:
               with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
-                z_t  = E_h(pose_h_in)
-                z_t1 = E_h(pose_h_t1_in)
-                z_r  = E_X(E_r(q_r))
+                if args.freeze_shared:
+                    # E_h/E_X/D_X frozen → only E_r/D_r train. Run fully-frozen
+                    # subgraphs under no_grad: no activations stored, no backward
+                    # through them. Grad kept only on paths reaching E_r/D_r.
+                    with torch.no_grad():
+                        z_t    = E_h(pose_h_in)
+                        z_t1   = E_h(pose_h_t1_in)
+                        dx_t   = D_X(z_t)
+                        dx_t1  = D_X(z_t1)
+                        z_h_rt = E_X(dx_t)
+                        L_ltc  = (z_t - z_h_rt).norm(dim=-1).mean()  # all-frozen → grad=0
+                    z_r            = E_X(E_r(q_r))
+                    q_r_hat        = D_r(D_X(z_r))   # L_rec (D_r trainable)
+                    q_r_from_h_t   = D_r(dx_t)       # L_temp from human t
+                    q_r_from_h_t1  = D_r(dx_t1)      # L_temp from human t+1
+                    L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
+                else:
+                    z_t  = E_h(pose_h_in)
+                    z_t1 = E_h(pose_h_t1_in)
+                    z_r  = E_X(E_r(q_r))
 
-                q_r_hat        = D_r(D_X(z_r))    # reconstruction (robot→latent→robot) for L_rec
-                z_h_rt         = E_X(D_X(z_t))
-                q_r_from_h_t   = D_r(D_X(z_t))    # retargeted from human t  (for L_temp)
-                q_r_from_h_t1  = D_r(D_X(z_t1))   # retargeted from human t+1 (for L_temp)
+                    q_r_hat        = D_r(D_X(z_r))    # reconstruction (robot→latent→robot) for L_rec
+                    z_h_rt         = E_X(D_X(z_t))
+                    q_r_from_h_t   = D_r(D_X(z_t))    # retargeted from human t  (for L_temp)
+                    q_r_from_h_t1  = D_r(D_X(z_t1))   # retargeted from human t+1 (for L_temp)
 
-                L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
-                L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
+                    L_rec = (q_r - q_r_hat).norm(dim=-1).mean()
+                    L_ltc = (z_t - z_h_rt).norm(dim=-1).mean()
             except torch.cuda.OutOfMemoryError:
                 if DEVICE == "cuda":
                     print(f"[mem] OOM at step {step} during forward of robot '{cfg['name']}'", flush=True)
