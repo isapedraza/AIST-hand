@@ -555,16 +555,19 @@ def main() -> None:
     use_compile = bool(args.compile) and DEVICE == "cuda" and hasattr(torch, "compile")
     if use_compile:
         try:
-            # freeze_shared: frozen modules must not use reduce-overhead (CUDAGraphs
-            # overwrites their output buffers between steps). Use default mode instead.
-            shared_mode = "default" if args.freeze_shared else "reduce-overhead"
-            E_h = torch.compile(E_h, mode=shared_mode)
-            E_X = torch.compile(E_X, mode=shared_mode)
-            D_X = torch.compile(D_X, mode=shared_mode)
+            # All modules use reduce-overhead (CUDAGraphs) for speed. Under
+            # freeze_shared the frozen modules' outputs are .clone()d at the call
+            # site (see forward block) to break CUDAGraph buffer aliasing — the
+            # overwrite-between-steps bug that previously forced mode="default"
+            # (which silently dropped CUDAGraphs and tanked per-step speed).
+            E_h = torch.compile(E_h, mode="reduce-overhead")
+            E_X = torch.compile(E_X, mode="reduce-overhead")
+            D_X = torch.compile(D_X, mode="reduce-overhead")
             for cfg in robot_cfgs:
                 cfg["E_r"] = torch.compile(cfg["E_r"], mode="reduce-overhead")
                 cfg["D_r"] = torch.compile(cfg["D_r"], mode="reduce-overhead")
-            print(f"torch.compile: enabled (shared={shared_mode}, robot=reduce-overhead)")
+            print(f"torch.compile: enabled (mode=reduce-overhead all modules; "
+                  f"freeze_shared={args.freeze_shared} -> frozen outputs cloned)")
         except Exception as e:
             print(f"torch.compile failed ({e}); falling back to eager.")
             use_compile = False
@@ -672,14 +675,18 @@ def main() -> None:
                     # E_h/E_X/D_X frozen → only E_r/D_r train. Run fully-frozen
                     # subgraphs under no_grad: no activations stored, no backward
                     # through them. Grad kept only on paths reaching E_r/D_r.
+                    # .clone() each frozen-module output: under reduce-overhead the
+                    # CUDAGraph reuses static output buffers across steps/graphs, so a
+                    # frozen output consumed by another compiled graph (or reused in the
+                    # loss) gets overwritten. Cloning copies it out of the graph pool.
                     with torch.no_grad():
-                        z_t    = E_h(pose_h_in)
-                        z_t1   = E_h(pose_h_t1_in)
-                        dx_t   = D_X(z_t)
-                        dx_t1  = D_X(z_t1)
-                        z_h_rt = E_X(dx_t)
+                        z_t    = E_h(pose_h_in).clone()
+                        z_t1   = E_h(pose_h_t1_in).clone()
+                        dx_t   = D_X(z_t).clone()
+                        dx_t1  = D_X(z_t1).clone()
+                        z_h_rt = E_X(dx_t).clone()
                         L_ltc  = (z_t - z_h_rt).norm(dim=-1).mean()  # all-frozen → grad=0
-                    z_r            = E_X(E_r(q_r))
+                    z_r            = E_X(E_r(q_r)).clone()  # E_X frozen → break aliasing
                     q_r_hat        = D_r(D_X(z_r))   # L_rec (D_r trainable)
                     q_r_from_h_t   = D_r(dx_t)       # L_temp from human t
                     q_r_from_h_t1  = D_r(dx_t1)      # L_temp from human t+1
