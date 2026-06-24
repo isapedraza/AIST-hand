@@ -35,7 +35,16 @@ from cross_emb.loaders.human_loader import HumanLoader, StaticHumanAnchorLoader
 from cross_emb.loaders.human_to_udhm import human_to_udhm
 from cross_emb.loaders.robot_loader import RobotLoader
 from cross_emb.loaders.robot_primitives import build_primitives, robot_to_udhm
-from cross_emb.loaders.udhm_stage3 import udhm_run_stage3
+from cross_emb.loaders.udhm_stage3 import udhm_run_stage3, _SLOT_IDX
+
+# Slots that stage-3 cannot infer correctly for a given robot (structural limitation,
+# not a bug). These are zeroed in udhm22_r after stage-3 so they don't pollute S_k
+# with a constant bias. Keyed by the "robot" field in hand-config YAML.
+_STAGE3_DEAD_SLOTS: dict[str, list[int]] = {
+    # Allegro thumb base joint does not move in the Dong palm-frame Y direction ->
+    # arccos(R[1,1]) is constant for all poses -> dead signal in S_k.
+    "allegro_hand_right": [_SLOT_IDX["thumb_cmc_spread"]],
+}
 
 
 def filter_to_subspace(
@@ -166,6 +175,9 @@ class CrossEmbodimentSampler:
         self._primitives_table: dict | None = None
         if robot_udhm_from_qpos:
             self._primitives_table = build_primitives(self.robot_rnd, hand_config_path)
+        import yaml
+        _cfg = yaml.safe_load(Path(hand_config_path).read_text())
+        self._stage3_dead_slots: list[int] = _STAGE3_DEAD_SLOTS.get(_cfg.get("robot", ""), [])
 
     def _batch_counts(self, B: int) -> tuple[int, int]:
         if self.extra_human_loader is None:
@@ -300,5 +312,8 @@ class CrossEmbodimentSampler:
             if self.robot_udhm_from_qpos:
                 out["udhm22_r"] = robot_to_udhm(q_r, self._primitives_table)
             else:
-                out["udhm22_r"] = udhm_run_stage3(pose_r, labels_r)
+                udhm_r = udhm_run_stage3(pose_r, labels_r)
+                if self._stage3_dead_slots:
+                    udhm_r[:, self._stage3_dead_slots] = 0.0
+                out["udhm22_r"] = udhm_r
         return out
