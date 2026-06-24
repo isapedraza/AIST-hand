@@ -50,15 +50,13 @@ def open_target() -> np.ndarray:
     return t  # flexion/abduction at 0 = extended flat open hand
 
 
-def close_target() -> np.ndarray:
-    t = np.zeros(16, dtype=np.float64)
-    for i in FLEX_IDX:
-        t[i] = 0.85 * HIGH16[i]          # fingers curled
-    t[THUMB_CMC] = 0.85 * HIGH16[THUMB_CMC]  # thumb opposed
-    for i in THUMB_FLEX:
-        t[i] = 0.7 * HIGH16[i]           # thumb chain curled
-    # abduction stays ~0 (fingers together)
-    return t
+# Three hand-tuned fist targets (joint tuner, 2026-06-23). Fingers fully curled,
+# abduction at 0 (together), thumb varied across targets to enrich PCA coverage.
+CLOSE_TARGETS = np.array([
+    [0.0000, 1.5100, 1.6090, 1.5180, 0.0000, 1.5100, 1.6090, 1.5180, 0.0000, 1.5100, 1.6090, 1.5180, 1.1960, 0.7450, 0.8500, 0.9500],
+    [0.0000, 1.5100, 1.6090, 1.5180, 0.0000, 1.5100, 1.6090, 1.5180, 0.0000, 1.5100, 1.6090, 1.5180, 1.3960, 0.7450, 0.6500, 1.1000],
+    [0.0000, 1.5100, 1.6090, 1.5180, 0.0000, 1.5100, 1.6090, 1.5180, 0.0000, 1.5100, 1.6090, 1.5180, 1.3960, 0.9450, 0.7000, 1.1000],
+], dtype=np.float64)
 
 
 def sample_around(target: np.ndarray, n: int, jitter: float, rng: np.random.Generator) -> np.ndarray:
@@ -144,7 +142,31 @@ def main() -> None:
     # free-space fist deeply self-penetrates, so it is off by default.
     generate("open", open_target(), args.rows, args.jitter, args.seed, args.out_open, args.contact_tol)
     if args.with_close:
-        generate("close", close_target(), args.rows, args.jitter, args.seed + 1, args.out_close, args.contact_tol)
+        # Sample rows//len(CLOSE_TARGETS) poses around each target, concatenate.
+        per_target = max(1, args.rows // len(CLOSE_TARGETS))
+        all_close: list[np.ndarray] = []
+        for idx, tgt in enumerate(CLOSE_TARGETS):
+            tmp = args.out_close.parent / f"_tmp_close_{idx}.npz"
+            generate(f"close_{idx}", tgt, per_target, args.jitter,
+                     args.seed + 1 + idx, tmp, args.contact_tol)
+            all_close.append(np.load(tmp)["qpos16"])
+            tmp.unlink()
+        qpos_all = np.concatenate(all_close, axis=0)
+        args.out_close.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            args.out_close,
+            synthetic_pose_name="synthetic_close_allegro",
+            source="parametric_3targets_plus_jitter_mjcf_collision_filtered",
+            mjcf=str(MJCF_PATH),
+            seed=args.seed,
+            jitter=args.jitter,
+            target=CLOSE_TARGETS.astype(np.float32),
+            joint_names=np.array(JOINTS16),
+            joint_low=LOW16.astype(np.float32),
+            joint_high=HIGH16.astype(np.float32),
+            qpos16=qpos_all,
+        )
+        print(f"close: total {qpos_all.shape[0]} poses -> {args.out_close}")
 
 
 if __name__ == "__main__":
