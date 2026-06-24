@@ -2,7 +2,8 @@ robot: allegro_hand_right
 
 # Training fields (paths relative to repo_root)
 urdf: robot/hands/allegro_hand/allegro_hand_right.urdf
-eigengrasp: robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz
+# eigengrasp/mjcf used OFFLINE to generate valid_poses; training reads DONG_CACHE.
+# eigengrasp: robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz
 mjcf: third_party/mujoco_menagerie/wonik_allegro/right_hand.xml
 valid_poses: robot/hands/allegro_hand/datasets/processed/valid_robot_poses_allegro_dong.npz
 zero_wrj: false
