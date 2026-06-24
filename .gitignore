@@ -65,3 +65,7 @@ apps/*/experiment/
 apps/*/experiment_hamer/
 apps/*/plots_step4/
 apps/*/.claude/
+
+# nested fork (own repo: dexjoco-shadow)
+dexjoco/
+.venv-dexjoco/
