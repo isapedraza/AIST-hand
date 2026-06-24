@@ -48,9 +48,9 @@ Diagrama de referencia: `docs/assets/training_pipeline.mmd`.
 > pérdidas de reconstrucción, consistencia cíclica latente y consistencia temporal.
 
 ## Procedimiento de entrenamiento
-> El latente compartido se entrena conjuntamente sobre los embodiments disponibles;
-> robots adicionales se incorporan congelando las redes compartidas y entrenando
-> únicamente su embedding E_r/D_r.
+> El latente compartido se entrena conjuntamente desde cero sobre todos los
+> embodiments disponibles; redes compartidas y embeddings por robot se optimizan
+> en paralelo sin congelamiento.
 
 ## Pipeline de inferencia y deploy
 > En inferencia solo se requieren el encoder humano y el decoder del robot objetivo:
@@ -69,7 +69,7 @@ Diagrama de referencia: `docs/assets/training_pipeline.mmd`.
 | Generación poses robot | subgrafo OFFLINE (eigengrasp → MuJoCo → FK/Dong → npz) |
 | Arquitectura latente | E_h (CAM-GNN), E_r, E_X/D_X, D_r, latente 5-subespacios |
 | Métrica + objetivo | L_cont(xin S_k), L_rec, L_ltc, L_temp → Adam |
-| Procedimiento entrenamiento | Adam + freeze-add (resume 18B, freeze shared) |
+| Procedimiento entrenamiento | Adam, entrenamiento conjunto desde cero (freeze_shared=False) |
 | Inferencia/deploy | E_h + D_X + D_r (subconjunto; flujo no dibujado aún) |
 
 **Marco metodológico** y **Validación preliminar** no salen del diagrama
