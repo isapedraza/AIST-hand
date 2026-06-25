@@ -84,6 +84,54 @@ scoring encima; la que mueve todo es la muñeca 6D.
 Aún por fijar: nº de intentos por task para el %, y robots (Allegro nativo gratis /
 Shadow / ambos para el claim cross-embodiment).
 
+## Hallazgos bimanual + Shadow left (sesión 16:14, para continuar en casa)
+
+### Shadow left en MuJoCo: LISTA, sin fabricar nada
+- `third_party/mujoco_menagerie/shadow_hand/left_hand.xml` compila:
+  nq=24, nu=20, nbody=26 — estructura idéntica a la right. Sim-side el lado izq no
+  cuesta: mismo attach apuntando a `left_hand.xml`. (El fork solo vendorizó
+  `right_hand.xml`; el left está en third_party menagerie completo.)
+- URDFs left también existen: `robot/hands/shadow_hand/shadow_hand_left.urdf`
+  (+ `_left_glb.urdf`, + `bimanual.urdf`).
+
+### Inferencia hoy: single-hand, single-robot, sin noción left/right
+Revisado `models/latent-retargeting/src/cross_emb/inference/retarget.py`:
+- `Retargeter(ckpt, robot_name)` = una instancia decodifica UN robot. Sin modo
+  paralelo. Checkpoint puede ser multi-robot (`shadow/allegro/leap/barrett`) pero
+  cada instancia saca uno.
+- `_OUTPUT_SPECS` NO tiene "shadow_left". El modelo solo conoce `"shadow"` = mano
+  DERECHA (adapter `shadow_udhm_adapter.yaml` → right URDF). No hay izquierda en
+  ningún lado del modelo.
+- Usuario confirma: hoy solo mueve UNA mano a la vez; nunca usó detección
+  multimano ni hammer simultáneo.
+
+### Bimanual NO requiere reentrenar (clave)
+Izquierda vs derecha = simetría de espejo (transformación geométrica determinista),
+no algo que el modelo deba aprender. El truco reusa el modelo tal cual:
+```
+mano izq humana -> ESPEJO (geom) -> parece derecha
+                -> modelo right (mismo, sin tocar) -> qpos right
+                -> VOLTEAR signos abducción (geom) -> robot left_hand.xml
+```
+Espejo + flip de signos = matemática fija, no entrenamiento. El modelo siempre ve
+"derecha"; se envuelve su entrada/salida con reflexiones. Riesgo único = atinar QUÉ
+signos voltear (abducción por dedo + pulgar) -> se calibra en el viewer, minutos.
+
+### Bimanual: 3 piezas lado MODELO (usuario) + 1 lado SIM (nuestro)
+| Pieza | Lado | Estado |
+|---|---|---|
+| Detección 2 manos (WiLoR L+R simultáneo) | modelo | nunca usada |
+| 2 instancias Retargeter en paralelo | modelo | no armado (arquitectura lo permite) |
+| Convención mano izq (espejo input + flip abd output) | modelo | no existe; plomería, no reentrenar |
+| `build_spec` a 2 sites (2 Shadows, lh-/rh-) | sim | no hecho; left_hand.xml ya listo |
+
+El lado sim (attach 2 manos) puede dejarse listo de antemano; no espera al modelo.
+
+## Próximo paso al retomar
+- Lado modelo (casa): explorar inferencia para 2-manos + espejo izq (sin reentrenar).
+- Lado sim: extender `build_spec` a 2 Shadows en arena hanoi.
+- En paralelo sigue pendiente lo GRANDE: 6D source -> mocap (mueve todo en vivo).
+
 ## Commits del fork (branch shadow-support, YahelRamirezP/dexjoco-shadow)
 
 - `390e3e6` task registry (bucket, water_plant, pinch_tongs)
