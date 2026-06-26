@@ -35,3 +35,25 @@ class UdpQposSink:
             self._sock.close()
         except Exception:
             pass
+
+
+class UdpPoseSink:
+    """Forward a wrist pose (3x4 [R|t]) to host:port as 12 float64 bytes, the
+    sim_teleop VIVE wire format the fork's WristReceiver expects on UDP 5012."""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 5012):
+        self._addr = (host, port)
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def update(self, pose: np.ndarray) -> None:
+        p = np.asarray(pose, dtype=np.float64).reshape(3, 4)
+        self._sock.sendto(p.tobytes(), self._addr)
+
+    def is_running(self) -> bool:
+        return True
+
+    def release(self) -> None:
+        try:
+            self._sock.close()
+        except Exception:
+            pass

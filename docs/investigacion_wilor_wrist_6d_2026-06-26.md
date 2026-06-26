@@ -164,6 +164,25 @@ Ambos lados hechos y validados aislados (loop real cámara→Colab pendiente de 
 ### Orden de trabajo corregido
 0. **Experimento cimiento:** mocap móvil+rotando → Panda sigue (driver, local). ✅ HECHO
 1. Etapa 1: dedos streaming vía recv 5014 + emisor qpos. ✅ HECHO (falta validar con HW)
+
+### Etapa 2 — ORIENTACIÓN MUÑECA (2026-06-26)
+Ambos lados hechos y validados aislados (R_align real pendiente de viewer+HW):
+- **Receptor (fork `teleop_driver.py`, commit `1fc380c`):** `WristReceiver` (hilo
+  UDP 5012, 12 float64 = 3x4 [R|t]) + `wrist_target()` (esquema VIVE-delta:
+  `delta=inv(start)@now`, R_align conjuga la rotación, `target=ee_start@delta`) +
+  `_pose4x4`/`_mat2quat` helpers. Flag `--recv-wrist` (combina con `--recv-fingers`).
+  `_R_ALIGN=eye(3)` por defecto (hook; valor real = calibración viewer).
+- **Emisor sintético (fork `wrist_emitter_test.py`):** rota muñeca → 5012.
+  Integración: flange sigue rotación (cmd 9→37°, flange 4→33°, lag esperado). PASS.
+- **Emisor real (AIST):** `WiLoRSource.wrist_pose()` cachea `r0w` (de
+  `res["raw"]["block_1"]["wf"]`) + `points_w[0]` como 3x4, desacoplado de los quats
+  de dedos. `sinks/udp_sink.py::UdpPoseSink` (12 float64). `live_retarget.py
+  --emit-wrist --wrist-port` (requiere `--source wilor`). Wire validado (96 bytes,
+  3x4, idéntico a WristReceiver).
+- **Pendiente real (HW):** calibrar `_R_ALIGN` en viewer (única incógnita empírica);
+  traslación sigue root-relative (~0) hasta etapa 3 (pred_cam_t_full).
+- Comando: `live_retarget.py --ckpt ... --source wilor --url ... --robot shadow
+  --emit-udp --emit-wrist` + driver `--view --recv-fingers --recv-wrist`.
 2. Etapa B: orientación r0w → emisor 3x4 → recv 5012 en driver + calibrar R_align.
 3. Etapa C: traslación → primero verificar WiLoR-mini coords + pred_cam_t; si root-
    relative, reabrir server Colab para surfacear pred_cam_t.

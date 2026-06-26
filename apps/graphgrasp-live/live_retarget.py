@@ -46,10 +46,17 @@ def main():
                              "Requires a single robot (use --robot shadow).")
     parser.add_argument("--emit-host", default="127.0.0.1", help="UDP target host for --emit-udp")
     parser.add_argument("--emit-port", type=int, default=5014, help="UDP target port for --emit-udp")
+    parser.add_argument("--emit-wrist", action="store_true",
+                        help="Also stream the WiLoR wrist pose (3x4) over UDP to the sim "
+                             "teleop wrist receiver (port 5012). Requires --source wilor.")
+    parser.add_argument("--wrist-port", type=int, default=5012, help="UDP target port for --emit-wrist")
     args = parser.parse_args()
 
     if args.source in ("hamer", "wilor") and not args.url:
         parser.error(f"--source {args.source} requires --url")
+
+    if args.emit_wrist and args.source != "wilor":
+        parser.error("--emit-wrist requires --source wilor (wrist pose comes from WiLoRSource)")
 
     ckpt_path = Path(args.ckpt)
     if not ckpt_path.is_absolute():
@@ -93,6 +100,13 @@ def main():
         emit = UdpQposSink(host=args.emit_host, port=args.emit_port)
         print(f"Emitting qpos -> udp {args.emit_host}:{args.emit_port}")
 
+    # Optional wrist-pose emitter (stage 2): independent channel to UDP 5012.
+    wrist_emit = None
+    if args.emit_wrist:
+        from sinks import UdpPoseSink
+        wrist_emit = UdpPoseSink(host=args.emit_host, port=args.wrist_port)
+        print(f"Emitting wrist 3x4 -> udp {args.emit_host}:{args.wrist_port}")
+
     if len(rets) == 1:
         sink = MuJocoSink(robot=rets[0].robot_name)
         def render(pose):
@@ -104,12 +118,14 @@ def main():
         sink = MergedMuJocoSink([r.robot_name for r in rets])
         def render(pose):           sink.update({r.robot_name: r(pose) for r in rets})
 
+    wrist_src = None
     if args.source == "hamer":
         from sources import HaMeRSource
         source = HaMeRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
     elif args.source == "wilor":
         from sources import WiLoRSource
         source = WiLoRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
+        wrist_src = source   # keep handle for wrist_pose() before any wrapping
     else:
         from sources import MediaPipeSource
         source = MediaPipeSource(camera=args.camera, calib_seconds=args.calib)
@@ -127,11 +143,17 @@ def main():
             continue
         pose = quat_wxyz_to_rot6d(quats) if rot_repr == "r6" else quats
         render(pose)
+        if wrist_emit is not None:
+            wp = wrist_src.wrist_pose()
+            if wp is not None:
+                wrist_emit.update(wp)
 
     source.release()
     sink.release()
     if emit is not None:
         emit.release()
+    if wrist_emit is not None:
+        wrist_emit.release()
 
 
 if __name__ == "__main__":

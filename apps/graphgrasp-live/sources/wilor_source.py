@@ -82,6 +82,9 @@ class WiLoRSource:
         self._calib_done = calib_seconds <= 0.0
         self._calib_t0: float | None = None
         self._running = True
+        # Stage-2 wrist channel (decoupled from the finger quats). Cached each
+        # frame from Dong's wrist frame; None until the first valid inference.
+        self._last_wrist: np.ndarray | None = None  # 3x4 [R|t], t in cam frame
 
     def is_running(self) -> bool:
         return self._running and self._backend.is_ready()
@@ -146,11 +149,26 @@ class WiLoRSource:
         except ValueError:
             return None
 
+        # Cache the wrist 6D (the frame Dong builds then discards to localize).
+        # r0w = global wrist rotation; d0w = wrist point (root-relative in cam
+        # frame -> ~0 today; stage 3 swaps it for WiLoR pred_cam_t_full).
+        wf = res["raw"]["block_1"]["wf"]
+        pose = np.zeros((3, 4), dtype=np.float64)
+        pose[:3, :3] = wf["r0w"]
+        pose[:3, 3] = points_w[0]
+        self._last_wrist = pose
+
         quats = np.array(
             [res["quaternions"][j] for j in res["joint_order"]],
             dtype=np.float32,
         )  # [20, 4]
         return torch.from_numpy(quats).unsqueeze(0)  # [1, 20, 4]
+
+    def wrist_pose(self) -> np.ndarray | None:
+        """Latest wrist pose as 3x4 [R|t] (global rotation + cam-frame point),
+        or None before the first valid inference. Stage-2 channel: feeds the
+        sim teleop wrist receiver (UDP 5012); independent of the finger quats."""
+        return None if self._last_wrist is None else self._last_wrist.copy()
 
     def release(self) -> None:
         self._running = False
