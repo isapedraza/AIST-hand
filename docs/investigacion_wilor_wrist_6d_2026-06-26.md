@@ -144,9 +144,26 @@ muro): encoge con movimiento lento (velocidad humana real) + gains altos. El
 supuesto del doc Eval2 ("mocap→brazo ya funciona") queda PROBADO cierto. Residual
 ~16mm = steady-state OSC. Caveat para etapas 2-3: subir gains o suavizar fuente.
 
+### Etapa 1 — DEDOS EN STREAMING (2026-06-26)
+Ambos lados hechos y validados aislados (loop real cámara→Colab pendiente de HW):
+- **Receptor (fork `teleop_driver.py`):** `FingerReceiver` (hilo UDP 5014, float64)
+  + `build_qpos24_scatter` + `_SHADOW_24_ORDER` (Menagerie). Flag `--recv-fingers`
+  (default = target hardcodeado intacto). Esparce [24]→qpos modelo por nombre →
+  `qpos_to_ctrl` existente. Validado: 24 juntas resuelven, paquete UDP recibido,
+  scatter→ctrl correcto.
+- **Emisor sintético (fork `finger_emitter_test.py`):** sweep open/close → 5014.
+  Integración: FFJ3 oscila 0→0.709 en sim. Loop emisor→UDP→receptor→ctrl→sim OK.
+- **Emisor real (AIST `sinks/udp_sink.py` + `live_retarget.py --emit-udp`):**
+  `UdpQposSink` (mismo contrato update/is_running/release), emite qpos del robot
+  single. Wire validado: 24 float64, idéntico a FingerReceiver. Requiere
+  `--robot shadow`. Comando: `live_retarget.py --ckpt ... --source wilor --url ...
+  --robot shadow --emit-udp`.
+- Resultado: cámara real → dedos Shadow se mueven en sim (muñeca fija). Falta solo
+  HW (cámara+Colab+GPU) para correr el loop entero; el contrato está cerrado.
+
 ### Orden de trabajo corregido
 0. **Experimento cimiento:** mocap móvil+rotando → Panda sigue (driver, local). ✅ HECHO
-1. Etapa A: dedos vivos vía recv 5014 + construir emisor de qpos retargeter.
+1. Etapa 1: dedos streaming vía recv 5014 + emisor qpos. ✅ HECHO (falta validar con HW)
 2. Etapa B: orientación r0w → emisor 3x4 → recv 5012 en driver + calibrar R_align.
 3. Etapa C: traslación → primero verificar WiLoR-mini coords + pred_cam_t; si root-
    relative, reabrir server Colab para surfacear pred_cam_t.

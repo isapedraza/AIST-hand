@@ -40,6 +40,12 @@ def main():
     parser.add_argument("--robot", default=None,
                         help="Single robot to show in its own window (e.g. shadow). "
                              "Omit to show ALL robots in the ckpt merged side by side in one window.")
+    parser.add_argument("--emit-udp", action="store_true",
+                        help="Also stream the single robot's qpos over UDP to a sim "
+                             "teleop receiver (dexjoco-shadow driver, port 5014). "
+                             "Requires a single robot (use --robot shadow).")
+    parser.add_argument("--emit-host", default="127.0.0.1", help="UDP target host for --emit-udp")
+    parser.add_argument("--emit-port", type=int, default=5014, help="UDP target port for --emit-udp")
     args = parser.parse_args()
 
     if args.source in ("hamer", "wilor") and not args.url:
@@ -77,9 +83,23 @@ def main():
         parser.error("no supported robots in checkpoint")
     rot_repr = rets[0].human_rot_repr
 
+    # Optional UDP emitter: stream the single robot's qpos to the sim teleop
+    # receiver (the fork's teleop_driver). Decoupled — off unless --emit-udp.
+    emit = None
+    if args.emit_udp:
+        if len(rets) != 1:
+            parser.error("--emit-udp requires a single robot (use --robot shadow)")
+        from sinks import UdpQposSink
+        emit = UdpQposSink(host=args.emit_host, port=args.emit_port)
+        print(f"Emitting qpos -> udp {args.emit_host}:{args.emit_port}")
+
     if len(rets) == 1:
         sink = MuJocoSink(robot=rets[0].robot_name)
-        def render(pose):           sink.update(rets[0](pose))
+        def render(pose):
+            q = rets[0](pose)
+            sink.update(q)
+            if emit is not None:
+                emit.update(q)
     else:
         sink = MergedMuJocoSink([r.robot_name for r in rets])
         def render(pose):           sink.update({r.robot_name: r(pose) for r in rets})
@@ -110,6 +130,8 @@ def main():
 
     source.release()
     sink.release()
+    if emit is not None:
+        emit.release()
 
 
 if __name__ == "__main__":
