@@ -139,6 +139,16 @@ class WiLoRBackend:
                 return
             sample = {name: pts[i] for i, name in enumerate(JOINTS)}
             sample["is_right"] = int(body.get("is_right", 1))
+            # Wrist 6D extras (optional; absent on old servers). cam_t = global
+            # camera-frame wrist translation, global_orient = MANO native global
+            # rotation (axis-angle). Consumed by WiLoRSource.wrist_pose() for the
+            # sim teleop wrist channel; the finger path ignores them.
+            ct = body.get("cam_t")
+            if ct is not None:
+                sample["cam_t"] = np.array(ct, dtype=np.float32).reshape(-1)[:3]
+            go = body.get("global_orient")
+            if go is not None:
+                sample["global_orient"] = np.array(go, dtype=np.float32).reshape(-1)[:3]
             self._latest_sample = sample
         except Exception as e:
             print(f"[WiLoRBackend] Request error: {e}")

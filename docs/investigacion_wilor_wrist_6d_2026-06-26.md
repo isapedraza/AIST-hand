@@ -185,8 +185,26 @@ Ambos lados hechos y validados aislados (R_align real pendiente de viewer+HW):
   --emit-udp --emit-wrist` + driver `--view --recv-fingers --recv-wrist`.
 2. Etapa B: orientación r0w → emisor 3x4 → recv 5012 en driver + calibrar R_align.
 3. Etapa C: traslación → primero verificar WiLoR-mini coords + pred_cam_t; si root-
-   relative, reabrir server Colab para surfacear pred_cam_t.
+   relative, reabrir server Colab para surfacear pred_cam_t. ✅ HECHO (código)
 4. Etapa D: one-euro + bimanual izq.
+
+### Etapa 3 — TRASLACIÓN MUÑECA (2026-06-26)
+Cadena completa hecha, validada con mocks (loop real pendiente Colab+HW):
+- **Server Colab** (`servers/wilor_colab_server.ipynb` cell-3 + copia root sincronizada):
+  `/infer` ahora devuelve `cam_t` (`pred_cam_t_full`) + `global_orient` además de
+  keypoints + is_right. `.get`-guarded (servers viejos degradan a ceros, no 500).
+- **Backend** (`human/perception/wilor_backend.py`): pasa `cam_t` + `global_orient`
+  al `sample` cuando el body los trae (opcional, retrocompat).
+- **Source** (`wilor_source.py wrist_pose()`): traslación = `sample["cam_t"]`
+  (global cámara) cuando está; si no, `points_w[0]` root-relative (~0 = solo rota).
+- **Emisor/receptor: SIN cambios** — ya mandan el 3x4 completo; ahora `t` tiene
+  valor real. Validado: server→backend→wrist_pose usa cam_t (0.12,-0.05,0.83) vs
+  root-rel ~0.
+- **Caveats HW:** (1) tz = profundidad ruidosa → one-euro etapa 4. (2) Unidades
+  cam_t = pseudo-métricas WiLoR (weak perspective); `_WRIST_POSE_SCALE=1.0` puede
+  necesitar calibración a metros sim. (3) cam_t en frame cámara cruda, r0w en
+  canonicalizado — coincide para mano der (canonicalize=identidad); izq = etapa 4.
+- Con esto: muñeca VIAJA al objeto → las 5 tasks completables en vivo.
 
 ## Refs
 - `human/kinematics/dong_kinematics.py:58-127` — `_compute_wrist_frame`, `_build_t0w`, transforms.

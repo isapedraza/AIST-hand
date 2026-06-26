@@ -150,12 +150,15 @@ class WiLoRSource:
             return None
 
         # Cache the wrist 6D (the frame Dong builds then discards to localize).
-        # r0w = global wrist rotation; d0w = wrist point (root-relative in cam
-        # frame -> ~0 today; stage 3 swaps it for WiLoR pred_cam_t_full).
+        # Rotation = Dong r0w (global wrist orientation from keypoints).
+        # Translation = WiLoR cam_t (global camera-frame wrist position) when the
+        # server provides it (stage 3); else points_w[0], which is root-relative
+        # (~0) so the wrist only rotates in place (stage 2).
         wf = res["raw"]["block_1"]["wf"]
+        cam_t = sample.get("cam_t")
         pose = np.zeros((3, 4), dtype=np.float64)
         pose[:3, :3] = wf["r0w"]
-        pose[:3, 3] = points_w[0]
+        pose[:3, 3] = np.asarray(cam_t, dtype=np.float64) if cam_t is not None else points_w[0]
         self._last_wrist = pose
 
         quats = np.array(
