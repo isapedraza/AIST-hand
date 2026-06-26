@@ -100,9 +100,33 @@ Se auditaron los supuestos antes de codear. Resultados:
 5. **`canonicalize_to_right_hand` = IDENTIDAD para mano derecha** (`:898`,
    reflected=False). => `r0w` mano der limpio, sin rotación oculta. Izq refleja X
    (manejar en bimanual).
-6. **SIN VERIFICAR (no local):** naturaleza de `pred_keypoints_3d` de WiLoR-mini
-   (root-relative vs métrico cámara) + existencia de `pred_cam_t`. Vive en
-   `warmshao/WiLoR-mini`. Bloqueo de traslación. Verificar al llegar a stage C.
+6. **RESUELTO (clonado `third_party/WiLoR-mini`, ignorado):** `wilor_preds` trae
+   mucho más de lo que el server manda. Bloqueo de traslación = FALSO, el dato existe.
+
+### WiLoR-mini: qué hay en `wilor_preds` (verificado en código)
+- **`pred_keypoints_3d` (21,3) = root-relative** ✓ (se proyectan a 2D CON
+  `translation=pred_cam_t_full` aparte, pipeline `:153-154`). Solos no tienen traslación.
+- **`pred_cam_t_full` (3,) = traslación global en frame cámara** (`pipeline:148-150`,
+  `utils.cam_crop_to_full:138`):
+  ```
+  tz = 2*focal/bs   (bs = box_size*cam_bbox[0])  -> PROFUNDIDAD por tamaño aparente
+  tx = 2*(cx-w/2)/bs + cam_bbox[1]   (plano imagen)
+  ty = 2*(cy-h/2)/bs + cam_bbox[2]
+  ```
+  Pseudo-métrica (weak perspective). **tz = derivada del tamaño aparente => eje débil/
+  ruidoso** (la profundidad monocular que se advirtió). tx/ty decentes.
+- **`global_orient` (axis-angle 3,) = rotación global de mano, frame cámara**
+  (`wilor.py:48` rotmat 3x3 -> `:62` `roma.rotmat_to_rotvec`). Fuente NATIVA de
+  orientación, alternativa a `r0w` de Dong.
+
+### Consecuencias firmes
+- Orientación: DOS fuentes — `r0w` (local, sin server) o `global_orient` (nativa,
+  requiere server). Stage B usa `r0w` (gratis). Si se abre server, mandar ambas y comparar.
+- Traslación: `pred_cam_t_full` ya existe. Stage C = añadir 2 campos (`global_orient`,
+  `pred_cam_t_full`) al JSON del server Colab (`servers/wilor_colab_server.ipynb:101`)
+  + backend + source. Barato, NO bloqueado.
+- Reto real único: ruido de tz (profundidad). One-euro fuerte en Z, o escala fija +
+  solo XY si tz inusable. (Calza con "si tiembla, quedarse en stage 2" de Dong.)
 
 ### Orden de trabajo corregido
 0. **Experimento cimiento:** mocap móvil+rotando → Panda sigue (driver, local). ← ANTES de todo
