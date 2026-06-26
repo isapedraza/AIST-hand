@@ -128,8 +128,24 @@ Se auditaron los supuestos antes de codear. Resultados:
 - Reto real único: ruido de tz (profundidad). One-euro fuerte en Z, o escala fija +
   solo XY si tz inusable. (Calza con "si tiembla, quedarse en stage 2" de Dong.)
 
+### Etapa 0 — CIMIENTO VALIDADO (2026-06-26)
+Implementado `wrist_sweep_pose()` + flag `--sweep-wrist` en `teleop_driver.py`
+(desacoplado; path default sigue HOLD fijo). Sweep = lissajous ±8cm + tilt ±0.5rad.
+Medido error de tracking (sensor flange vs mocap comandado, salta transitorio):
+
+| Velocidad | gain | POS err | ANG err |
+|---|---|---|---|
+| 1.0x | 400 | 60.4mm | 12.7° |
+| 0.25x | 400 | 21.4mm | 6.2° |
+| 0.25x | 800 | 15.8mm | 6.2° |
+
+**Resultado: mocap→brazo SIGUE posición Y orientación.** El error es lag/gain (no
+muro): encoge con movimiento lento (velocidad humana real) + gains altos. El
+supuesto del doc Eval2 ("mocap→brazo ya funciona") queda PROBADO cierto. Residual
+~16mm = steady-state OSC. Caveat para etapas 2-3: subir gains o suavizar fuente.
+
 ### Orden de trabajo corregido
-0. **Experimento cimiento:** mocap móvil+rotando → Panda sigue (driver, local). ← ANTES de todo
+0. **Experimento cimiento:** mocap móvil+rotando → Panda sigue (driver, local). ✅ HECHO
 1. Etapa A: dedos vivos vía recv 5014 + construir emisor de qpos retargeter.
 2. Etapa B: orientación r0w → emisor 3x4 → recv 5012 en driver + calibrar R_align.
 3. Etapa C: traslación → primero verificar WiLoR-mini coords + pred_cam_t; si root-
