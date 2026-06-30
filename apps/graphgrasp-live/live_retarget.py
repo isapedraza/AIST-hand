@@ -26,10 +26,17 @@ from sinks import MuJocoSink, MergedMuJocoSink
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _camera_arg(v: str):
+    """A bare integer is a local webcam index; anything else is a stream URL."""
+    return int(v) if v.isdigit() else v
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt",   required=True, help="Path to Stage 1 checkpoint (.pt).")
-    parser.add_argument("--camera", type=int,   default=0)
+    parser.add_argument("--camera", type=_camera_arg, default=0,
+                        help="Webcam index (int) OR a stream URL (phone-as-webcam: "
+                             "an MJPEG app over USB tethering, http://PHONE_IP:8080/video)")
     parser.add_argument("--calib",  type=float, default=3.0, help="Calibration seconds")
     parser.add_argument("--source", choices=["mediapipe", "hamer", "wilor"], default="mediapipe",
                         help="Perception backend feeding Dong kinematics")

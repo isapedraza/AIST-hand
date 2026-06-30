@@ -75,7 +75,15 @@ class WiLoRBackend:
             min_tracking_confidence=min_tracking_confidence,
         )
 
-        backends = [cv2.CAP_V4L2, cv2.CAP_ANY] if os.name == "posix" else [cv2.CAP_ANY]
+        # A str camera_index is a network stream URL (phone-as-webcam: an MJPEG
+        # app like "IP Webcam" over USB tethering -> http://PHONE_IP:8080/video).
+        # Force FFMPEG (V4L2 chokes on URLs) and a 1-frame buffer so cv2 never
+        # queues stale frames -> no creeping lag on top of WiLoR's own latency.
+        is_url = isinstance(camera_index, str) and "://" in camera_index
+        if is_url:
+            backends = [cv2.CAP_FFMPEG]
+        else:
+            backends = [cv2.CAP_V4L2, cv2.CAP_ANY] if os.name == "posix" else [cv2.CAP_ANY]
         self._cap = None
         for b in backends:
             try:
@@ -83,6 +91,8 @@ class WiLoRBackend:
             except TypeError:
                 cap = cv2.VideoCapture(camera_index)
             if cap and cap.isOpened():
+                if is_url:
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 self._cap = cap
                 break
             if cap:
