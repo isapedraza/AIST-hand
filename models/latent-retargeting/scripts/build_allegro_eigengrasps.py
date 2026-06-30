@@ -277,11 +277,17 @@ def main() -> None:
         terms = ", ".join(f"{JOINTS16[j]}:{components[pc][j]:+.3f}" for j in order)
         print(f"  PC{pc+1:02d}: {terms}")
 
+    # Tag provenance by the source actually used, so a BODex-built npz is not
+    # mislabeled as MultiDex (the two are compared side by side, never overwritten).
+    use_bodex = args.bodex is not None
+    src_tag = "bodex_allegro" if use_bodex else "multidex_allegro"
+    src_path = str(args.bodex) if use_bodex else str(args.multidex)
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         args.out,
-        source="multidex_allegro",
-        multidex_path=str(args.multidex),
+        source=src_tag,
+        multidex_path=src_path,
         n_multidex=joints.shape[0],
         n_synthetic=synthetic.shape[0],
         synthetic_qpos_npz=np.array([str(p) for p in args.synthetic_qpos_npz]),
