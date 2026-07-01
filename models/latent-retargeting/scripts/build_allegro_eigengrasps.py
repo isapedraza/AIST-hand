@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Build Allegro eigengrasps (PCA) from the MultiDex grasp dataset.
+Build Allegro eigengrasps (PCA) from the MultiDex or BODex grasp dataset.
 
 Analog of analyze_dexonomy_eigengrasps.py, but for the Allegro hand sourced from
-MultiDex (GenDexGrasp). MultiDex stores each grasp as a tuple
+MultiDex (GenDexGrasp) or BODex. MultiDex stores each grasp as a tuple
 (qpos[25], object_name, robot_name) where qpos = [trans(3), rot6d(6), joints(16)].
 We take joints = qpos[9:25] in URDF declaration order (joint_0.0 .. joint_15.0),
 which is verified positionally identical to the dex-urdf URDF, the pytorch_kinematics
@@ -11,18 +11,25 @@ chain order, and the wonik_allegro MJCF qpos order. NO remapping anywhere.
 
 Allegro has NO wrist joints (unlike Shadow's WRJ1/WRJ2): q16 directly, no padding.
 
-Pipeline: load MultiDex joints -> (optional) append synthetic open/close ->
+Pipeline: load joints -> (optional) append synthetic open/close ->
 normalize to [0,1] via URDF limits -> PCA -> coeff percentiles -> save NPZ with the
 same schema generate_valid_robot_poses.py expects.
 
+BODex balancing (default): equal rows per obj_type per phase -- analog of Shadow's
+class-level balance in analyze_dexonomy_eigengrasps.py. Without this, BODex is
+dominated by jar/bottle/mug/can (~82% of rows), biasing the eigenspace toward
+cylindrical power grasps and underrepresenting pinch and precision poses.
+Use --no-balance-objects to fall back to phase-only balancing.
+
 Safety gates (the joint-order failure mode is silent garbage):
-  GATE A (pre-PCA): per-column min/max of MultiDex joints must match URDF limits.
+  GATE A (pre-PCA): per-column min/max of joints must match URDF limits.
   GATE B (post-PCA): round-trip reconstruction of real grasps must be near-exact.
 
 Usage:
     python build_allegro_eigengrasps.py \
-        --multidex /tmp/MultiDex/allegro/allegro.pt \
-        --out robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz \
+        --bodex /path/to/BODex_allegro.tar.gz \
+        --out robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro_bodex.npz \
+        [--max-rows-per-obj-type 500] \
         [--synthetic-qpos-npz open.npz close.npz]
 """
 
@@ -30,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import re
 import tarfile
 from pathlib import Path
 
@@ -73,8 +81,104 @@ def load_multidex_joints(path: Path) -> np.ndarray:
 DEFAULT_PHASES = ("pregrasp_qpos", "grasp_qpos", "squeeze_qpos")
 BODEX_JOINTS_SLICE = slice(7, 23)
 
+_OBJ_HASH_RE = re.compile(r'_[a-f0-9]{10,}$')
+
+
+def _obj_type(obj_name: str) -> str:
+    return _OBJ_HASH_RE.sub('', obj_name)
+
+
+def load_bodex_phases_by_object(
+    tar_path: Path, phases: tuple[str, ...] = DEFAULT_PHASES
+) -> dict[str, dict[str, np.ndarray]]:
+    """Load BODex phases grouped by object type. Returns {obj_type: {phase: arr[N,16]}}.
+
+    Analog of analyze_dexonomy_eigengrasps.py's load_qpos which groups by class.
+    Strips the hash suffix from object names so all scales of the same object
+    category are merged before balancing.
+    """
+    rows: dict[str, dict[str, list[np.ndarray]]] = {}
+    with tarfile.open(tar_path, "r:gz") as tf:
+        members = [m for m in tf.getmembers() if m.name.endswith(".npy")]
+        print(f"[bodex] {len(members)} npy files  phases={phases}")
+        for i, member in enumerate(members):
+            parts = member.name.split("/succ_collect/")
+            if len(parts) < 2:
+                continue
+            otype = _obj_type(parts[1].split("/")[0])
+            f = tf.extractfile(member)
+            if f is None:
+                continue
+            d = np.load(io.BytesIO(f.read()), allow_pickle=True).item()
+            if otype not in rows:
+                rows[otype] = {p: [] for p in phases}
+            for p in phases:
+                if p in d:
+                    rows[otype][p].append(d[p][:, BODEX_JOINTS_SLICE].astype(np.float64))
+            if (i + 1) % 500 == 0 or i == len(members) - 1:
+                total = sum(
+                    arr.shape[0]
+                    for od in rows.values()
+                    for chunks in od.values()
+                    for arr in chunks
+                )
+                print(f"  [{i+1}/{len(members)}] obj_types={len(rows)} total_rows={total:,}")
+    out: dict[str, dict[str, np.ndarray]] = {}
+    for otype, phase_chunks in rows.items():
+        out[otype] = {p: np.concatenate(chunks, axis=0) for p, chunks in phase_chunks.items() if chunks}
+    print(f"[bodex] obj_types={len(out)}")
+    return out
+
+
+def build_balanced_by_object(
+    data_by_obj: dict[str, dict[str, np.ndarray]],
+    phases: tuple[str, ...],
+    cap: int | None,
+    seed: int,
+) -> np.ndarray:
+    """Equal rows per obj_type per phase -- analog of Shadow's build_balanced_qpos.
+
+    cap=None -> auto: min rows available across all (obj_type, phase) pairs.
+    Prints a distribution summary so the user can judge coverage.
+    """
+    rng = np.random.default_rng(seed)
+    if cap is None:
+        min_rows = min(
+            data_by_obj[ot][p].shape[0]
+            for ot, pd in data_by_obj.items()
+            for p in phases
+            if p in pd
+        )
+        cap = int(min_rows)
+        print(f"[balance] auto cap = {cap} rows/obj_type/phase (min available)")
+        if cap < 50:
+            print(f"  WARNING: auto cap={cap} is very small -- consider --max-rows-per-obj-type N")
+
+    rows_per_type = {ot: 0 for ot in data_by_obj}
+    parts = []
+    for otype in sorted(data_by_obj):
+        pd = data_by_obj[otype]
+        for p in phases:
+            if p not in pd:
+                continue
+            arr = pd[p]
+            n = min(cap, arr.shape[0])
+            idx = rng.choice(arr.shape[0], n, replace=False)
+            parts.append(arr[idx])
+            rows_per_type[otype] += n
+
+    result = np.concatenate(parts, axis=0)
+    counts = list(rows_per_type.values())
+    print(
+        f"[balance] cap={cap} obj_types={len(data_by_obj)} phases={len(phases)}"
+        f"  total={result.shape[0]:,}"
+        f"  rows/type: min={min(counts)} max={max(counts)} mean={int(sum(counts)/len(counts))}"
+    )
+    return result
+
 
 def load_bodex_phases(tar_path: Path, phases: tuple[str, ...] = DEFAULT_PHASES) -> dict[str, np.ndarray]:
+    """Phase-only loader (no object grouping). Used when --no-balance-objects."""
     rows: dict[str, list[np.ndarray]] = {p: [] for p in phases}
     with tarfile.open(tar_path, "r:gz") as tf:
         members = [m for m in tf.getmembers() if m.name.endswith(".npy")]
@@ -96,7 +200,7 @@ def load_bodex_phases(tar_path: Path, phases: tuple[str, ...] = DEFAULT_PHASES) 
 
 
 def subsample_balance(phases_data: dict[str, np.ndarray], cap: int | None, seed: int) -> np.ndarray:
-    """Phase-balance: cap each phase to `cap` rows (random), concat. Mirrors Shadow."""
+    """Phase-balance: cap each phase to `cap` rows (random), concat."""
     rng = np.random.default_rng(seed)
     parts = []
     for p, arr in phases_data.items():
@@ -107,13 +211,13 @@ def subsample_balance(phases_data: dict[str, np.ndarray], cap: int | None, seed:
     return np.concatenate(parts, axis=0)
 
 
-def gate_a_order_check(joints: np.ndarray, tol: float = 0.1) -> None:
+def gate_a_order_check(joints: np.ndarray, tol: float = 0.2) -> None:
     """GATE A: per-column range must match URDF limits, else abort (order is wrong).
 
-    tol=0.1 absorbs small limit discrepancies between the GenDexGrasp Allegro URDF
-    and dex-urdf (e.g. thumb joint_12 differs by ~0.06) while still catching a real
-    order scramble: a misplaced joint mismatches its slot by >1.0 (a flexion range
-    [-0.2,1.7] in an abduction slot [+-0.47], or vice versa), far beyond tol.
+    tol=0.2 absorbs limit discrepancies between BODex/MultiDex URDFs and dex-urdf
+    (observed max overshoot ~0.12 on joint_0 abduction). The real order-scramble
+    signal is span_ok: a misplaced joint mismatches its slot by >1.0 (flexion range
+    ~1.8 in an abduction slot +-0.47), far beyond tol.
     """
     jmin = joints.min(axis=0)
     jmax = joints.max(axis=0)
@@ -222,8 +326,12 @@ def main() -> None:
     ap.add_argument("--multidex", type=Path, default=Path("/tmp/MultiDex/allegro/allegro.pt"))
     ap.add_argument("--bodex", type=Path, default=None,
                     help="BODex_allegro.tar.gz. If set, use BODex 3-phase data instead of MultiDex.")
+    ap.add_argument("--max-rows-per-obj-type", type=int, default=0,
+                    help="Rows per obj_type per phase when balancing by object (0 = auto = min available). BODex only.")
+    ap.add_argument("--no-balance-objects", action="store_true",
+                    help="Skip obj_type balancing; fall back to phase-only cap (--max-rows-per-phase). BODex only.")
     ap.add_argument("--max-rows-per-phase", type=int, default=100000,
-                    help="Downsample each BODex phase to this many rows (0 = no cap). BODex only.")
+                    help="Phase-only cap when --no-balance-objects is set (0 = no cap). BODex only.")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", type=Path,
                     default=Path("robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz"))
@@ -233,10 +341,16 @@ def main() -> None:
 
     if args.bodex is not None:
         print(f"bodex = {args.bodex}")
-        phases_data = load_bodex_phases(args.bodex)
-        cap = args.max_rows_per_phase if args.max_rows_per_phase > 0 else None
-        joints = subsample_balance(phases_data, cap, args.seed)
-        print(f"loaded BODex joints (phase-balanced): {joints.shape}")
+        if not args.no_balance_objects:
+            data_by_obj = load_bodex_phases_by_object(args.bodex)
+            cap = args.max_rows_per_obj_type if args.max_rows_per_obj_type > 0 else None
+            joints = build_balanced_by_object(data_by_obj, DEFAULT_PHASES, cap, args.seed)
+            print(f"loaded BODex joints (obj_type-balanced): {joints.shape}")
+        else:
+            phases_data = load_bodex_phases(args.bodex)
+            cap = args.max_rows_per_phase if args.max_rows_per_phase > 0 else None
+            joints = subsample_balance(phases_data, cap, args.seed)
+            print(f"loaded BODex joints (phase-balanced): {joints.shape}")
     else:
         print(f"multidex = {args.multidex}")
         joints = load_multidex_joints(args.multidex)
@@ -277,11 +391,13 @@ def main() -> None:
         terms = ", ".join(f"{JOINTS16[j]}:{components[pc][j]:+.3f}" for j in order)
         print(f"  PC{pc+1:02d}: {terms}")
 
-    # Tag provenance by the source actually used, so a BODex-built npz is not
-    # mislabeled as MultiDex (the two are compared side by side, never overwritten).
     use_bodex = args.bodex is not None
-    src_tag = "bodex_allegro" if use_bodex else "multidex_allegro"
-    src_path = str(args.bodex) if use_bodex else str(args.multidex)
+    if use_bodex:
+        src_tag = "bodex_allegro_phase_only" if args.no_balance_objects else "bodex_allegro_obj_balanced"
+        src_path = str(args.bodex)
+    else:
+        src_tag = "multidex_allegro"
+        src_path = str(args.multidex)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(

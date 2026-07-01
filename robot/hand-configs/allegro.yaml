@@ -6,9 +6,10 @@ urdf: robot/hands/allegro_hand/allegro_hand_right.urdf
 # eigengrasp: robot/hands/allegro_hand/datasets/processed/eigengrasp_allegro.npz
 mjcf: third_party/mujoco_menagerie/wonik_allegro/right_hand.xml
 # valid_poses options (swap to A/B the synergy source, both DONG_CACHE):
-#   MultiDex (baseline): valid_robot_poses_allegro_dong.npz
-#   BODex (3-phase):     valid_robot_poses_allegro_bodex_dong.npz
-valid_poses: robot/hands/allegro_hand/datasets/processed/valid_robot_poses_allegro_bodex_dong.npz
+#   MultiDex (baseline):          valid_robot_poses_allegro_dong.npz
+#   BODex phase-only:             valid_robot_poses_allegro_bodex_dong.npz
+#   BODex obj-balanced cap=500:   valid_allegro_poses_bodex_objbal_cap500_1M_dong.npz
+valid_poses: robot/hands/allegro_hand/datasets/processed/valid_allegro_poses_bodex_objbal_cap500_1M_dong.npz
 zero_wrj: false
 n_knobs: 9
 
