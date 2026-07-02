@@ -32,20 +32,28 @@ _sk_wj: dict[str, list[float]] = {
 # UDHM per-SLOT weights for the lam_udhm term (decomposed abd/flex). Keyed by slot
 # name (order-independent; loop.py looks up by name and re-normalizes per finger).
 # w = (1/sigma) / sum(1/sigma). sigma = std over HOGraspNet (abl11, 60k frames).
-# CRITICAL: abduction sigma is computed on LOW-FLEXION frames only -- the Dong gamma
-# extraction degrades under heavy flexion (verified: middle/ring abd std jumps ~5x
-# from low to high flexion), so the naive full-dataset sigma is flexion-induced noise
-# that would wrongly down-weight abduction. flex/pip/dip use full-dataset sigma (real).
-# Result: abduction gets fair high weight on all fingers (it is genuinely low-variance).
-# thumb_mcp_abd and pinky_twist = 0 (Dong does not model them; zero-padded anyway).
+# Abduction: 1/sigma from LOW-FLEXION frames only. Dong gamma extraction degrades
+# under heavy flexion (middle/ring abd std jumps ~5x), so full-dataset sigma is
+# flexion-noise that would wrongly down-weight abduction. Low-flexion sigma gives
+# fair weight to a genuinely low-variance signal.
+# Flexion (mcp_flex/pip/dip): uniform (1.0). Full-dataset sigma IS valid for flex,
+# but 1/sigma down-weights high-variance flex joints (middle/ring mcp_flex → 0.135)
+# causing those MCPs to be under-supervised. Uniform treats all flex joints equally.
+# thumb_mcp_abd and pinky_twist = 0 (Dong does not model them; zero-padded).
 _udhm_w: dict[str, float] = {
-    "thumb_cmc_flex": 0.297, "thumb_cmc_spread": 0.220, "thumb_mcp_flex": 0.299,
-    "thumb_mcp_abd": 0.0,    "thumb_ip_flex": 0.185,
-    "index_mcp_abd": 0.483,  "index_mcp_flex": 0.182,  "index_pip_flex": 0.165,  "index_dip_flex": 0.170,
-    "middle_mcp_abd": 0.566, "middle_mcp_flex": 0.135, "middle_pip_flex": 0.143, "middle_dip_flex": 0.156,
-    "ring_mcp_abd": 0.595,   "ring_mcp_flex": 0.150,   "ring_pip_flex": 0.124,   "ring_dip_flex": 0.131,
-    "pinky_mcp_abd": 0.363,  "pinky_mcp_flex": 0.253,  "pinky_pip_flex": 0.187,  "pinky_dip_flex": 0.197,
-    "pinky_twist": 0.0,
+    # abduction: 1/sigma (low-flexion frames)
+    "thumb_cmc_spread": 0.220, "thumb_mcp_abd": 0.0,
+    "index_mcp_abd":  0.483,
+    "middle_mcp_abd": 0.566,
+    "ring_mcp_abd":   0.595,
+    "pinky_mcp_abd":  0.363,
+    "pinky_twist":    0.0,
+    # flexion: uniform
+    "thumb_cmc_flex": 1.0, "thumb_mcp_flex": 1.0, "thumb_ip_flex": 1.0,
+    "index_mcp_flex": 1.0, "index_pip_flex": 1.0, "index_dip_flex": 1.0,
+    "middle_mcp_flex": 1.0, "middle_pip_flex": 1.0, "middle_dip_flex": 1.0,
+    "ring_mcp_flex":  1.0, "ring_pip_flex":  1.0, "ring_dip_flex":  1.0,
+    "pinky_mcp_flex": 1.0, "pinky_pip_flex": 1.0, "pinky_dip_flex": 1.0,
 }
 
 
