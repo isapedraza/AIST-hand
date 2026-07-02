@@ -122,7 +122,7 @@ def main() -> None:
             temporal_window   = tmp_window,
             primitive_sample  = prim_sample,
         )
-        J = test_sampler.robot_rnd.n_joints
+        J = len(test_sampler.robot_rnd.chain_joint_names)
 
         E_r = RobotEncoder_E_r(n_joints=J, shared_dim=shared_dim).to(device)
         D_r = RobotDecoder_D_r(n_joints=J, shared_dim=shared_dim).to(device)
