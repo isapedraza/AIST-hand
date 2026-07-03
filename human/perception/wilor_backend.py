@@ -132,14 +132,22 @@ class WiLoRBackend:
 
     # ── inference ─────────────────────────────────────────────────────────────
 
-    def _infer_async(self, crop: np.ndarray) -> None:
-        """Separate thread: POST crop, store keypoints + is_right."""
+    def _infer_async(self, crop: np.ndarray, bbox_px: float) -> None:
+        """Separate thread: POST crop, store keypoints + is_right.
+
+        bbox_px = hand bbox width in ORIGINAL (uncropped) frame pixels. The crop
+        itself is always resized to a fixed crop_size, so it erases the
+        apparent-size-shrinks-with-distance cue WiLoR's depth (cam_t.z) needs;
+        bbox_px is sent alongside so the server can rescale focal_length per
+        frame and recover that cue (see docs/estado_wrist_depth_wilor_2026-07-02.md).
+        """
         try:
             ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             if not ok:
                 return
             files = {"frame": ("frame.jpg", buf.tobytes(), "image/jpeg")}
-            resp = self._session.post(f"{self.url}/infer", files=files, timeout=self.request_timeout)
+            data = {"bbox_px": str(bbox_px)}
+            resp = self._session.post(f"{self.url}/infer", files=files, data=data, timeout=self.request_timeout)
             body = resp.json()
             kp = body.get("keypoints")
             if kp is None:
@@ -186,10 +194,11 @@ class WiLoRBackend:
         bbox = self._get_bbox(result.multi_hand_landmarks[0])
         self._last_bbox = bbox
         crop = self._crop_hand(frame_bgr, bbox)
+        bbox_px = (bbox[2] - bbox[0]) * frame_bgr.shape[1]  # width in original-frame px
 
         if not self._infer_busy and crop.size > 0:
             self._infer_busy = True
-            t = threading.Thread(target=self._infer_async, args=(crop.copy(),), daemon=True)
+            t = threading.Thread(target=self._infer_async, args=(crop.copy(), bbox_px), daemon=True)
             t.start()
 
         return self._latest_sample
