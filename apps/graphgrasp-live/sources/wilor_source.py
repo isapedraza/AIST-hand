@@ -85,6 +85,10 @@ class WiLoRSource:
         # Stage-2 wrist channel (decoupled from the finger quats). Cached each
         # frame from Dong's wrist frame; None until the first valid inference.
         self._last_wrist: np.ndarray | None = None  # 3x4 [R|t], t in cam frame
+        # Raw canonicalized 21-keypoint input (WiLoR order), cached each valid
+        # frame for capture-time fidelity checks (input vs. robot FK output,
+        # a la Santos et al. 2025 -- no external ground truth needed).
+        self._last_points_w: np.ndarray | None = None  # [21, 3]
 
     def is_running(self) -> bool:
         return self._running and self._backend.is_ready()
@@ -148,6 +152,7 @@ class WiLoRSource:
             res = self._dk.process(points_w)
         except ValueError:
             return None
+        self._last_points_w = points_w.copy()
 
         # Cache the wrist 6D (the frame Dong builds then discards to localize).
         # Rotation = Dong r0w (global wrist orientation from keypoints).
@@ -166,6 +171,23 @@ class WiLoRSource:
             dtype=np.float32,
         )  # [20, 4]
         return torch.from_numpy(quats).unsqueeze(0)  # [1, 20, 4]
+
+    def pop_capture_request(self) -> bool:
+        """True once per spacebar press in the webcam window (consumes the flag)."""
+        return self._backend.pop_capture_request()
+
+    def current_frame(self):
+        """Copy of the latest raw webcam frame (BGR), or None before the first frame."""
+        return self._backend.current_frame()
+
+    def current_frame_with_skeleton(self):
+        """Latest webcam frame (BGR) with the MediaPipe hand skeleton overlaid."""
+        return self._backend.current_frame_with_skeleton()
+
+    def last_points_w(self) -> np.ndarray | None:
+        """Raw canonicalized 21-keypoint input (WiLoR order, [21,3]) from the
+        last valid frame, or None before the first one."""
+        return None if self._last_points_w is None else self._last_points_w.copy()
 
     def wrist_pose(self) -> np.ndarray | None:
         """Latest wrist pose as 3x4 [R|t] (global rotation + cam-frame point),

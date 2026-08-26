@@ -27,6 +27,12 @@ import mediapipe as mp
 import numpy as np
 import requests
 
+try:
+    from pynput import keyboard as _kb
+    _PYNPUT_OK = True
+except ImportError:
+    _PYNPUT_OK = False
+
 # Standard MediaPipe/OpenPose 21-joint order (matches WiLoR's mano_to_openpose output).
 JOINTS = [
     "WRIST",
@@ -106,10 +112,29 @@ class WiLoRBackend:
 
         self._infer_busy = False
         self._latest_sample = None
+        self._capture_requested = False
+        self._capture_lock = threading.Lock()
+
+        # Global spacebar listener: fires regardless of OS window focus, unlike
+        # cv2.waitKey below (only sees keys while the cv2 window itself is
+        # focused -- confirmed live 2026-08-26, silently dropped most presses
+        # during a DexJoCo capture session where the MuJoCo viewer had focus).
+        self._kb_listener = None
+        if _PYNPUT_OK:
+            self._kb_listener = _kb.Listener(on_press=self._on_key_press)
+            self._kb_listener.start()
+        else:
+            print("WARNING: pynput not installed -- space only captures with the cv2 window focused. "
+                  "pip install pynput for global capture.")
 
         # Reuse one TCP+TLS connection across frames (keep-alive). Over a tunnel
         # this saves the per-request handshake (~140 ms/frame measured).
         self._session = requests.Session()
+
+    def _on_key_press(self, key):
+        if key == _kb.Key.space:
+            with self._capture_lock:
+                self._capture_requested = True
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
@@ -132,21 +157,31 @@ class WiLoRBackend:
 
     # ── inference ─────────────────────────────────────────────────────────────
 
-    def _infer_async(self, crop: np.ndarray, bbox_px: float) -> None:
+    def _infer_async(self, crop: np.ndarray, bbox_px: float,
+                      bbox_cx: float, bbox_cy: float, img_w: int, img_h: int) -> None:
         """Separate thread: POST crop, store keypoints + is_right.
 
         bbox_px = hand bbox width in ORIGINAL (uncropped) frame pixels. The crop
         itself is always resized to a fixed crop_size, so it erases the
-        apparent-size-shrinks-with-distance cue WiLoR's depth (cam_t.z) needs;
-        bbox_px is sent alongside so the server can rescale focal_length per
-        frame and recover that cue (see docs/estado_wrist_depth_wilor_2026-07-02.md).
+        apparent-size-shrinks-with-distance cue WiLoR's depth/translation
+        (cam_t.x/y/z) need; bbox_px + bbox_cx/cy + img_w/h (all measured in the
+        ORIGINAL frame, before cropping) are sent alongside so the server can
+        recompute cam_crop_to_full() with real geometry instead of WiLoR's own
+        bbox detected inside the re-centered crop (see
+        docs/estado_wrist_txty_dead_2026-07-04.md).
         """
         try:
             ok, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
             if not ok:
                 return
             files = {"frame": ("frame.jpg", buf.tobytes(), "image/jpeg")}
-            data = {"bbox_px": str(bbox_px)}
+            data = {
+                "bbox_px": str(bbox_px),
+                "bbox_cx": str(bbox_cx),
+                "bbox_cy": str(bbox_cy),
+                "img_w": str(img_w),
+                "img_h": str(img_h),
+            }
             resp = self._session.post(f"{self.url}/infer", files=files, data=data, timeout=self.request_timeout)
             body = resp.json()
             kp = body.get("keypoints")
@@ -194,11 +229,18 @@ class WiLoRBackend:
         bbox = self._get_bbox(result.multi_hand_landmarks[0])
         self._last_bbox = bbox
         crop = self._crop_hand(frame_bgr, bbox)
-        bbox_px = (bbox[2] - bbox[0]) * frame_bgr.shape[1]  # width in original-frame px
+        img_h, img_w = frame_bgr.shape[:2]
+        bbox_px = (bbox[2] - bbox[0]) * img_w  # width in original-frame px
+        bbox_cx = (bbox[0] + bbox[2]) / 2.0 * img_w  # bbox center, original-frame px
+        bbox_cy = (bbox[1] + bbox[3]) / 2.0 * img_h
 
         if not self._infer_busy and crop.size > 0:
             self._infer_busy = True
-            t = threading.Thread(target=self._infer_async, args=(crop.copy(), bbox_px), daemon=True)
+            t = threading.Thread(
+                target=self._infer_async,
+                args=(crop.copy(), bbox_px, bbox_cx, bbox_cy, img_w, img_h),
+                daemon=True,
+            )
             t.start()
 
         return self._latest_sample
@@ -270,6 +312,9 @@ class WiLoRBackend:
         cv2.imshow(self.window_name, canvas)
 
         key = cv2.waitKey(1) & 0xFF
+        if key == ord(" "):
+            with self._capture_lock:
+                self._capture_requested = True
         if key in (27, ord("q"), ord("Q")):
             self._window_open = False
             cv2.destroyWindow(self.window_name)
@@ -287,9 +332,37 @@ class WiLoRBackend:
             return False
         return True
 
+    def pop_capture_request(self) -> bool:
+        """True once per spacebar press (consumes the flag)."""
+        with self._capture_lock:
+            r = self._capture_requested
+            self._capture_requested = False
+        return r
+
+    def current_frame(self):
+        """Copy of the latest raw webcam frame (BGR), or None before the first frame."""
+        return None if self._frame_bgr is None else self._frame_bgr.copy()
+
+    def current_frame_with_skeleton(self):
+        """Latest webcam frame (BGR) with the MediaPipe hand skeleton drawn on
+        top -- not mirrored, so it matches the physical hand orientation (the
+        live preview window mirrors for the user's convenience; a saved figure
+        should not)."""
+        if self._frame_bgr is None:
+            return None
+        frame = self._frame_bgr.copy()
+        if self._last_result and self._last_result.multi_hand_landmarks:
+            mp.solutions.drawing_utils.draw_landmarks(
+                frame, self._last_result.multi_hand_landmarks[0], self._mp_hands.HAND_CONNECTIONS
+            )
+        return frame
+
     def release(self) -> None:
         self._window_open = False
         self._window_initialized = False
+        if self._kb_listener is not None:
+            self._kb_listener.stop()
+            self._kb_listener = None
         if self._cap is not None:
             self._cap.release()
             self._cap = None

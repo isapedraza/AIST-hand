@@ -28,6 +28,26 @@ _REPO      = Path(__file__).resolve().parents[3]
 _MENAGERIE = _REPO / "third_party" / "mujoco_menagerie"
 POSE_ALPHA = 0.25
 
+# Camara calibrada y aprobada 2026-08-26 (palma al frente, mano completa en
+# cuadro) -- ver models/grasp-intent-classification/scripts/render_fig41_pair.py.
+_CAPTURE_CAM: dict[str, dict] = {
+    "shadow":  dict(azimuth=180.0, elevation=0.0, distance=0.80, lookat=np.array([0.0, -0.01, 0.20])),
+    "allegro": dict(azimuth=180.0, elevation=0.0, distance=0.46, lookat=np.array([0.02, 0.02, 0.05])),
+}
+_CAPTURE_CAM_DEFAULT = dict(azimuth=180.0, elevation=0.0, distance=0.40, lookat=np.array([0.0, 0.0, 0.2]))
+
+# Fingertip = distal body's own local +Z offset (fixed joint in the URDF,
+# robot/hands/shadow_hand/shadow_hand_right.urdf: FFtip/MFtip/RFtip/LFtip
+# origin xyz="0 0 0.026", THtip origin xyz="0 0 0.0275"). Ported 1:1, same
+# offsets already used for fig 3.19 (render_signals_sk.py).
+_SHADOW_TIP_OFFSETS = {
+    "thumb":  ("rh_thdistal", 0.0275),
+    "index":  ("rh_ffdistal", 0.026),
+    "middle": ("rh_mfdistal", 0.026),
+    "ring":   ("rh_rfdistal", 0.026),
+    "little": ("rh_lfdistal", 0.026),
+}
+
 _SCENE_BASE_XML = """<mujoco model="retarget_sink">
   <statistic extent="0.45" center="0 0 0.15"/>
   <visual>
@@ -135,6 +155,7 @@ class MuJocoSink:
     def __init__(self, robot: str = "shadow"):
         if robot not in _ROBOTS:
             raise ValueError(f"Unsupported robot '{robot}' (have {list(_ROBOTS)})")
+        self._robot_name = robot
         cfg = _ROBOTS[robot]
         self._qpos_dim = cfg.qpos_dim
         scene_path  = _build_scene(cfg)
@@ -142,6 +163,7 @@ class MuJocoSink:
         self._data  = mujoco.MjData(self._model)
         self._target = np.zeros(self._qpos_dim, dtype=np.float64)
         self._viewer = mujoco.viewer.launch_passive(self._model, self._data)
+        self._offscreen: mujoco.Renderer | None = None  # built lazily (only if capture() is used)
 
     def is_running(self) -> bool:
         return self._viewer.is_running()
@@ -154,6 +176,67 @@ class MuJocoSink:
         self._data.qvel[:] = 0
         mujoco.mj_forward(self._model, self._data)
         self._viewer.sync()
+
+    def capture(self, path: Path) -> None:
+        """Save a clean offscreen render (no window chrome/UI) of the current
+        pose to `path`. Independent of the interactive viewer window."""
+        if self._offscreen is None:
+            self._model.vis.global_.offwidth = 900
+            self._model.vis.global_.offheight = 900
+            self._offscreen = mujoco.Renderer(self._model, height=900, width=900)
+        cam_cfg = _CAPTURE_CAM.get(self._robot_name, _CAPTURE_CAM_DEFAULT)
+        cam = mujoco.MjvCamera()
+        cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+        cam.azimuth, cam.elevation, cam.distance, cam.lookat = (
+            cam_cfg["azimuth"], cam_cfg["elevation"], cam_cfg["distance"], cam_cfg["lookat"],
+        )
+        opt = mujoco.MjvOption()
+        opt.flags[mujoco.mjtVisFlag.mjVIS_JOINT] = False
+        self._offscreen.update_scene(self._data, camera=cam, scene_option=opt)
+        img = self._offscreen.render()
+        from PIL import Image
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.fromarray(img).save(str(path))
+
+    def tip_positions(self) -> dict[str, np.ndarray] | None:
+        """World-frame fingertip positions {thumb,index,middle,ring,little} ->
+        [3], via FK on the current data (distal body xpos + local +Z tip
+        offset from the URDF). Shadow only -- returns None for other robots."""
+        if self._robot_name != "shadow":
+            return None
+        out = {}
+        for finger, (body_name, offset) in _SHADOW_TIP_OFFSETS.items():
+            body = self._data.body(body_name)
+            R = body.xmat.reshape(3, 3)
+            out[finger] = body.xpos + R @ np.array([0.0, 0.0, offset])
+        return out
+
+    def wrist_position(self) -> np.ndarray:
+        return self._data.body("rh_wrist").xpos.copy()
+
+    def mcp_frame_points(self) -> dict[str, np.ndarray] | None:
+        """{wrist, index_mcp, middle_mcp, ring_mcp} world positions -- same
+        3 anatomical landmarks Dong Block 1 uses to build the wrist frame
+        (robot/hand-configs/shadow.yaml: frame_index_mcp=ffknuckle, etc).
+        Shadow only."""
+        if self._robot_name != "shadow":
+            return None
+        return {
+            "wrist":      self._data.body("rh_wrist").xpos.copy(),
+            "index_mcp":  self._data.body("rh_ffknuckle").xpos.copy(),
+            "middle_mcp": self._data.body("rh_mfknuckle").xpos.copy(),
+            "ring_mcp":   self._data.body("rh_rfknuckle").xpos.copy(),
+        }
+
+    def reference_length(self) -> float | None:
+        """Wrist-to-middle-knuckle distance, the same hand-length reference
+        used on the human side (Dong's wrist frame, Metodos.tex Sec. 3.7).
+        Shadow only."""
+        if self._robot_name != "shadow":
+            return None
+        wrist = self._data.body("rh_wrist").xpos
+        mf_mcp = self._data.body("rh_mfknuckle").xpos
+        return float(np.linalg.norm(mf_mcp - wrist))
 
     def release(self) -> None:
         self._viewer.close()
