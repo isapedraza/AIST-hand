@@ -35,7 +35,7 @@ import torch
 from PIL import Image
 
 ROOT = pathlib.Path("/home/yareeez/AIST-hand")
-CKPT = ROOT / "models/latent-retargeting/checkpoints/stage1_shadow_allegro_bodex_objbal_15k.pt"
+CKPT = ROOT / "models/latent-retargeting/checkpoints/active/stage1_shadow_allegro_bodex_objbal_15k.pt"
 OUT_DIR = pathlib.Path.home() / "Downloads"
 
 SHADOW_JOINT_ORDER = [

@@ -25,7 +25,9 @@ robot/**/datasets/
 robot/**/*.glb
 robot/**/*.mtl
 robot/**/*.obj
-models/*/checkpoints/
+models/*/checkpoints/*
+!models/latent-retargeting/checkpoints/active/
+!models/latent-retargeting/checkpoints/active/**
 models/*/models/
 models/*/experiments/**
 !models/*/experiments/**/
