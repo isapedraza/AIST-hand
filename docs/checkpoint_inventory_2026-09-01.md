@@ -79,7 +79,15 @@ Formato viejo (pre multi-robot, `E_r`/`D_r` sueltos, sin dict `robots`). Para ev
 - `stage1_shadow_allegro_bodex_objbal_15k.pt` (step 14999, shadow+allegro) -- Multi-robot
 
 
-## Candidatos para el barrido de eval (siguiente paso)
+## Barrido de eval -- YA CORRIDO
+
+Ver `eval_sweep_2026-09-01_resultados.md` (log crudo en
+`eval_sweep_2026-09-01.log`). Resumen: `barrett` falla siempre (bug real,
+no del checkpoint); `stage1_best_total(14).pt` (allegro, step 5907) domina
+en RS y NDS a los dos Allegro-solo de la tesis, sin investigar todavia por
+que -- no se toco la tabla de tesis por esto.
+
+## Candidatos para el barrido de eval (siguiente paso) -- OBSOLETO, ver arriba
 
 Prioridad: step alto + config distinta a lo ya evaluado. Se corre con `eval_retarget.py --ckpt <f> --csv <r6.csv> --n_batches 10 --b_eval 3000` (mismos parametros que generaron la tabla actual).
 - `shadow+allegro`: `stage1_best_total(23).pt` (step 14260) -- multi-robot alterno, no evaluado aun.

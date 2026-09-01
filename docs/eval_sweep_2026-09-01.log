@@ -1,0 +1,644 @@
+=========================================
+CKPT=models/latent-retargeting/checkpoints/active/stage1_shadow_solo_ckpt17_run18b_13k7.pt ROBOTS=shadow  2026-09-01T02:05:12-06:00
+Checkpoint : models/latent-retargeting/checkpoints/active/stage1_shadow_solo_ckpt17_run18b_13k7.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow']
+Evaluating     : ['shadow']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.2030   (lower = better; 0 = perfect angular match)
+  NDS = 1.9331   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0210   (lower = better; 0 = perfect velocity match)
+  rec = 0.9309   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=models/latent-retargeting/checkpoints/active/stage1_allegro_solo_bodex_objbal_15k.pt ROBOTS=allegro  2026-09-01T02:05:38-06:00
+Checkpoint : models/latent-retargeting/checkpoints/active/stage1_allegro_solo_bodex_objbal_15k.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['allegro']
+Evaluating     : ['allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.7430   (lower = better; 0 = perfect angular match)
+  NDS = 3.7568   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0241   (lower = better; 0 = perfect velocity match)
+  rec = 1.2540   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=models/latent-retargeting/checkpoints/active/stage1_allegro_solo_bodex_noobjbal_ckpt24_14k5.pt ROBOTS=allegro  2026-09-01T02:06:04-06:00
+Checkpoint : models/latent-retargeting/checkpoints/active/stage1_allegro_solo_bodex_noobjbal_ckpt24_14k5.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['allegro']
+Evaluating     : ['allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.6833   (lower = better; 0 = perfect angular match)
+  NDS = 3.8394   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0235   (lower = better; 0 = perfect velocity match)
+  rec = 1.2462   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=models/latent-retargeting/checkpoints/active/stage1_shadow_allegro_bodex_objbal_15k.pt ROBOTS=shadow allegro  2026-09-01T02:06:30-06:00
+Checkpoint : models/latent-retargeting/checkpoints/active/stage1_shadow_allegro_bodex_objbal_15k.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'allegro']
+Evaluating     : ['shadow', 'allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3400   (lower = better; 0 = perfect angular match)
+  NDS = 2.3781   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0227   (lower = better; 0 = perfect velocity match)
+  rec = 0.9254   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.7104   (lower = better; 0 = perfect angular match)
+  NDS = 3.7289   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0262   (lower = better; 0 = perfect velocity match)
+  rec = 1.0954   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=== Summary ===
+robot              RS      NDS      NVS      rec
+shadow         0.3400   2.3781   0.0227   0.9254
+allegro        0.7104   3.7289   0.0262   1.0954
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(23).pt ROBOTS=shadow allegro  2026-09-01T02:07:20-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(23).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'allegro']
+Evaluating     : ['shadow', 'allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3414   (lower = better; 0 = perfect angular match)
+  NDS = 2.4365   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0229   (lower = better; 0 = perfect velocity match)
+  rec = 0.9036   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.7801   (lower = better; 0 = perfect angular match)
+  NDS = 3.7720   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0282   (lower = better; 0 = perfect velocity match)
+  rec = 0.6047   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=== Summary ===
+robot              RS      NDS      NVS      rec
+shadow         0.3414   2.4365   0.0229   0.9036
+allegro        0.7801   3.7720   0.0282   0.6047
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(25).pt ROBOTS=shadow allegro  2026-09-01T02:08:08-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(25).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'allegro']
+Evaluating     : ['shadow', 'allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3193   (lower = better; 0 = perfect angular match)
+  NDS = 2.3542   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0228   (lower = better; 0 = perfect velocity match)
+  rec = 0.9858   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.7026   (lower = better; 0 = perfect angular match)
+  NDS = 3.7135   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0260   (lower = better; 0 = perfect velocity match)
+  rec = 1.1444   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=== Summary ===
+robot              RS      NDS      NVS      rec
+shadow         0.3193   2.3542   0.0228   0.9858
+allegro        0.7026   3.7135   0.0260   1.1444
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(22).pt ROBOTS=shadow allegro  2026-09-01T02:08:57-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(22).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'allegro']
+Evaluating     : ['shadow', 'allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3382   (lower = better; 0 = perfect angular match)
+  NDS = 2.4361   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0239   (lower = better; 0 = perfect velocity match)
+  rec = 0.9736   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.7830   (lower = better; 0 = perfect angular match)
+  NDS = 3.7475   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0288   (lower = better; 0 = perfect velocity match)
+  rec = 0.6179   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=== Summary ===
+robot              RS      NDS      NVS      rec
+shadow         0.3382   2.4361   0.0239   0.9736
+allegro        0.7830   3.7475   0.0288   0.6179
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(21).pt ROBOTS=shadow allegro  2026-09-01T02:09:45-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(21).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'allegro']
+Evaluating     : ['shadow', 'allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3193   (lower = better; 0 = perfect angular match)
+  NDS = 2.3677   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0239   (lower = better; 0 = perfect velocity match)
+  rec = 1.0638   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.7806   (lower = better; 0 = perfect angular match)
+  NDS = 3.7251   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0291   (lower = better; 0 = perfect velocity match)
+  rec = 0.6745   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=== Summary ===
+robot              RS      NDS      NVS      rec
+shadow         0.3193   2.3677   0.0239   1.0638
+allegro        0.7806   3.7251   0.0291   0.6745
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(20).pt ROBOTS=shadow leap barrett  2026-09-01T02:10:33-06:00
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='0']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='1']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='2']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='3']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='4']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='5']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='6']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='7']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='8']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='9']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='10']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='11']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='12']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='13']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='14']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='15']
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(20).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'leap', 'barrett']
+Evaluating     : ['shadow', 'leap', 'barrett']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.4316   (lower = better; 0 = perfect angular match)
+  NDS = 2.6341   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0247   (lower = better; 0 = perfect velocity match)
+  rec = 0.9212   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for leap ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== leap (J=16) ===
+  RS  = 3.1783   (lower = better; 0 = perfect angular match)
+  NDS = 9.0438   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0331   (lower = better; 0 = perfect velocity match)
+  rec = 1.9384   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for barrett ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+Traceback (most recent call last):
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/scripts/eval_retarget.py", line 170, in <module>
+    main()
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/scripts/eval_retarget.py", line 142, in main
+    m = _compute_eval_metrics(
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/src/cross_emb/training/loop.py", line 179, in _compute_eval_metrics
+    nds = (chain_h_sub - chain_r_t).norm(dim=-1).sum(dim=(-2, -1)).mean().item()
+           ~~~~~~~~~~~~^~~~~~~~~~~
+RuntimeError: The size of tensor a (4) must match the size of tensor b (2) at non-singleton dimension 2
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(19).pt ROBOTS=shadow leap barrett  2026-09-01T02:11:43-06:00
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='0']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='1']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='2']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='3']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='4']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='5']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='6']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='7']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='8']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='9']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='10']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='11']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='12']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='13']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='14']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='15']
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(19).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'leap', 'barrett']
+Evaluating     : ['shadow', 'leap', 'barrett']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.4291   (lower = better; 0 = perfect angular match)
+  NDS = 2.6430   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0247   (lower = better; 0 = perfect velocity match)
+  rec = 0.9784   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for leap ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== leap (J=16) ===
+  RS  = 3.1780   (lower = better; 0 = perfect angular match)
+  NDS = 9.0294   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0328   (lower = better; 0 = perfect velocity match)
+  rec = 1.9463   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for barrett ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+Traceback (most recent call last):
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/scripts/eval_retarget.py", line 170, in <module>
+    main()
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/scripts/eval_retarget.py", line 142, in main
+    m = _compute_eval_metrics(
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/src/cross_emb/training/loop.py", line 179, in _compute_eval_metrics
+    nds = (chain_h_sub - chain_r_t).norm(dim=-1).sum(dim=(-2, -1)).mean().item()
+           ~~~~~~~~~~~~^~~~~~~~~~~
+RuntimeError: The size of tensor a (4) must match the size of tensor b (2) at non-singleton dimension 2
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(15).pt ROBOTS=shadow leap barrett  2026-09-01T02:12:54-06:00
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='0']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='1']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='2']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='3']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='4']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='5']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='6']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='7']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='8']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='9']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='10']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='11']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='12']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='13']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='14']
+Unknown tag "joint_properties" in /robot[@name='leap_right']/joint[@name='15']
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(15).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow', 'leap', 'barrett']
+Evaluating     : ['shadow', 'leap', 'barrett']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.4555   (lower = better; 0 = perfect angular match)
+  NDS = 2.5557   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0232   (lower = better; 0 = perfect velocity match)
+  rec = 1.1722   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for leap ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== leap (J=16) ===
+  RS  = 3.1546   (lower = better; 0 = perfect angular match)
+  NDS = 9.1126   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0278   (lower = better; 0 = perfect velocity match)
+  rec = 2.0219   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+Building test sampler for barrett ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+Traceback (most recent call last):
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/scripts/eval_retarget.py", line 170, in <module>
+    main()
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/scripts/eval_retarget.py", line 142, in main
+    m = _compute_eval_metrics(
+        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/yareeez/AIST-hand/models/latent-retargeting/src/cross_emb/training/loop.py", line 179, in _compute_eval_metrics
+    nds = (chain_h_sub - chain_r_t).norm(dim=-1).sum(dim=(-2, -1)).mean().item()
+           ~~~~~~~~~~~~^~~~~~~~~~~
+RuntimeError: The size of tensor a (4) must match the size of tensor b (2) at non-singleton dimension 2
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(16).pt ROBOTS=shadow  2026-09-01T02:14:05-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(16).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow']
+Evaluating     : ['shadow']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3659   (lower = better; 0 = perfect angular match)
+  NDS = 2.1749   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0221   (lower = better; 0 = perfect velocity match)
+  rec = 0.9778   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(18):A.pt ROBOTS=shadow  2026-09-01T02:14:31-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(18):A.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow']
+Evaluating     : ['shadow']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3440   (lower = better; 0 = perfect angular match)
+  NDS = 1.9709   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0217   (lower = better; 0 = perfect velocity match)
+  rec = 0.9495   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(18):b.pt ROBOTS=shadow  2026-09-01T02:14:56-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(18):b.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['shadow']
+Evaluating     : ['shadow']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3222   (lower = better; 0 = perfect angular match)
+  NDS = 2.0092   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0219   (lower = better; 0 = perfect velocity match)
+  rec = 0.9370   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(12).pt ROBOTS=shadow  2026-09-01T02:15:21-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(12).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['robot']
+Evaluating     : ['shadow']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.3430   (lower = better; 0 = perfect angular match)
+  NDS = 2.2820   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0225   (lower = better; 0 = perfect velocity match)
+  rec = 1.3555   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(13).pt ROBOTS=shadow  2026-09-01T02:15:47-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(13).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['robot']
+Evaluating     : ['shadow']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for shadow ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== shadow (J=24) ===
+  RS  = 0.7964   (lower = better; 0 = perfect angular match)
+  NDS = 3.2845   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0275   (lower = better; 0 = perfect velocity match)
+  rec = 1.5497   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_best_total(14).pt ROBOTS=allegro  2026-09-01T02:16:12-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_best_total(14).pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['allegro']
+Evaluating     : ['allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=5, valid temporal windows=43,021 (13.1%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 0.6104   (lower = better; 0 = perfect angular match)
+  NDS = 3.5379   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0247   (lower = better; 0 = perfect velocity match)
+  rec = 0.8896   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+CKPT=/home/yareeez/Downloads/stage1_allegro_freeze.pt ROBOTS=allegro  2026-09-01T02:16:37-06:00
+Checkpoint : /home/yareeez/Downloads/stage1_allegro_freeze.pt
+CSV        : /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv
+Device     : cpu
+Robots in ckpt : ['allegro']
+Evaluating     : ['allegro']
+z_dim=16  shared_dim=1024  rot_repr=r6
+
+Building test sampler for allegro ...
+[HumanLoader] Loading /home/yareeez/6d_datasets/hograspnet_abl14_6d.csv (split=test, rot_repr=r6) ...
+[HumanLoader] 327,260 frames after split filter.
+[HumanLoader] Ready. pose=(327260, 20, 6) (r6), T=8, valid temporal windows=19,582 (6.0%)
+[RobotLoader] mode=RANDOM_UNIFORM  (no collision filtering)
+Running eval  (10 batches × 3000) ...
+
+=== allegro (J=16) ===
+  RS  = 1.4827   (lower = better; 0 = perfect angular match)
+  NDS = 6.1069   (lower = better; 0 = perfect tip/chain position match)
+  NVS = 0.0513   (lower = better; 0 = perfect velocity match)
+  rec = 0.3998   (robot AE reconstruction error)
+  batches=10  b_eval=3000
+
+=========================================
+SWEEP DONE 2026-09-01T02:17:02-06:00
