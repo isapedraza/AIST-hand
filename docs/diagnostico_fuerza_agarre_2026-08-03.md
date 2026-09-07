@@ -96,3 +96,14 @@ objetos" (no demostrado, y el gap identificado arriba es la causa concreta,
 no un misterio). La opción de menor esfuerzo (subir kp con la medición
 qpos target/real primero) es razonable como prueba de concepto rápida antes de
 comprometerse a construir un controlador de impedancia completo.
+
+## Actualización (2026-09-06): primer sostenimiento exitoso, Allegro
+
+Se subió `kp` (2→20) y se agregó `kv=2` en `panda_allegro_copy.xml:56`
+(`dexjoco-shadow`), opción 1 de la lista de arriba, primera pasada sin
+medición previa de qpos target/real. Yahel reporta que logró sostener la
+comida por primera vez ("nunca jamás lo había logrado"), atribuido al cambio
+de ganancias más una mejor posición del pulgar contra el objeto. Sin capturas
+de este intento. Pendiente: repetir con capturas para tener evidencia visual,
+y confirmar que no fue un caso aislado (un solo run, no validado en repetición
+todavía).
