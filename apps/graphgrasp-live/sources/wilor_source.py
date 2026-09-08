@@ -72,11 +72,15 @@ class WiLoRSource:
         url: str,
         camera: int | str = 0,
         calib_seconds: float = 3.0,
+        record_directory=None,
+        record_metadata=None,
     ):
         # Deferred import so MediaPipe/HaMeR-only usage never requires WiLoR deps.
         from human.perception.wilor_backend import WiLoRBackend
 
-        self._backend = WiLoRBackend(url=url, camera_index=camera)
+        self._backend = WiLoRBackend(url=url, camera_index=camera,
+                                     record_directory=record_directory,
+                                     record_metadata=record_metadata)
         self._dk = DongKinematics(calibration_frames=None)
         self._calib_seconds = calib_seconds
         self._calib_done = calib_seconds <= 0.0

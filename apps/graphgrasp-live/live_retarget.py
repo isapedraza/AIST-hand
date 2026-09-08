@@ -17,6 +17,7 @@ Usage:
 import _repo_path  # noqa: F401 -- adds latent-retargeting/src to sys.path
 
 import argparse
+import hashlib
 import time
 from pathlib import Path
 
@@ -61,7 +62,19 @@ def main():
                         help="Also stream the WiLoR wrist pose (3x4) over UDP to the sim "
                              "teleop wrist receiver (port 5012). Requires --source wilor.")
     parser.add_argument("--wrist-port", type=int, default=5012, help="UDP target port for --emit-wrist")
+    parser.add_argument("--session", type=Path,
+                        help="Record raw WiLoR camera frames and timestamps into SESSION/operator.")
+    parser.add_argument("--no-viewer", action="store_true",
+                        help="Skip the extra robot preview; requires --emit-udp.")
     args = parser.parse_args()
+    if args.session and args.source != "wilor":
+        parser.error("--session currently supports --source wilor")
+    if args.session and not args.robot:
+        parser.error("--session requires an explicit --robot")
+    if args.no_viewer and not args.emit_udp:
+        parser.error("--no-viewer requires --emit-udp")
+    if args.session and (args.session / "operator").exists():
+        parser.error("This session already has operator data; choose a new session.")
 
     if args.source in ("hamer", "wilor") and not args.url:
         parser.error(f"--source {args.source} requires --url")
@@ -138,147 +151,172 @@ def main():
             print(f"[udhm] no disponible: {e}")
 
     if len(rets) == 1:
-        sink = MuJocoSink(robot=rets[0].robot_name)
+        sink = None if args.no_viewer else MuJocoSink(robot=rets[0].robot_name)
         def render(pose):
             q = rets[0](pose)
-            sink.update(q)
+            if sink is not None:
+                sink.update(q)
             if emit is not None:
                 emit.update(q)
     else:
         sink = MergedMuJocoSink([r.robot_name for r in rets])
         def render(pose):           sink.update({r.robot_name: r(pose) for r in rets})
 
-    wrist_src = None
-    if args.source == "hamer":
-        from sources import HaMeRSource
-        source = HaMeRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
-    elif args.source == "wilor":
-        from sources import WiLoRSource
-        source = WiLoRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
-        wrist_src = source   # keep handle for wrist_pose() before any wrapping
-    else:
-        from sources import MediaPipeSource
-        source = MediaPipeSource(camera=args.camera, calib_seconds=args.calib)
+    source = None
+    try:
+        wrist_src = None
+        if args.source == "hamer":
+            from sources import HaMeRSource
+            source = HaMeRSource(url=args.url, camera=args.camera, calib_seconds=args.calib)
+        elif args.source == "wilor":
+            from sources import WiLoRSource
+            recording_metadata = None
+            if args.session:
+                with ckpt_path.open("rb") as checkpoint:
+                    checkpoint_hash = hashlib.file_digest(checkpoint, "sha256").hexdigest()
+                recording_metadata = {
+                    "robot": rets[0].robot_name, "source": args.source,
+                    "checkpoint": str(ckpt_path.resolve()), "checkpoint_sha256": checkpoint_hash,
+                    "calibration_seconds": args.calib, "interpolate": args.interpolate,
+                    "timestamp_semantics": "Host time immediately after camera.read; not sensor exposure time",
+                }
+            source = WiLoRSource(url=args.url, camera=args.camera, calib_seconds=args.calib,
+                                 record_directory=args.session / "operator" if args.session else None,
+                                 record_metadata=recording_metadata)
+            wrist_src = source   # keep handle for wrist_pose() before any wrapping
+        else:
+            from sources import MediaPipeSource
+            source = MediaPipeSource(camera=args.camera, calib_seconds=args.calib)
 
-    if args.interpolate:
-        from sources import InterpolatedSource
-        source = InterpolatedSource(source)
+        if args.interpolate:
+            from sources import InterpolatedSource
+            source = InterpolatedSource(source)
 
-    can_capture = hasattr(source, "pop_capture_request") and len(rets) == 1
-    if can_capture:
-        CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
-        print(f"Capturas     : espacio (con la ventana de la camara en foco) -> {CAPTURE_DIR}")
+        can_capture = sink is not None and hasattr(source, "pop_capture_request") and len(rets) == 1
+        if can_capture:
+            CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+            print(f"Capturas     : espacio (con la ventana de la camara en foco) -> {CAPTURE_DIR}")
 
-    print(f"Robots       : {[r.robot_name for r in rets]}")
-    print(f"Rotation repr: {rot_repr}")
-    print("Running. Q/ESC to quit.")
-    while source.is_running() and sink.is_running():
-        quats = source.next_frame()
-        if quats is None:
-            continue
-        pose = quat_wxyz_to_rot6d(quats) if rot_repr == "r6" else quats
-        render(pose)
-        if wrist_emit is not None:
-            wp = wrist_src.wrist_pose()
-            if wp is not None:
-                wrist_emit.update(wp)
-        if can_capture and source.pop_capture_request():
-            ts = time.strftime("%Y%m%d-%H%M%S")
-            frame = source.current_frame_with_skeleton()
-            if frame is not None:
-                import cv2
-                cv2.imwrite(str(CAPTURE_DIR / f"{ts}_camara.png"), frame)
-            sink.capture(CAPTURE_DIR / f"{ts}_robot.png")
-            print(f"[captura] {ts}")
+        print(f"Robots       : {[r.robot_name for r in rets]}")
+        print(f"Rotation repr: {rot_repr}")
+        print("Running. Q/ESC to quit.")
+        while source.is_running() and (sink is None or sink.is_running()):
+            quats = source.next_frame()
+            if quats is None:
+                continue
+            pose = quat_wxyz_to_rot6d(quats) if rot_repr == "r6" else quats
+            render(pose)
+            if wrist_emit is not None:
+                wp = wrist_src.wrist_pose()
+                if wp is not None:
+                    wrist_emit.update(wp)
+            if can_capture and source.pop_capture_request():
+                ts = time.strftime("%Y%m%d-%H%M%S")
+                frame = source.current_frame_with_skeleton()
+                if frame is not None:
+                    import cv2
+                    cv2.imwrite(str(CAPTURE_DIR / f"{ts}_camara.png"), frame)
+                sink.capture(CAPTURE_DIR / f"{ts}_robot.png")
+                print(f"[captura] {ts}")
 
-            # Fidelidad input-vs-salida a la Santos et al. 2025 (Sec. IV-C):
-            # yema estimada por WiLoR (input) vs yema del robot vía FK sobre
-            # el qpos que en verdad se mando (output). Sin ground truth
-            # externo -- mismo principio que su heat map de error euclidiano.
-            #
-            # Ambos lados se rotan a su PROPIO marco local de muñeca (Dong
-            # Block 1, Eq. 5-7) antes de comparar -- misma funcion exacta que
-            # ya usa el pipeline validado de Tabla 4.2 (dong_run_stage2 /
-            # DongKinematics), no una comparacion de posiciones crudas en
-            # marcos distintos (ese fue el bug de la primera version).
-            points_w = getattr(source, "last_points_w", lambda: None)()
-            tip_pos = sink.tip_positions() if hasattr(sink, "tip_positions") else None
-            mcp_pts = sink.mcp_frame_points() if hasattr(sink, "mcp_frame_points") else None
-            if points_w is not None and tip_pos is not None and mcp_pts is not None:
-                from cross_emb.loaders.dong_math import _dong_block1_wrist_frame, _dong_world_to_local
-                import torch as _torch
+                # Fidelidad input-vs-salida a la Santos et al. 2025 (Sec. IV-C):
+                # yema estimada por WiLoR (input) vs yema del robot vía FK sobre
+                # el qpos que en verdad se mando (output). Sin ground truth
+                # externo -- mismo principio que su heat map de error euclidiano.
+                #
+                # Ambos lados se rotan a su PROPIO marco local de muñeca (Dong
+                # Block 1, Eq. 5-7) antes de comparar -- misma funcion exacta que
+                # ya usa el pipeline validado de Tabla 4.2 (dong_run_stage2 /
+                # DongKinematics), no una comparacion de posiciones crudas en
+                # marcos distintos (ese fue el bug de la primera version).
+                points_w = getattr(source, "last_points_w", lambda: None)()
+                tip_pos = sink.tip_positions() if hasattr(sink, "tip_positions") else None
+                mcp_pts = sink.mcp_frame_points() if hasattr(sink, "mcp_frame_points") else None
+                if points_w is not None and tip_pos is not None and mcp_pts is not None:
+                    from cross_emb.loaders.dong_math import _dong_block1_wrist_frame, _dong_world_to_local
+                    import torch as _torch
 
-                # Datos crudos, no solo el numero final: si el calculo vuelve
-                # a tener bug, se recalcula desde aqui sin recapturar en vivo.
-                q_robot_raw = rets[0](pose)
-                np.savez(
-                    CAPTURE_DIR / f"{ts}_datos.npz",
-                    points_w=points_w,  # [21,3] keypoints WiLoR (input crudo)
-                    quats_human=quats.numpy() if hasattr(quats, "numpy") else np.asarray(quats),  # [1,20,4] Dong quats humanos
-                    q_robot=np.asarray(q_robot_raw),  # qpos real enviado al robot
-                    tip_thumb=tip_pos["thumb"], tip_index=tip_pos["index"],
-                    tip_middle=tip_pos["middle"], tip_ring=tip_pos["ring"], tip_little=tip_pos["little"],
-                    mcp_wrist=mcp_pts["wrist"], mcp_index=mcp_pts["index_mcp"],
-                    mcp_middle=mcp_pts["middle_mcp"], mcp_ring=mcp_pts["ring_mcp"],
-                    ref_r=sink.reference_length(),
-                )
+                    # Datos crudos, no solo el numero final: si el calculo vuelve
+                    # a tener bug, se recalcula desde aqui sin recapturar en vivo.
+                    q_robot_raw = rets[0](pose)
+                    np.savez(
+                        CAPTURE_DIR / f"{ts}_datos.npz",
+                        points_w=points_w,  # [21,3] keypoints WiLoR (input crudo)
+                        quats_human=quats.numpy() if hasattr(quats, "numpy") else np.asarray(quats),  # [1,20,4] Dong quats humanos
+                        q_robot=np.asarray(q_robot_raw),  # qpos real enviado al robot
+                        tip_thumb=tip_pos["thumb"], tip_index=tip_pos["index"],
+                        tip_middle=tip_pos["middle"], tip_ring=tip_pos["ring"], tip_little=tip_pos["little"],
+                        mcp_wrist=mcp_pts["wrist"], mcp_index=mcp_pts["index_mcp"],
+                        mcp_middle=mcp_pts["middle_mcp"], mcp_ring=mcp_pts["ring_mcp"],
+                        ref_r=sink.reference_length(),
+                    )
 
-                def _t(v):
-                    return _torch.from_numpy(np.asarray(v, dtype=np.float32)).unsqueeze(0)
+                    def _t(v):
+                        return _torch.from_numpy(np.asarray(v, dtype=np.float32)).unsqueeze(0)
 
-                # Lado humano: wrist=0, index_mcp=5, middle_mcp=9, ring_mcp=13 (WiLoR JOINTS).
-                R_h = _dong_block1_wrist_frame(_t(points_w[0]), _t(points_w[5]), _t(points_w[9]), _t(points_w[13]))
-                ref_h = float(np.linalg.norm(points_w[9] - points_w[0]))  # wrist->middle MCP
+                    # Lado humano: wrist=0, index_mcp=5, middle_mcp=9, ring_mcp=13 (WiLoR JOINTS).
+                    R_h = _dong_block1_wrist_frame(_t(points_w[0]), _t(points_w[5]), _t(points_w[9]), _t(points_w[13]))
+                    ref_h = float(np.linalg.norm(points_w[9] - points_w[0]))  # wrist->middle MCP
 
-                # Lado robot: mismos 3 puntos anatomicos (shadow.yaml frame_*).
-                R_r = _dong_block1_wrist_frame(
-                    _t(mcp_pts["wrist"]), _t(mcp_pts["index_mcp"]), _t(mcp_pts["middle_mcp"]), _t(mcp_pts["ring_mcp"])
-                )
-                ref_r = sink.reference_length()
+                    # Lado robot: mismos 3 puntos anatomicos (shadow.yaml frame_*).
+                    R_r = _dong_block1_wrist_frame(
+                        _t(mcp_pts["wrist"]), _t(mcp_pts["index_mcp"]), _t(mcp_pts["middle_mcp"]), _t(mcp_pts["ring_mcp"])
+                    )
+                    ref_r = sink.reference_length()
 
-                if ref_h > 1e-6 and ref_r:
-                    # WiLoR JOINTS order: WRIST=0, THUMB_TIP=4, INDEX_TIP=8,
-                    # MIDDLE_TIP=12, RING_TIP=16, PINKY_TIP=20.
-                    human_tip_idx = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "little": 20}
-                    lines = [f"[fidelidad] {ts}  (adimensional, normalizado por longitud de mano, ambos en marco local de muneca)"]
-                    for finger, idx in human_tip_idx.items():
-                        tip_h_local = _dong_world_to_local(_t(points_w[idx]), _t(points_w[0]), R_h)[0].numpy() / ref_h
-                        tip_r_local = _dong_world_to_local(_t(tip_pos[finger]), _t(mcp_pts["wrist"]), R_r)[0].numpy() / ref_r
-                        err = float(np.linalg.norm(tip_h_local - tip_r_local))
-                        lines.append(f"  {finger:8s} NDS={err:.3f}")
-                    report = "\n".join(lines)
-                    print(report)
+                    if ref_h > 1e-6 and ref_r:
+                        # WiLoR JOINTS order: WRIST=0, THUMB_TIP=4, INDEX_TIP=8,
+                        # MIDDLE_TIP=12, RING_TIP=16, PINKY_TIP=20.
+                        human_tip_idx = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "little": 20}
+                        lines = [f"[fidelidad] {ts}  (adimensional, normalizado por longitud de mano, ambos en marco local de muneca)"]
+                        for finger, idx in human_tip_idx.items():
+                            tip_h_local = _dong_world_to_local(_t(points_w[idx]), _t(points_w[0]), R_h)[0].numpy() / ref_h
+                            tip_r_local = _dong_world_to_local(_t(tip_pos[finger]), _t(mcp_pts["wrist"]), R_r)[0].numpy() / ref_r
+                            err = float(np.linalg.norm(tip_h_local - tip_r_local))
+                            lines.append(f"  {finger:8s} NDS={err:.3f}")
+                        report = "\n".join(lines)
+                        print(report)
 
-                    # RS-equivalente (fidelidad angular, UDHM): mismo principio
-                    # -- WiLoR (input, via Dong quats) vs robot (output, via
-                    # qpos que en verdad se mando). robot_to_udhm/human_to_udhm
-                    # y DONG_LABELS: codigo ya existente y validado en
-                    # scripts/evaluate_udhm_cross_embodiment.py, no inventado
-                    # para esta captura.
-                    if udhm_tools is not None:
-                        robot_to_udhm, human_to_udhm, DONG_LABELS, UDHM22_SLOTS, tabla = udhm_tools
-                        import torch as _torch
-                        with _torch.no_grad():
-                            udhm_r = robot_to_udhm(_torch.from_numpy(q_robot_raw).float(), tabla)
-                            udhm_h = human_to_udhm(quats.float() if hasattr(quats, "float") else _torch.from_numpy(quats).float(), DONG_LABELS)
-                        diff = (udhm_h - udhm_r).abs()
-                        rs_lines = [f"[fidelidad] {ts}  RS (UDHM, angular, adimensional)"]
-                        for i, slot in enumerate(UDHM22_SLOTS):
-                            rs_lines.append(f"  {slot:16s} diff={diff[0, i].item():.3f}")
-                        rs_lines.append(f"  MEAN |diff| = {diff.mean().item():.4f}")
-                        rs_report = "\n".join(rs_lines)
-                        print(rs_report)
-                        lines.append("")
-                        lines.append(rs_report)
+                        # RS-equivalente (fidelidad angular, UDHM): mismo principio
+                        # -- WiLoR (input, via Dong quats) vs robot (output, via
+                        # qpos que en verdad se mando). robot_to_udhm/human_to_udhm
+                        # y DONG_LABELS: codigo ya existente y validado en
+                        # scripts/evaluate_udhm_cross_embodiment.py, no inventado
+                        # para esta captura.
+                        if udhm_tools is not None:
+                            robot_to_udhm, human_to_udhm, DONG_LABELS, UDHM22_SLOTS, tabla = udhm_tools
+                            import torch as _torch
+                            with _torch.no_grad():
+                                udhm_r = robot_to_udhm(_torch.from_numpy(q_robot_raw).float(), tabla)
+                                udhm_h = human_to_udhm(quats.float() if hasattr(quats, "float") else _torch.from_numpy(quats).float(), DONG_LABELS)
+                            diff = (udhm_h - udhm_r).abs()
+                            rs_lines = [f"[fidelidad] {ts}  RS (UDHM, angular, adimensional)"]
+                            for i, slot in enumerate(UDHM22_SLOTS):
+                                rs_lines.append(f"  {slot:16s} diff={diff[0, i].item():.3f}")
+                            rs_lines.append(f"  MEAN |diff| = {diff.mean().item():.4f}")
+                            rs_report = "\n".join(rs_lines)
+                            print(rs_report)
+                            lines.append("")
+                            lines.append(rs_report)
 
-                    (CAPTURE_DIR / f"{ts}_fidelidad.txt").write_text("\n".join(lines) + "\n")
+                        (CAPTURE_DIR / f"{ts}_fidelidad.txt").write_text("\n".join(lines) + "\n")
 
-    source.release()
-    sink.release()
-    if emit is not None:
-        emit.release()
-    if wrist_emit is not None:
-        wrist_emit.release()
+    except KeyboardInterrupt:
+        print("Stopping live capture.")
+    finally:
+        # Close the recording even on Ctrl+C; continue cleanup if one close fails.
+        import sys
+        active_error = sys.exc_info()[0] is not None
+        cleanup_error = None
+        for resource in (source, sink, emit, wrist_emit):
+            if resource is not None:
+                try:
+                    resource.release()
+                except Exception as exc:
+                    print(f"[cleanup] {exc}")
+                    cleanup_error = cleanup_error or exc
+        if cleanup_error is not None and not active_error:
+            raise cleanup_error
 
 
 if __name__ == "__main__":

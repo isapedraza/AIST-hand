@@ -21,6 +21,7 @@ Drop-in shape-compatible with the HaMeR path: get_landmarks() returns a dict
 
 import os
 import threading
+import time
 
 import cv2
 import mediapipe as mp
@@ -62,6 +63,8 @@ class WiLoRBackend:
         min_detection_confidence: float = 0.5,
         min_tracking_confidence: float = 0.5,
         window_name: str = "GraphGrasp - WiLoR",
+        record_directory=None,
+        record_metadata=None,
     ):
         self.url = url.rstrip("/")
         self.camera_index = camera_index
@@ -130,6 +133,14 @@ class WiLoRBackend:
         # Reuse one TCP+TLS connection across frames (keep-alive). Over a tunnel
         # this saves the per-request handshake (~140 ms/frame measured).
         self._session = requests.Session()
+        self._recorder = None
+        if record_directory is not None:
+            from human.perception.timed_recording import TimedCameraRecorder
+            try:
+                self._recorder = TimedCameraRecorder(record_directory, record_metadata)
+            except BaseException:
+                self.release()
+                raise
 
     def _on_key_press(self, key):
         if key == _kb.Key.space:
@@ -215,8 +226,11 @@ class WiLoRBackend:
         if not self._cap or not self._cap.isOpened():
             return None
         ok, frame_bgr = self._cap.read()
+        acquired_ns = time.monotonic_ns()
         if not ok:
             return None
+        if self._recorder is not None:
+            self._recorder.submit(frame_bgr, acquired_ns)
         self._frame_bgr = frame_bgr
 
         result = self._hands.process(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
@@ -370,3 +384,5 @@ class WiLoRBackend:
             self._hands.close()
             self._hands = None
         cv2.destroyAllWindows()
+        if self._recorder is not None:
+            self._recorder.close()
