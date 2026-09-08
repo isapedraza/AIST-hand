@@ -1,0 +1,1303 @@
+{
+  "format_version": 1,
+  "generated_at_utc": "2026-09-08T14:07:18.884676+00:00",
+  "inclusion_rule": "Completed evaluation with explicit start, a real attempted outcome (success, time_limit, or manual interruption -- anything else, e.g. a technical error, is excluded as not a valid data point), and complete same-hand webcam covering evaluation on the same clock",
+  "trials": [
+    {
+      "session_id": "shadow-bucket-eval-001",
+      "session_path": "/home/yareeez/AIST-hand/recordings/shadow-bucket-eval-001",
+      "operator_id": "yahel",
+      "trial_kind": "evaluation",
+      "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+      "retargeter_source_sha256": {
+        "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+        "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+        "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+        "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+        "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+        "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+        "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+        "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+        "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+        "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+        "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+        "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+        "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+        "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+        "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+        "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+        "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+        "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+        "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+        "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+        "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+        "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+        "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+        "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+        "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+        "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+        "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+        "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+        "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+      },
+      "hand": "shadow",
+      "task": "pick_bucket",
+      "condition_id": "shadow-bucket-formal-v1",
+      "stop_reason": "success",
+      "evaluation": {
+        "start_mode": "manual",
+        "started": true,
+        "start_monotonic_ns": 24205020175854,
+        "start_sim_time": 2.591999999999936,
+        "time_limit_wall_s": 600.0,
+        "success_ever": true,
+        "first_success_monotonic_ns": 24434311136910,
+        "first_success_sim_time": 43.15000000000677,
+        "time_to_success_wall_s": 229.290961056,
+        "time_to_success_sim_s": 40.558000000006835,
+        "elapsed_wall_s": 229.299320339,
+        "elapsed_sim_s": 40.558000000006835,
+        "deadline_policy": "Success observed at or after the real-time deadline is excluded",
+        "task_reference": "Task reset at evaluation start; first subsequent task update establishes references"
+      },
+      "eligible": true,
+      "exclusion_reasons": [],
+      "simulation_complete": true,
+      "operator_complete": true,
+      "operator_frames": 2891,
+      "operator_dropped_frames": 0,
+      "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+      "conditions": {
+        "time_limit_wall_s": 600.0,
+        "evaluation_start": "manual",
+        "integrator": "mjINT_EULER",
+        "timestep": 0.002,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "manual_translation_step_m": 0.005,
+        "manual_rotation_step_rad": 0.05,
+        "slip_compensate": false,
+        "float_object": false,
+        "key_control": true,
+        "recv_fingers": true,
+        "recv_wrist": false,
+        "sweep_wrist": false,
+        "grasp_class": "Parallel Extension",
+        "waypoint_transition_s": null,
+        "waypoint_mode": null,
+        "source_sha256": {
+          "teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "simulator_provenance": {
+        "commit": "5403d301ea6a03e10aae29085a05b4c9a2643052",
+        "working_tree_status": "?? shadow_ext/saved_key_pose_shadow_basket.json\n?? shadow_ext/saved_key_pose_shadow_food.json\n?? shadow_ext/waypoints_food_basket.json\n?? shadow_ext/waypoints_food_basket.json~\n?? shadow_ext/waypoints_food_basket_20260907-000648.json\n?? waypoints_pick_bucket.json",
+        "source_sha256": {
+          "shadow_ext/teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "shadow_ext/tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "shadow_ext/build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "shadow_ext/mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "shadow_ext/state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "shadow_ext/trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "shadow_ext/recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "retargeter_provenance": {
+        "commit": "2e2397d6c4b0f5690347765682d165a12c84a994",
+        "working_tree_status": "M docs/estado_6d_source_to_mocap_2026-06-26.md\n M docs/estado_pendientes_casa_2026-07-01.md\n M docs/estado_protocolo_eval_2026-06-25_1430.md\n M docs/estado_wrist_depth_dynamic_focal_2026-07-02.md\n M docs/estado_wrist_depth_wilor_2026-07-02.md\n M docs/investigacion_wilor_wrist_6d_2026-06-26.md\n M models/latent-retargeting/src/cross_emb/training/loop.py\n M servers/wilor_colab_server.ipynb\n M wilor_colab_server.ipynb\n?? docs/estado_slip_control_layer_2026-07-07.md\n?? docs/estado_teleop_grasp_stability_2026-07-04.md\n?? docs/estado_wrist_txty_dead_2026-07-04.md\n?? experiments/wilor_mesh_overlay.py\n?? human/perception/tests/\n?? models/grasp-intent-classification/scripts/assets/\n?? models/grasp-intent-classification/scripts/render_eigengrasp_grid.py\n?? models/grasp-intent-classification/scripts/render_signals_sk.py\n?? thesis.log",
+        "source_sha256": {
+          "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+          "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+          "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+          "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+          "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+          "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+          "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+          "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+          "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+          "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+          "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+          "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+          "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+          "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+          "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+          "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+          "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+          "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+          "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+          "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+          "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+          "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+          "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+          "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+          "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+          "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+          "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+          "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+          "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+        },
+        "unavailable_sources": [
+          {
+            "module": "torch.ops",
+            "path": "_ops.py",
+            "reason": "FileNotFoundError"
+          },
+          {
+            "module": "torch.classes",
+            "path": "_classes.py",
+            "reason": "FileNotFoundError"
+          }
+        ],
+        "source_scope": "Loaded project Python modules at camera recorder initialization"
+      },
+      "event_counts": {
+        "evaluation_start": 1,
+        "manual_correction": 167,
+        "termination": 1
+      },
+      "raw_capture_success_ever": true,
+      "final_task_metrics": {
+        "food_sensor_pos_m": [
+          -0.4017132552013513,
+          0.05153331424077902,
+          1.1817317976333193
+        ],
+        "bucket_corners_m": [
+          [
+            -0.32565180656744697,
+            -0.07862729539844704,
+            1.0812686634495678
+          ],
+          [
+            -0.2830240085907617,
+            0.1655383464635184,
+            1.113918474686285
+          ],
+          [
+            -0.27513387800235933,
+            -0.10877482811149844,
+            1.2407649491894188
+          ],
+          [
+            -0.23250608002567405,
+            0.135390813750467,
+            1.2734147604261359
+          ],
+          [
+            -0.6450744004442792,
+            -0.03743069847980733,
+            1.19022758655052
+          ],
+          [
+            -0.6024466024675941,
+            0.2067349433821581,
+            1.2228773977872371
+          ],
+          [
+            -0.5945564718791916,
+            -0.06757823119285873,
+            1.3497238722903708
+          ],
+          [
+            -0.5519286739025063,
+            0.1765874106691067,
+            1.3823736835270881
+          ]
+        ],
+        "bottom_reference_z_m": [
+          0.9199776800508833,
+          1.089977680050609,
+          0.9199770695355838,
+          1.0899770695353093
+        ],
+        "bottom_lift_m": [
+          0.16129098339868453,
+          0.1507872691388099,
+          0.2702505170149363,
+          0.25974680275506157
+        ],
+        "minimum_bottom_lift_m": 0.1507872691388099,
+        "lift_threshold_m": 0.15,
+        "inside_reference_aabb": true,
+        "lifted": true
+      },
+      "error": null
+    },
+    {
+      "session_id": "shadow-bucket-eval-002",
+      "session_path": "/home/yareeez/AIST-hand/recordings/shadow-bucket-eval-002",
+      "operator_id": "yahel",
+      "trial_kind": "evaluation",
+      "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+      "retargeter_source_sha256": {
+        "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+        "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+        "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+        "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+        "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+        "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+        "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+        "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+        "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+        "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+        "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+        "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+        "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+        "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+        "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+        "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+        "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+        "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+        "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+        "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+        "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+        "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+        "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+        "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+        "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+        "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+        "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+        "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+        "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+      },
+      "hand": "shadow",
+      "task": "pick_bucket",
+      "condition_id": "shadow-bucket-formal-v1",
+      "stop_reason": "success",
+      "evaluation": {
+        "start_mode": "manual",
+        "started": true,
+        "start_monotonic_ns": 24637641724520,
+        "start_sim_time": 2.3599999999999617,
+        "time_limit_wall_s": 600.0,
+        "success_ever": true,
+        "first_success_monotonic_ns": 24815053511202,
+        "first_success_sim_time": 34.35599999999602,
+        "time_to_success_wall_s": 177.411786682,
+        "time_to_success_sim_s": 31.995999999996062,
+        "elapsed_wall_s": 177.422709693,
+        "elapsed_sim_s": 31.995999999996062,
+        "deadline_policy": "Success observed at or after the real-time deadline is excluded",
+        "task_reference": "Task reset at evaluation start; first subsequent task update establishes references"
+      },
+      "eligible": true,
+      "exclusion_reasons": [],
+      "simulation_complete": true,
+      "operator_complete": true,
+      "operator_frames": 2419,
+      "operator_dropped_frames": 0,
+      "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+      "conditions": {
+        "time_limit_wall_s": 600.0,
+        "evaluation_start": "manual",
+        "integrator": "mjINT_EULER",
+        "timestep": 0.002,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "manual_translation_step_m": 0.005,
+        "manual_rotation_step_rad": 0.05,
+        "slip_compensate": false,
+        "float_object": false,
+        "key_control": true,
+        "recv_fingers": true,
+        "recv_wrist": false,
+        "sweep_wrist": false,
+        "grasp_class": "Parallel Extension",
+        "waypoint_transition_s": null,
+        "waypoint_mode": null,
+        "source_sha256": {
+          "teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "simulator_provenance": {
+        "commit": "5403d301ea6a03e10aae29085a05b4c9a2643052",
+        "working_tree_status": "?? shadow_ext/saved_key_pose_shadow_basket.json\n?? shadow_ext/saved_key_pose_shadow_food.json\n?? shadow_ext/waypoints_food_basket.json\n?? shadow_ext/waypoints_food_basket.json~\n?? shadow_ext/waypoints_food_basket_20260907-000648.json\n?? waypoints_pick_bucket.json",
+        "source_sha256": {
+          "shadow_ext/teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "shadow_ext/tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "shadow_ext/build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "shadow_ext/mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "shadow_ext/state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "shadow_ext/trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "shadow_ext/recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "retargeter_provenance": {
+        "commit": "2e2397d6c4b0f5690347765682d165a12c84a994",
+        "working_tree_status": "M docs/estado_6d_source_to_mocap_2026-06-26.md\n M docs/estado_pendientes_casa_2026-07-01.md\n M docs/estado_protocolo_eval_2026-06-25_1430.md\n M docs/estado_wrist_depth_dynamic_focal_2026-07-02.md\n M docs/estado_wrist_depth_wilor_2026-07-02.md\n M docs/investigacion_wilor_wrist_6d_2026-06-26.md\n M models/latent-retargeting/src/cross_emb/training/loop.py\n M servers/wilor_colab_server.ipynb\n M wilor_colab_server.ipynb\n?? docs/estado_slip_control_layer_2026-07-07.md\n?? docs/estado_teleop_grasp_stability_2026-07-04.md\n?? docs/estado_wrist_txty_dead_2026-07-04.md\n?? experiments/wilor_mesh_overlay.py\n?? human/perception/tests/\n?? models/grasp-intent-classification/scripts/assets/\n?? models/grasp-intent-classification/scripts/render_eigengrasp_grid.py\n?? models/grasp-intent-classification/scripts/render_signals_sk.py\n?? thesis.log",
+        "source_sha256": {
+          "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+          "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+          "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+          "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+          "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+          "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+          "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+          "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+          "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+          "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+          "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+          "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+          "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+          "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+          "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+          "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+          "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+          "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+          "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+          "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+          "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+          "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+          "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+          "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+          "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+          "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+          "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+          "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+          "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+        },
+        "unavailable_sources": [
+          {
+            "module": "torch.ops",
+            "path": "_ops.py",
+            "reason": "FileNotFoundError"
+          },
+          {
+            "module": "torch.classes",
+            "path": "_classes.py",
+            "reason": "FileNotFoundError"
+          }
+        ],
+        "source_scope": "Loaded project Python modules at camera recorder initialization"
+      },
+      "event_counts": {
+        "evaluation_start": 1,
+        "manual_correction": 93,
+        "termination": 1
+      },
+      "raw_capture_success_ever": true,
+      "final_task_metrics": {
+        "food_sensor_pos_m": [
+          -0.368096683859936,
+          -0.027107318179565618,
+          1.1464793778049103
+        ],
+        "bucket_corners_m": [
+          [
+            -0.35088422569725863,
+            -0.21091463543213143,
+            1.0903120596783908
+          ],
+          [
+            -0.290935827335206,
+            0.0281366651239116,
+            1.0483517780266995
+          ],
+          [
+            -0.27151385785923354,
+            -0.20445531152090396,
+            1.2405073387116101
+          ],
+          [
+            -0.21156545949718092,
+            0.03459598903513908,
+            1.1985470570599186
+          ],
+          [
+            -0.6402875204241655,
+            -0.11223968016121211,
+            1.2390029679528836
+          ],
+          [
+            -0.5803391220621128,
+            0.12681162039483093,
+            1.1970426863011923
+          ],
+          [
+            -0.5609171525861404,
+            -0.10578035624998462,
+            1.3891982469861028
+          ],
+          [
+            -0.5009687542240878,
+            0.1332709443060584,
+            1.3472379653344113
+          ]
+        ],
+        "bottom_reference_z_m": [
+          0.9199776800508833,
+          1.089977680050609,
+          0.9199770695355838,
+          1.0899770695353093
+        ],
+        "bottom_lift_m": [
+          0.17033437962750753,
+          0.1505296586610012,
+          0.3190258984172998,
+          0.2992211774507936
+        ],
+        "minimum_bottom_lift_m": 0.1505296586610012,
+        "lift_threshold_m": 0.15,
+        "inside_reference_aabb": true,
+        "lifted": true
+      },
+      "error": null
+    },
+    {
+      "session_id": "shadow-bucket-eval-003",
+      "session_path": "/home/yareeez/AIST-hand/recordings/shadow-bucket-eval-003",
+      "operator_id": "yahel",
+      "trial_kind": "evaluation",
+      "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+      "retargeter_source_sha256": {
+        "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+        "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+        "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+        "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+        "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+        "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+        "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+        "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+        "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+        "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+        "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+        "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+        "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+        "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+        "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+        "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+        "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+        "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+        "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+        "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+        "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+        "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+        "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+        "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+        "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+        "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+        "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+        "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+        "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+      },
+      "hand": "shadow",
+      "task": "pick_bucket",
+      "condition_id": "shadow-bucket-formal-v1",
+      "stop_reason": "manual_interruption",
+      "evaluation": {
+        "start_mode": "manual",
+        "started": true,
+        "start_monotonic_ns": 24930738531106,
+        "start_sim_time": 3.483999999999838,
+        "time_limit_wall_s": 600.0,
+        "success_ever": false,
+        "first_success_monotonic_ns": null,
+        "first_success_sim_time": null,
+        "time_to_success_wall_s": null,
+        "time_to_success_sim_s": null,
+        "elapsed_wall_s": 121.981796236,
+        "elapsed_sim_s": 21.463999999997213,
+        "deadline_policy": "Success observed at or after the real-time deadline is excluded",
+        "task_reference": "Task reset at evaluation start; first subsequent task update establishes references"
+      },
+      "eligible": true,
+      "exclusion_reasons": [],
+      "simulation_complete": true,
+      "operator_complete": true,
+      "operator_frames": 1552,
+      "operator_dropped_frames": 0,
+      "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+      "conditions": {
+        "time_limit_wall_s": 600.0,
+        "evaluation_start": "manual",
+        "integrator": "mjINT_EULER",
+        "timestep": 0.002,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "manual_translation_step_m": 0.005,
+        "manual_rotation_step_rad": 0.05,
+        "slip_compensate": false,
+        "float_object": false,
+        "key_control": true,
+        "recv_fingers": true,
+        "recv_wrist": false,
+        "sweep_wrist": false,
+        "grasp_class": "Parallel Extension",
+        "waypoint_transition_s": null,
+        "waypoint_mode": null,
+        "source_sha256": {
+          "teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "simulator_provenance": {
+        "commit": "5403d301ea6a03e10aae29085a05b4c9a2643052",
+        "working_tree_status": "?? shadow_ext/saved_key_pose_shadow_basket.json\n?? shadow_ext/saved_key_pose_shadow_food.json\n?? shadow_ext/waypoints_food_basket.json\n?? shadow_ext/waypoints_food_basket.json~\n?? shadow_ext/waypoints_food_basket_20260907-000648.json\n?? waypoints_pick_bucket.json",
+        "source_sha256": {
+          "shadow_ext/teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "shadow_ext/tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "shadow_ext/build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "shadow_ext/mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "shadow_ext/state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "shadow_ext/trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "shadow_ext/recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "retargeter_provenance": {
+        "commit": "2e2397d6c4b0f5690347765682d165a12c84a994",
+        "working_tree_status": "M docs/estado_6d_source_to_mocap_2026-06-26.md\n M docs/estado_pendientes_casa_2026-07-01.md\n M docs/estado_protocolo_eval_2026-06-25_1430.md\n M docs/estado_wrist_depth_dynamic_focal_2026-07-02.md\n M docs/estado_wrist_depth_wilor_2026-07-02.md\n M docs/investigacion_wilor_wrist_6d_2026-06-26.md\n M models/latent-retargeting/src/cross_emb/training/loop.py\n M servers/wilor_colab_server.ipynb\n M wilor_colab_server.ipynb\n?? docs/estado_slip_control_layer_2026-07-07.md\n?? docs/estado_teleop_grasp_stability_2026-07-04.md\n?? docs/estado_wrist_txty_dead_2026-07-04.md\n?? experiments/wilor_mesh_overlay.py\n?? human/perception/tests/\n?? models/grasp-intent-classification/scripts/assets/\n?? models/grasp-intent-classification/scripts/render_eigengrasp_grid.py\n?? models/grasp-intent-classification/scripts/render_signals_sk.py\n?? thesis.log",
+        "source_sha256": {
+          "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+          "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+          "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+          "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+          "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+          "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+          "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+          "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+          "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+          "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+          "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+          "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+          "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+          "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+          "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+          "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+          "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+          "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+          "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+          "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+          "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+          "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+          "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+          "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+          "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+          "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+          "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+          "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+          "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+        },
+        "unavailable_sources": [
+          {
+            "module": "torch.ops",
+            "path": "_ops.py",
+            "reason": "FileNotFoundError"
+          },
+          {
+            "module": "torch.classes",
+            "path": "_classes.py",
+            "reason": "FileNotFoundError"
+          }
+        ],
+        "source_scope": "Loaded project Python modules at camera recorder initialization"
+      },
+      "event_counts": {
+        "evaluation_start": 1,
+        "manual_correction": 57,
+        "termination": 1
+      },
+      "raw_capture_success_ever": false,
+      "final_task_metrics": {
+        "food_sensor_pos_m": [
+          -0.1428149503997087,
+          0.20509155805835896,
+          0.9440674977309813
+        ],
+        "bucket_corners_m": [
+          [
+            -0.02005736627355459,
+            -0.13017966343801246,
+            0.9199776801852948
+          ],
+          [
+            -0.0199534173471434,
+            0.11982031495122766,
+            0.9199776765627973
+          ],
+          [
+            -0.020057672936371368,
+            -0.1301796608472048,
+            1.089977680185018
+          ],
+          [
+            -0.019953724009960178,
+            0.1198203175420353,
+            1.0899776765625204
+          ],
+          [
+            -0.3600573368823681,
+            -0.13003829289810234,
+            0.9199770668575599
+          ],
+          [
+            -0.3599533879559569,
+            0.11996168549113778,
+            0.9199770632350623
+          ],
+          [
+            -0.3600576435451848,
+            -0.1300382903072947,
+            1.089977066857283
+          ],
+          [
+            -0.35995369461877363,
+            0.11996168808194542,
+            1.0899770632347856
+          ]
+        ],
+        "bottom_reference_z_m": [
+          0.9199776800508833,
+          1.089977680050609,
+          0.9199770695355838,
+          1.0899770695353093
+        ],
+        "bottom_lift_m": [
+          1.344114819445963e-10,
+          1.3440915047624458e-10,
+          -2.678023913738059e-09,
+          -2.6780262452064107e-09
+        ],
+        "minimum_bottom_lift_m": -2.6780262452064107e-09,
+        "lift_threshold_m": 0.15,
+        "inside_reference_aabb": false,
+        "lifted": false
+      },
+      "error": null
+    },
+    {
+      "session_id": "shadow-bucket-eval-004",
+      "session_path": "/home/yareeez/AIST-hand/recordings/shadow-bucket-eval-004",
+      "operator_id": "yahel",
+      "trial_kind": "evaluation",
+      "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+      "retargeter_source_sha256": {
+        "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+        "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+        "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+        "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+        "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+        "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+        "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+        "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+        "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+        "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+        "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+        "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+        "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+        "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+        "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+        "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+        "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+        "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+        "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+        "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+        "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+        "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+        "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+        "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+        "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+        "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+        "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+        "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+        "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+      },
+      "hand": "shadow",
+      "task": "pick_bucket",
+      "condition_id": "shadow-bucket-formal-v1",
+      "stop_reason": "success",
+      "evaluation": {
+        "start_mode": "manual",
+        "started": true,
+        "start_monotonic_ns": 25143932333136,
+        "start_sim_time": 1.9980000000000016,
+        "time_limit_wall_s": 600.0,
+        "success_ever": true,
+        "first_success_monotonic_ns": 25295483456825,
+        "first_success_sim_time": 27.299999999995748,
+        "time_to_success_wall_s": 151.551123689,
+        "time_to_success_sim_s": 25.301999999995747,
+        "elapsed_wall_s": 151.562595485,
+        "elapsed_sim_s": 25.301999999995747,
+        "deadline_policy": "Success observed at or after the real-time deadline is excluded",
+        "task_reference": "Task reset at evaluation start; first subsequent task update establishes references"
+      },
+      "eligible": true,
+      "exclusion_reasons": [],
+      "simulation_complete": true,
+      "operator_complete": true,
+      "operator_frames": 2073,
+      "operator_dropped_frames": 0,
+      "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+      "conditions": {
+        "time_limit_wall_s": 600.0,
+        "evaluation_start": "manual",
+        "integrator": "mjINT_EULER",
+        "timestep": 0.002,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "manual_translation_step_m": 0.005,
+        "manual_rotation_step_rad": 0.05,
+        "slip_compensate": false,
+        "float_object": false,
+        "key_control": true,
+        "recv_fingers": true,
+        "recv_wrist": false,
+        "sweep_wrist": false,
+        "grasp_class": "Parallel Extension",
+        "waypoint_transition_s": null,
+        "waypoint_mode": null,
+        "source_sha256": {
+          "teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "simulator_provenance": {
+        "commit": "5403d301ea6a03e10aae29085a05b4c9a2643052",
+        "working_tree_status": "?? shadow_ext/saved_key_pose_shadow_basket.json\n?? shadow_ext/saved_key_pose_shadow_food.json\n?? shadow_ext/waypoints_food_basket.json\n?? shadow_ext/waypoints_food_basket.json~\n?? shadow_ext/waypoints_food_basket_20260907-000648.json\n?? waypoints_pick_bucket.json",
+        "source_sha256": {
+          "shadow_ext/teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "shadow_ext/tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "shadow_ext/build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "shadow_ext/mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "shadow_ext/state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "shadow_ext/trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "shadow_ext/recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "retargeter_provenance": {
+        "commit": "2e2397d6c4b0f5690347765682d165a12c84a994",
+        "working_tree_status": "M docs/estado_6d_source_to_mocap_2026-06-26.md\n M docs/estado_pendientes_casa_2026-07-01.md\n M docs/estado_protocolo_eval_2026-06-25_1430.md\n M docs/estado_wrist_depth_dynamic_focal_2026-07-02.md\n M docs/estado_wrist_depth_wilor_2026-07-02.md\n M docs/investigacion_wilor_wrist_6d_2026-06-26.md\n M models/latent-retargeting/src/cross_emb/training/loop.py\n M servers/wilor_colab_server.ipynb\n M wilor_colab_server.ipynb\n?? docs/estado_slip_control_layer_2026-07-07.md\n?? docs/estado_teleop_grasp_stability_2026-07-04.md\n?? docs/estado_wrist_txty_dead_2026-07-04.md\n?? experiments/wilor_mesh_overlay.py\n?? human/perception/tests/\n?? models/grasp-intent-classification/scripts/assets/\n?? models/grasp-intent-classification/scripts/render_eigengrasp_grid.py\n?? models/grasp-intent-classification/scripts/render_signals_sk.py\n?? thesis.log",
+        "source_sha256": {
+          "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+          "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+          "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+          "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+          "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+          "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+          "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+          "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+          "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+          "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+          "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+          "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+          "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+          "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+          "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+          "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+          "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+          "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+          "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+          "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+          "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+          "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+          "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+          "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+          "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+          "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+          "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+          "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+          "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+        },
+        "unavailable_sources": [
+          {
+            "module": "torch.ops",
+            "path": "_ops.py",
+            "reason": "FileNotFoundError"
+          },
+          {
+            "module": "torch.classes",
+            "path": "_classes.py",
+            "reason": "FileNotFoundError"
+          }
+        ],
+        "source_scope": "Loaded project Python modules at camera recorder initialization"
+      },
+      "event_counts": {
+        "evaluation_start": 1,
+        "manual_correction": 97,
+        "termination": 1
+      },
+      "raw_capture_success_ever": true,
+      "final_task_metrics": {
+        "food_sensor_pos_m": [
+          -0.3133752175706792,
+          -0.03898098021974434,
+          1.1559947138045408
+        ],
+        "bucket_corners_m": [
+          [
+            -0.21750721936047454,
+            -0.10128654110647989,
+            1.078548365957637
+          ],
+          [
+            -0.28932579333555786,
+            0.13800936597292926,
+            1.0696286525525949
+          ],
+          [
+            -0.17050765983916186,
+            -0.08113757604998871,
+            1.2406750467105432
+          ],
+          [
+            -0.24232623381424517,
+            0.15815833102942042,
+            1.2317553333055014
+          ],
+          [
+            -0.5293150123704958,
+            -0.19108241641763204,
+            1.1800993432809666
+          ],
+          [
+            -0.6011335863455791,
+            0.048213490661777096,
+            1.1711796298759247
+          ],
+          [
+            -0.48231545284918315,
+            -0.17093345136114088,
+            1.3422260240338728
+          ],
+          [
+            -0.5541340268242665,
+            0.06836245571826827,
+            1.333306310628831
+          ]
+        ],
+        "bottom_reference_z_m": [
+          0.9199776800508833,
+          1.089977680050609,
+          0.9199770695355838,
+          1.0899770695353093
+        ],
+        "bottom_lift_m": [
+          0.1585706859067536,
+          0.15069736665993427,
+          0.26012227374538277,
+          0.25224895449856355
+        ],
+        "minimum_bottom_lift_m": 0.15069736665993427,
+        "lift_threshold_m": 0.15,
+        "inside_reference_aabb": true,
+        "lifted": true
+      },
+      "error": null
+    },
+    {
+      "session_id": "shadow-bucket-eval-005",
+      "session_path": "/home/yareeez/AIST-hand/recordings/shadow-bucket-eval-005",
+      "operator_id": "yahel",
+      "trial_kind": "evaluation",
+      "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+      "retargeter_source_sha256": {
+        "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+        "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+        "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+        "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+        "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+        "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+        "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+        "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+        "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+        "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+        "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+        "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+        "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+        "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+        "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+        "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+        "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+        "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+        "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+        "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+        "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+        "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+        "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+        "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+        "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+        "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+        "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+        "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+        "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+        "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+      },
+      "hand": "shadow",
+      "task": "pick_bucket",
+      "condition_id": "shadow-bucket-formal-v1",
+      "stop_reason": "manual_interruption",
+      "evaluation": {
+        "start_mode": "manual",
+        "started": true,
+        "start_monotonic_ns": 25416000504616,
+        "start_sim_time": 1.8640000000000014,
+        "time_limit_wall_s": 600.0,
+        "success_ever": false,
+        "first_success_monotonic_ns": null,
+        "first_success_sim_time": null,
+        "time_to_success_wall_s": null,
+        "time_to_success_sim_s": null,
+        "elapsed_wall_s": 146.192257501,
+        "elapsed_sim_s": 25.30599999999582,
+        "deadline_policy": "Success observed at or after the real-time deadline is excluded",
+        "task_reference": "Task reset at evaluation start; first subsequent task update establishes references"
+      },
+      "eligible": false,
+      "exclusion_reasons": [
+        "operator_does_not_cover_evaluation"
+      ],
+      "simulation_complete": true,
+      "operator_complete": true,
+      "operator_frames": 1219,
+      "operator_dropped_frames": 0,
+      "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+      "conditions": {
+        "time_limit_wall_s": 600.0,
+        "evaluation_start": "manual",
+        "integrator": "mjINT_EULER",
+        "timestep": 0.002,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "manual_translation_step_m": 0.005,
+        "manual_rotation_step_rad": 0.05,
+        "slip_compensate": false,
+        "float_object": false,
+        "key_control": true,
+        "recv_fingers": true,
+        "recv_wrist": false,
+        "sweep_wrist": false,
+        "grasp_class": "Parallel Extension",
+        "waypoint_transition_s": null,
+        "waypoint_mode": null,
+        "source_sha256": {
+          "teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "simulator_provenance": {
+        "commit": "5403d301ea6a03e10aae29085a05b4c9a2643052",
+        "working_tree_status": "?? shadow_ext/saved_key_pose_shadow_basket.json\n?? shadow_ext/saved_key_pose_shadow_food.json\n?? shadow_ext/waypoints_food_basket.json\n?? shadow_ext/waypoints_food_basket.json~\n?? shadow_ext/waypoints_food_basket_20260907-000648.json\n?? waypoints_pick_bucket.json",
+        "source_sha256": {
+          "shadow_ext/teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+          "shadow_ext/tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+          "shadow_ext/build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+          "shadow_ext/mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+          "shadow_ext/state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+          "shadow_ext/trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+          "shadow_ext/recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+        }
+      },
+      "retargeter_provenance": {
+        "commit": "2e2397d6c4b0f5690347765682d165a12c84a994",
+        "working_tree_status": "M docs/estado_6d_source_to_mocap_2026-06-26.md\n M docs/estado_pendientes_casa_2026-07-01.md\n M docs/estado_protocolo_eval_2026-06-25_1430.md\n M docs/estado_wrist_depth_dynamic_focal_2026-07-02.md\n M docs/estado_wrist_depth_wilor_2026-07-02.md\n M docs/investigacion_wilor_wrist_6d_2026-06-26.md\n M models/latent-retargeting/src/cross_emb/training/loop.py\n M servers/wilor_colab_server.ipynb\n M wilor_colab_server.ipynb\n?? docs/estado_slip_control_layer_2026-07-07.md\n?? docs/estado_teleop_grasp_stability_2026-07-04.md\n?? docs/estado_wrist_txty_dead_2026-07-04.md\n?? experiments/wilor_mesh_overlay.py\n?? human/perception/tests/\n?? models/grasp-intent-classification/scripts/assets/\n?? models/grasp-intent-classification/scripts/render_eigengrasp_grid.py\n?? models/grasp-intent-classification/scripts/render_signals_sk.py\n?? thesis.log",
+        "source_sha256": {
+          "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+          "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+          "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+          "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+          "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+          "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+          "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+          "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+          "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+          "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+          "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+          "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+          "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+          "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+          "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+          "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+          "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+          "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+          "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+          "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+          "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+          "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+          "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+          "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+          "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+          "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+          "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+          "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+          "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+        },
+        "unavailable_sources": [
+          {
+            "module": "torch.ops",
+            "path": "_ops.py",
+            "reason": "FileNotFoundError"
+          },
+          {
+            "module": "torch.classes",
+            "path": "_classes.py",
+            "reason": "FileNotFoundError"
+          }
+        ],
+        "source_scope": "Loaded project Python modules at camera recorder initialization"
+      },
+      "event_counts": {
+        "evaluation_start": 1,
+        "manual_correction": 44,
+        "termination": 1
+      },
+      "raw_capture_success_ever": false,
+      "final_task_metrics": {
+        "food_sensor_pos_m": [
+          -0.21559749363584,
+          0.2837233961877082,
+          0.9440674977309813
+        ],
+        "bucket_corners_m": [
+          [
+            -0.01999998515885698,
+            -0.12999994615008356,
+            0.9199776800508838
+          ],
+          [
+            -0.020001152993378707,
+            0.12000005384718826,
+            0.9199776764259521
+          ],
+          [
+            -0.02000029041651824,
+            -0.12999994368655599,
+            1.0899776800506094
+          ],
+          [
+            -0.020001458251039966,
+            0.12000005631071585,
+            1.0899776764256777
+          ],
+          [
+            -0.3599999851545985,
+            -0.13000153440504195,
+            0.9199770695355842
+          ],
+          [
+            -0.3600011529891203,
+            0.11999846559222987,
+            0.9199770659106525
+          ],
+          [
+            -0.3600002904122598,
+            -0.13000153194151437,
+            1.08997706953531
+          ],
+          [
+            -0.36000145824678154,
+            0.11999846805575747,
+            1.0899770659103782
+          ]
+        ],
+        "bottom_reference_z_m": [
+          0.9199776800508833,
+          1.089977680050609,
+          0.9199770695355838,
+          1.0899770695353093
+        ],
+        "bottom_lift_m": [
+          4.440892098500626e-16,
+          4.440892098500626e-16,
+          4.440892098500626e-16,
+          6.661338147750939e-16
+        ],
+        "minimum_bottom_lift_m": 4.440892098500626e-16,
+        "lift_threshold_m": 0.15,
+        "inside_reference_aabb": false,
+        "lifted": false
+      },
+      "error": null
+    }
+  ],
+  "groups": [
+    {
+      "configuration": {
+        "hand": "shadow",
+        "task": "pick_bucket",
+        "operator_id": "yahel",
+        "condition_id": "shadow-bucket-formal-v1",
+        "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+        "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+        "retargeter_source_sha256": {
+          "apps/graphgrasp-live/live_retarget.py": "1f6b8442937be2381ce2ea37e8e0de569a075c03a1df9c324eabc926c2c19c3f",
+          "apps/graphgrasp-live/_repo_path.py": "4a7cbdf1b945fad474b112e246faea18c7a01ad2c337f75b3e77b26e60ad7c02",
+          "models/latent-retargeting/src/cross_emb/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "models/latent-retargeting/src/cross_emb/nn/human_modules.py": "b3c7d976f0d8d38fb6d3a97ed2e03530b57244d68c1fc2477a9f2de98717ef23",
+          "models/latent-retargeting/src/cross_emb/nn/robot_modules.py": "24ed72f0dc5f67b49a3ac53af1f1ffc3a8c64a586f4d2008138d9f87933d32bf",
+          "models/latent-retargeting/src/cross_emb/nn/shared_modules.py": "70ac0eae01dc1646dab9f234fb75cdd5eef4d8112d5b8fd68eabad8b0fd9be22",
+          "models/latent-retargeting/src/cross_emb/nn/__init__.py": "ca92a89f645d1591f3bc6a0a6f5d9425b58782fcb4badd1e13e5d58d8fd9fece",
+          "models/latent-retargeting/src/cross_emb/inference/retarget.py": "0ba623d08538e092ed902eb453ecbf8c05699bdb6c8edf9b2767a7c7cc3e22f2",
+          "models/latent-retargeting/src/cross_emb/inference/__init__.py": "cacd3c687c908aff42d84ff86be420679a6e22cc5a2ffc728ccf5f49ea48ec14",
+          "models/latent-retargeting/src/cross_emb/rotations.py": "ac7669a8b60466a394cf98be98826448596561629fd970421627f25285233a0e",
+          "apps/graphgrasp-live/sinks/mujoco_sink.py": "b276e90178c84f4e1c33cc5b92cf5e0338b9f94a91d4741eb8c38b82361266ab",
+          "apps/graphgrasp-live/sinks/udp_sink.py": "9190c98540f1929734ea4a0afe12cc3a5ffbf915a9ccc2475c05139cd3b019a4",
+          "apps/graphgrasp-live/sinks/__init__.py": "8fa7a1951723f5767903dc50661bcb69b241422d6f24361bc633f1cbf7aba4dd",
+          "models/latent-retargeting/src/cross_emb/loaders/human_loader.py": "5aac4f575845b7bf10cc641cfff7faec9c84c272e08b2778417d60516de1a6bc",
+          "models/latent-retargeting/src/cross_emb/loaders/dong_math.py": "d67d821b4313e9433faae658f41444e567d54d430311eba71215c99e98badb69",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_loader.py": "4977befa1388c3510e14464201c1f5183573f4436019e9855b634e80dbf99691",
+          "models/latent-retargeting/src/cross_emb/loaders/udhm_stage3.py": "9f9e5f77c6c6d063795d2e4ab7244aad9d9df7eb40f91e06a0f5d75cab645955",
+          "models/latent-retargeting/src/cross_emb/loaders/human_to_udhm.py": "80960518e0be14e99251042bf50ce67403414444be5ff7e97b650005ecac3b52",
+          "models/latent-retargeting/src/cross_emb/loaders/robot_primitives.py": "be5dc30fec4c924f65ff050f6d227547d191bbb3dff044dae608f34b238ee41c",
+          "models/latent-retargeting/src/cross_emb/loaders/sampler.py": "4cbeeea480401ef796c6cb1b54a4aa454eb352a46e1817a9b8d9467261189a66",
+          "models/latent-retargeting/src/cross_emb/loaders/__init__.py": "39f7c89fa04ddb3a8f196838d3b9cc01e48694ce343532fc799bc1ce96615c47",
+          "human/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/kinematics/engelhardt_lengths.py": "e9d144ee5c940b29f02ab9e799676fddbb24f7a3defb085b9174e5b516bedaf6",
+          "human/kinematics/hierarchical_scaling.py": "7c0a68a66200cc3d306dffc57e7cf37e223f2950f71af7127d416171b796815d",
+          "human/kinematics/__init__.py": "66281ee80042130dfba7fdf48266db56e3002bd460677f020323c0594315fc98",
+          "human/kinematics/dong_kinematics.py": "a50c655fa5f27e9082fed0a4d20213d1ff5e817711ab4df5a9bf04a1567feda4",
+          "apps/graphgrasp-live/sources/mediapipe_source.py": "84bf6c4d02a3baae2f598f720ec021153f6dcc223f0fe2108f66fc27c2f5a012",
+          "apps/graphgrasp-live/sources/hamer_source.py": "fc6c3f8f699c167ba8f16982b6e7e8da972b4608db915103c75c7e2cb6d1f519",
+          "apps/graphgrasp-live/sources/wilor_source.py": "953f479a120b63e1bf8198c6da62ec8e1613032bc376103f7ff99abbe2ac1f52",
+          "apps/graphgrasp-live/sources/interpolated_source.py": "151290f401b39c373bf43fc210df6d2c656295000e855288b84ae59ca6cc4a15",
+          "apps/graphgrasp-live/sources/__init__.py": "9ea37e00a7597f01c472e99ff3298f2e4b7a678d5f0877346ae6ceae058fad14",
+          "human/perception/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "human/perception/wilor_backend.py": "0f5191627508df0be1c3ae8996df362aba36e0eb7858413ba3e7d5aabc0d1918",
+          "human/perception/timed_recording.py": "98bc2ef9954527c2dec5b469543806baecfc20aac6d0ea55facc6005a9bfd8ae"
+        },
+        "conditions": {
+          "time_limit_wall_s": 600.0,
+          "evaluation_start": "manual",
+          "integrator": "mjINT_EULER",
+          "timestep": 0.002,
+          "gravity": [
+            0.0,
+            0.0,
+            -9.81
+          ],
+          "manual_translation_step_m": 0.005,
+          "manual_rotation_step_rad": 0.05,
+          "slip_compensate": false,
+          "float_object": false,
+          "key_control": true,
+          "recv_fingers": true,
+          "recv_wrist": false,
+          "sweep_wrist": false,
+          "grasp_class": "Parallel Extension",
+          "waypoint_transition_s": null,
+          "waypoint_mode": null,
+          "source_sha256": {
+            "teleop_driver.py": "76083c06ebbdef7e1b3f630fdea7e535754f27857f2a777bd2b0840413c4f29a",
+            "tasks.py": "5fb1f0407d11e46e591834f6b946d8439723b8eb61013894a64151aed3b98da5",
+            "build.py": "62c3254487162a55c98d6c3f6ef5c174713a69cae5918413869bf2ab8c4384a2",
+            "mapping.py": "fb16c7301558864f914de81488dcfefafd11ea98cbd33eabcd796a00ba4be671",
+            "state_recording.py": "7be1415f4acca9ffb43cb2d629902499e1d8001c70fce191cac58c043d291ee1",
+            "trial.py": "099b721704f483b649cf10a38cc97945381065dc3a61f9dd1cb2d5c7b1529d2e",
+            "recorder.py": "682ce2398aaea9913aed1bee5935f746b5910109fb7c8b03d30471b1017d2ef4"
+          }
+        }
+      },
+      "sessions": [
+        "shadow-bucket-eval-001",
+        "shadow-bucket-eval-002",
+        "shadow-bucket-eval-003",
+        "shadow-bucket-eval-004",
+        "shadow-bucket-eval-005"
+      ],
+      "successful_trials": 3,
+      "evaluable_trials": 4,
+      "excluded_trials": 1,
+      "stop_reasons": {
+        "success": 3,
+        "manual_interruption": 2
+      },
+      "success_rate": 0.75,
+      "median_time_to_success_wall_s": 177.411786682,
+      "range_time_to_success_wall_s": [
+        151.551123689,
+        229.290961056
+      ]
+    }
+  ]
+}
