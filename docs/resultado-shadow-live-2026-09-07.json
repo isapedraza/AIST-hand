@@ -1,0 +1,78 @@
+{
+  "session_id": "shadow-live-check-20260907-224629",
+  "purpose": "Live recording integration check; single human-operated Shadow trial",
+  "operator_confirmed_simulation_and_recording_success": true,
+  "capture": {
+    "task": "pick_bucket",
+    "success": true,
+    "stop_reason": "success",
+    "simulation_states": 31649,
+    "operator_frames": 3775,
+    "operator_encoder_dropped_frames": 0,
+    "same_host_clock": true,
+    "webcam_covers_simulation": true,
+    "time_to_success_sim_s": 63.29600000003139,
+    "time_to_success_wall_s": 310.351450687,
+    "slip_compensate": false,
+    "float_object": false,
+    "first_saved_success_index": 31648,
+    "max_webcam_timestamp_gap_s": 0.266446866,
+    "max_simulation_timestamp_gap_s": 0.041099026,
+    "start_to_end_max_qpos_change": {
+      "arm": 1.5174838341931043,
+      "hand": 1.5811718688608631,
+      "objects": 1.442719574006712
+    }
+  },
+  "derived_final_task_check": {
+    "source": "Derived offline from restored initial and final states; original live success flag remains primary",
+    "bucket_bottom_lift_m": [
+      0.16635542597209474,
+      0.15228223263227325,
+      0.24279857535217553,
+      0.22872538201235404
+    ],
+    "minimum_bucket_bottom_lift_m": 0.15228223263227325,
+    "food_sensor_inside_bucket_reference_aabb": true
+  },
+  "export": {
+    "complete": true,
+    "video_count": 5,
+    "frames_per_video": 3105,
+    "duration_s": 310.5,
+    "final_success_frame": 3104,
+    "operator_coverage_all_export_frames": true
+  },
+  "provenance": {
+    "task": "pick_bucket",
+    "hand": "shadow",
+    "arena": "arena_arm_hand_bucket_pick.xml",
+    "simulator_commit": "3b6db0431ff574708c9574c7ae24c1804faf6641",
+    "mujoco_version": "3.6.0",
+    "model_sha256": "ba398303441e04ee8f639443db3504a0293b9094e9b067b0af7b5f0bde70c601",
+    "source_sha256": {
+      "teleop_driver.py": "d797d995b54fbe06ecf86fa1abfbe219576785574a0777e93404f87a3ac15adb",
+      "tasks.py": "29cd9e68224a22a1c1c96b4ab19d2d39139ff3f9987e31affc45bdbe6fa96ac2",
+      "build.py": "c455964b21a4d6462dadde075a387464bded3d32114b73e144e893fc4db61566",
+      "mapping.py": "12acfa35a0ec1c726e49ec348f8371a0d1a500cb6fe7d7f07b9af0edc0358df7",
+      "state_recording.py": "f0a09c4c788992a164ed083a52d2d391134be9281eb4d21e2e424676e2ed55f6"
+    },
+    "success_source": "shadow_ext.tasks.PickBucket.update",
+    "start_definition": "Immediately before the first physics step; includes operator preparation",
+    "budget_clock": "simulation steps (legacy driver behavior)"
+  },
+  "checkpoint_filename": "stage1_shadow_allegro_bodex_objbal_15k.pt",
+  "checkpoint_sha256": "c7408af53f7f1e41694ef982f79c44ac409c041a3cfbba185d2a75f22bed9f39",
+  "preview": {
+    "width_per_panel": 480,
+    "height": 360,
+    "fps": 10,
+    "views": [
+      "front",
+      "left"
+    ]
+  },
+  "shutdown_observation": "Simulator process reported exit 1 after saving success, without traceback; complete trace and all exports verified. Webcam exit 0.",
+  "raw_data_location": "recordings/shadow-live-check-20260907-224629",
+  "raw_data_published": false
+}

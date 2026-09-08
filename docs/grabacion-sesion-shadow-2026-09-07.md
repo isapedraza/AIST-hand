@@ -1,9 +1,10 @@
 # Grabación básica de una sesión Shadow
 
 Estado: 2026-09-07. Captura y exportación integradas; seis pruebas automatizadas
-aprobadas con MuJoCo 3.6.0. Falta la comprobación práctica con la webcam real,
-WiLoR y el operador. Este documento describe la funcionalidad actual, no el
-protocolo completo de evaluación de tesis.
+aprobadas con MuJoCo 3.6.0. Comprobación práctica completada con webcam, WiLoR
+y Shadow: tarea exitosa y grabación confirmadas por el operador.
+Este documento describe la funcionalidad actual, no el protocolo completo de
+evaluación de tesis.
 
 ## Uso rápido con tus comandos habituales
 
@@ -200,8 +201,8 @@ Las pruebas de éxito usan una tarea sintética para verificar el registro del r
 
 ## Próximas comprobaciones
 
-1. Grabar una toma real corta con movimientos visibles de brazo y dedos y contacto
-   con el objeto; comprobar webcam y vistas exportadas.
+1. Completado: toma real con brazo, dedos y objeto; éxito de tarea y grabación
+   confirmados por el operador (véase el resultado al final).
 2. Comprobar el encuadre para las figuras/videos definitivos.
 3. Extender el registro para tesis: magnitudes del criterio de tarea, eventos de
    waypoints/correcciones, marca de inicio de evaluación y resumen consolidado por ensayo.
@@ -209,3 +210,29 @@ Las pruebas de éxito usan una tarea sintética para verificar el registro del r
 
 El registro básico no implementa todavía todos los campos del
 [protocolo metodológico](../../ThesisGCN/protocolo-validacion-funcional-registro-2026-09-07.md).
+
+
+## Primera comprobación en vivo completada
+
+Sesión local: `recordings/shadow-live-check-20260907-224629`.
+El operador completó `pick_bucket` con Shadow; el driver registró éxito y terminó
+automáticamente. Compensación de deslizamiento y compensación de gravedad del
+objeto estaban desactivadas. Éxito a 63.296 s simulados / 310.351 s reales,
+medidos desde el comienzo de captura del simulador.
+
+Se guardaron 31,649 estados y 3,775 cuadros de webcam, sin descartes en la cola
+del codificador. Se exportaron y verificaron cinco videos sincronizados,
+incluidas front/left y las dos vistas emparejadas, con 3,105 cuadros cada uno a
+10 fps. El último cuadro conserva el resultado exitoso; la webcam cubre toda
+la línea temporal exportada.
+
+El estado final restaurado también satisface la comprobación derivada de lift
+mínimo de 0.152282 m y posición del sensor de comida dentro de los límites de
+referencia. Este resultado no reemplaza el booleano original de la tarea.
+
+[Nota local del ensayo y videos](../recordings/shadow-live-check-20260907-224629/README.md).
+Los datos del ensayo permanecen locales. El operador confirmó que tanto la
+simulación como la grabación fueron exitosas. Sigue pendiente el registro
+ampliado de tesis y preparar las repeticiones del protocolo.
+[Resumen numérico versionado](resultado-shadow-live-2026-09-07.json).
+Una sola toma exitosa documenta factibilidad, no una tasa de éxito general.
