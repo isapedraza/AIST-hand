@@ -178,6 +178,10 @@ def main():
                     "robot": rets[0].robot_name, "source": args.source,
                     "checkpoint": str(ckpt_path.resolve()), "checkpoint_sha256": checkpoint_hash,
                     "calibration_seconds": args.calib, "interpolate": args.interpolate,
+                    "source_root": str(REPO_ROOT),
+                    "camera_device": args.camera if isinstance(args.camera, int) else "stream",
+                    "emit_udp": args.emit_udp, "emit_port": args.emit_port,
+                    "emit_wrist": args.emit_wrist, "wrist_port": args.wrist_port,
                     "timestamp_semantics": "Host time immediately after camera.read; not sensor exposure time",
                 }
             source = WiLoRSource(url=args.url, camera=args.camera, calib_seconds=args.calib,

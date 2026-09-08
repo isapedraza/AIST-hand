@@ -71,3 +71,6 @@ apps/*/.claude/
 # nested fork (own repo: dexjoco-shadow)
 dexjoco/
 .venv-dexjoco/
+
+# Live teleop session captures (video + state traces, GBs per session)
+recordings/

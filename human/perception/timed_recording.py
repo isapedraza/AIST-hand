@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import csv
 import json
+import hashlib
+import subprocess
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 import queue
 import threading
@@ -17,6 +21,44 @@ def clock_identity() -> dict:
             'boot_id': boot.read_text().strip() if boot.exists() else None}
 
 
+def capture_source_provenance(directory, root):
+    """Freeze loaded project Python modules, including local source edits."""
+    root, directory = Path(root).resolve(), Path(directory)
+    hashes, unavailable = {}, []
+    for module_name, module in list(sys.modules.items()):
+        filename = getattr(module, '__file__', None)
+        if not filename:
+            continue
+        path = Path(filename).resolve()
+        if path.suffix != '.py' or not path.is_relative_to(root):
+            continue
+        relative = path.relative_to(root)
+        if any(part in ('.venv', '.git') for part in relative.parts):
+            continue
+        try:
+            raw = path.read_bytes()
+        except (FileNotFoundError, IsADirectoryError) as exc:
+            # torch.ops/classes advertise synthetic relative __file__ values.
+            # They resolve under cwd but are not source files on disk. Keep
+            # omissions explicit, including real modules deleted since import.
+            unavailable.append({'module': module_name, 'path': str(relative),
+                                'reason': type(exc).__name__})
+            continue
+        destination = directory / 'source' / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(raw)
+        hashes[str(relative)] = hashlib.sha256(raw).hexdigest()
+    def git(*args):
+        result = subprocess.run(['git', *args], cwd=root, capture_output=True,
+                                text=True, check=False)
+        return result.stdout.strip() if result.returncode == 0 else None
+    return {'commit': git('rev-parse', 'HEAD'),
+            'working_tree_status': git('status', '--porcelain', '--untracked-files=normal'),
+            'source_sha256': hashes,
+            'unavailable_sources': unavailable,
+            'source_scope': 'Loaded project Python modules at camera recorder initialization'}
+
+
 class TimedCameraRecorder:
     """AVI frames + CSV acquisition times; final replay supplies real timing.
 
@@ -29,9 +71,13 @@ class TimedCameraRecorder:
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=False)
         self.metadata = {**clock_identity(), **(metadata or {}),
+                         'created_at_utc': datetime.now(timezone.utc).isoformat(),
                          'complete': False, 'nominal_fps': 30,
                          'timing': 'Use frames.csv, not AVI playback rate',
                          'mirrored': False, 'overlay': False}
+        source_root = self.metadata.pop('source_root', None)
+        if source_root:
+            self.metadata['provenance'] = capture_source_provenance(self.directory, source_root)
         self._queue = queue.Queue(maxsize=queue_size)
         self._error = None
         self._closed = False

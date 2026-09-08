@@ -6,6 +6,10 @@ y Shadow: tarea exitosa y grabación confirmadas por el operador.
 Este documento describe la funcionalidad actual, no el protocolo completo de
 evaluación de tesis.
 
+Actualización 2026-09-08: el registro ampliado, inicio F5, límite real, eventos y
+resúmenes se describen en la [guía de evaluación funcional](registro-evaluacion-funcional-2026-09-08.md).
+Esta página conserva la descripción y evidencia de la integración básica del 7 de septiembre.
+
 ## Uso rápido con tus comandos habituales
 
 Selecciona una carpeta nueva por intento, por ejemplo:
